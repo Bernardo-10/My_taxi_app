@@ -1,0 +1,323 @@
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    background: #f0f2f5;
+    color: #333;
+}
+
+.container {
+    max-width: 450px;
+    margin: 20px auto;
+    background: white;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+}
+
+.user-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    background: #ffffff;
+    border-bottom: 1px solid #eee;
+}
+
+.user-header strong {
+    min-width: 0;
+    color: #1f2937;
+    font-size: 15px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.btn-logout {
+    flex: 0 0 auto;
+    padding: 9px 12px;
+    border: none;
+    border-radius: 8px;
+    background: #ef4444;
+    color: white;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.btn-logout:hover {
+    background: #dc2626;
+}
+
+.tabs {
+    display: flex;
+    background: #f8f9fa;
+    border-bottom: 1px solid #eee;
+}
+
+.tabs button {
+    flex: 1;
+    padding: 15px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-weight: 700;
+    transition: background 0.25s ease, color 0.25s ease;
+    color: #6b7280;
+    border-bottom: 3px solid transparent;
+}
+
+.tabs button:hover {
+    background: rgba(39, 174, 96, 0.08);
+}
+
+.tabs .active {
+    color: #111827;
+    border-bottom-color: #27ae60;
+}
+
+.tabs #historyBtn {
+    color: #3498db;
+}
+
+.tabs #historyBtn.active {
+    color: #3498db;
+    border-bottom: 3px solid #3498db;
+}
+
+#map {
+    width: 100%;
+    height: 350px;
+}
+
+.history-list {
+    padding: 20px;
+    background: white;
+    border-radius: 20px;
+    margin: 20px 0;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+    border: 1px solid #ebedef;
+}
+
+.history-list h3 {
+    margin-top: 0;
+    margin-bottom: 16px;
+    color: #2c3e50;
+    font-size: 20px;
+}
+
+.ride-item {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+    padding: 18px;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    margin-bottom: 12px;
+    cursor: pointer;
+    transition: transform 0.15s ease, background 0.2s ease, box-shadow 0.2s ease;
+    background: #ffffff;
+}
+
+.ride-item:hover {
+    background: #f6fbff;
+    transform: translateY(-1px);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.06);
+}
+
+.ride-item .details {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    color: #4b5563;
+}
+
+.ride-item .details strong {
+    color: #1f2937;
+}
+
+.ride-item .status {
+    align-self: start;
+    font-weight: 700;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.ride-item .status.pending {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.ride-item .status.accepted {
+    background: #d4edda;
+    color: #155724;
+}
+
+.btn-back {
+    width: 100%;
+    padding: 12px;
+    background: #95a5a6;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.3s;
+    margin-top: 15px;
+}
+
+.btn-back:hover {
+    background: #7f8c8d;
+}
+
+.form {
+    padding: 25px;
+}
+
+h3 {
+    margin-top: 0;
+    color: #2c3e50;
+}
+
+.input-group {
+    position: relative;
+    margin-bottom: 15px;
+}
+
+.form input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 12px 15px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 14px;
+    background: #fdfdfd;
+}
+
+.form input:focus {
+    border-color: #27ae60;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(39, 174, 96, 0.1);
+}
+
+.passengers {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 15px 0;
+    font-weight: bold;
+}
+
+.passengers input {
+    width: 80px;
+}
+
+.btn-find {
+    width: 100%;
+    padding: 15px;
+    background: #27ae60;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+.btn-find:hover {
+    background: #219150;
+}
+
+.btn-refresh {
+    width: 100%;
+    margin-top: 12px;
+    padding: 14px;
+    background: #3498db;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+.btn-refresh:hover {
+    background: #2980b9;
+}
+
+.ride-status {
+    margin-top: 12px;
+    padding: 12px 14px;
+    background: #eef7ff;
+    color: #1a5276;
+    border: 1px solid #d6eaf8;
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+.suggestions {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 100%;
+    z-index: 1000;
+    background: white;
+    border: 1px solid #ddd;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.suggestion-item {
+    padding: 10px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid #eee;
+    font-size: 13px;
+}
+
+.suggestion-item:hover {
+    background: #f5f5f5;
+}
+
+.fare-box {
+    margin-top: 18px;
+    padding: 12px 14px;
+    background: #f8f9fa;
+    border-radius: 10px;
+    border: 1px solid #eee;
+}
+
+.fare-box p {
+    margin: 6px 0;
+}
+
+/* DRIVER MARKER */
+.driver-marker {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+/* Leaflet divIcon: reset default padding/bg that can clip emoji */
+.leaflet-div-icon {
+    background: transparent !important;
+    border: none !important;
+}
+
+@keyframes bounce {
+    0%, 20%, 50%, 80%, 100% {
+        transform: translateY(0);
+    }
+    40% {
+        transform: translateY(-10px);
+    }
+    60% {
+        transform: translateY(-5px);
+    }
+}

@@ -1,0 +1,60 @@
+﻿<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Connexion Client</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: Arial, sans-serif; background: #f4f7fb; color: #172033; }
+    .login-box { width: min(380px, calc(100% - 32px)); background: #fff; border: 1px solid #dbe3ef; border-radius: 8px; padding: 24px; box-shadow: 0 16px 40px rgba(23, 32, 51, .12); }
+    h1 { margin: 0 0 18px; font-size: 24px; }
+    label { display: block; margin: 14px 0 6px; font-weight: 700; font-size: 14px; }
+    input { width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid #c8d2df; border-radius: 6px; font-size: 15px; }
+    button { width: 100%; margin-top: 18px; border: 0; border-radius: 6px; padding: 12px; background: #0f766e; color: #fff; font-weight: 700; cursor: pointer; }
+    .message { min-height: 20px; margin-top: 12px; color: #b42318; font-size: 14px; }
+    .link { margin-top: 14px; text-align: center; font-size: 14px; }
+    .link a { color: #0f766e; font-weight: 700; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <main class="login-box">
+    <h1>Connexion client</h1>
+    <form id="loginForm">
+      <label for="login">Email ou telephone</label>
+      <input id="login" name="login" autocomplete="username" required>
+
+      <label for="password">Mot de passe</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+
+      <button type="submit">Se connecter</button>
+      <div id="message" class="message"></div>
+      <div class="link">Pas encore de compte ? <a href="register.html">S'inscrire</a></div>
+    </form>
+  </main>
+
+  <script>
+    document.getElementById("loginForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const message = document.getElementById("message");
+      message.textContent = "";
+
+      const response = await fetch("../../../backend/client/login_client.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          login: document.getElementById("login").value.trim(),
+          password: document.getElementById("password").value
+        })
+      });
+
+      const result = await response.json();
+      if (result.status === "success") {
+        window.location.href = "index.html";
+      } else {
+        message.textContent = result.message || "Connexion impossible";
+      }
+    });
+  </script>
+</body>
+</html>
+

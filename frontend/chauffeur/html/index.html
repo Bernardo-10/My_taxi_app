@@ -1,0 +1,90 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Interface Chauffeur</title>
+
+    <link rel="stylesheet" href="../../css/chauffeur.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="../js/chauffeur-api.js"></script>
+    <script src="../js/chauffeur-ui.js"></script>
+
+</head>
+<body>
+
+<div class="container-driver">
+    <div class="user-header">
+        <strong id="currentUserName">Utilisateur</strong>
+        <button id="logoutBtn" class="btn-logout" type="button">Logout</button>
+    </div>
+
+    <div class="page-header">
+        <div>
+            <h2>🚕 Interface Chauffeur</h2>
+        </div>
+        <button id="refreshBtn" class="btn btn-refresh">Rafraîchir</button>
+    </div>
+
+    <div class="tabs">
+        <button class="tab-btn active" data-tab="chauffeurTab">Chauffeur</button>
+        <button class="tab-btn" data-tab="dashboardTab">Tableau de bord</button>
+    </div>
+
+    <section id="chauffeurTab" class="tab-content active">
+        <div id="map" class="map-panel"></div>
+
+        <div class="rides-section">
+            <div class="rides-container">
+                <div class="column">
+                    <h3>📋 Courses en Attente</h3>
+                    <div id="pendingRides" class="ride-list"></div>
+                </div>
+
+                <div class="column">
+                    <h3>✅ Courses acceptées</h3>
+                    <div id="acceptedRides" class="ride-list"></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="dashboardTab" class="tab-content">
+        <div class="dashboard-section">
+            <div class="dashboard-grid">
+                <div class="dashboard-card">
+                    <span class="dashboard-label">Courses terminées</span>
+                    <strong id="statsCompleted">0</strong>
+                </div>
+                <div class="dashboard-card">
+                    <span class="dashboard-label">Montant total</span>
+                    <strong id="statsTotal">0 FCFA</strong>
+                </div>
+                <div class="dashboard-card">
+                    <span class="dashboard-label">Montant moyen</span>
+                    <strong id="statsAverage">0 FCFA</strong>
+                </div>
+                <div class="dashboard-card">
+                    <span class="dashboard-label">Distance totale</span>
+                    <strong id="statsDistance">0 km</strong>
+                </div>
+                <div class="dashboard-card dashboard-card-full">
+                    <span class="dashboard-label">Courses acceptées en cours</span>
+                    <strong id="statsAccepted">0</strong>
+                </div>
+            </div>
+
+            <div class="history-list">
+                <h3>📚 Historique des courses terminées</h3>
+                <div id="completedRides" class="ride-list"></div>
+            </div>
+        </div>
+    </section>
+</div>
+
+
+</body>
+</html>
+
+

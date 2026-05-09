@@ -1,0 +1,76 @@
+﻿<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inscription Client</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: Arial, sans-serif; background: #f4f7fb; color: #172033; }
+    .box { width: min(440px, calc(100% - 32px)); background: #fff; border: 1px solid #dbe3ef; border-radius: 8px; padding: 24px; box-shadow: 0 16px 40px rgba(23, 32, 51, .12); }
+    h1 { margin: 0 0 18px; font-size: 24px; }
+    label { display: block; margin: 12px 0 6px; font-weight: 700; font-size: 14px; }
+    input { width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid #c8d2df; border-radius: 6px; font-size: 15px; }
+    button { width: 100%; margin-top: 18px; border: 0; border-radius: 6px; padding: 12px; background: #0f766e; color: #fff; font-weight: 700; cursor: pointer; }
+    .message { min-height: 20px; margin-top: 12px; color: #b42318; font-size: 14px; }
+    .link { margin-top: 14px; text-align: center; font-size: 14px; }
+    .link a { color: #0f766e; font-weight: 700; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <main class="box">
+    <h1>Inscription client</h1>
+    <form id="registerForm">
+      <label for="full_name">Nom complet</label>
+      <input id="full_name" required>
+
+      <label for="phone">Telephone</label>
+      <input id="phone" required>
+
+      <label for="email">Email</label>
+      <input id="email" type="email" required>
+
+      <label for="password">Mot de passe</label>
+      <input id="password" type="password" minlength="6" required>
+
+      <label for="car_brand">Marque de voiture</label>
+      <input id="car_brand">
+
+      <label for="car_color">Couleur</label>
+      <input id="car_color">
+
+      <button type="submit">Créer mon compte</button>
+      <div id="message" class="message"></div>
+      <div class="link">Déjà un compte ? <a href="login.html">Se connecter</a></div>
+    </form>
+  </main>
+
+  <script>
+    document.getElementById("registerForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const message = document.getElementById("message");
+      message.textContent = "";
+
+      const response = await fetch("../../../backend/client/register_client.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          full_name: document.getElementById("full_name").value.trim(),
+          phone: document.getElementById("phone").value.trim(),
+          email: document.getElementById("email").value.trim(),
+          password: document.getElementById("password").value,
+          car_brand: document.getElementById("car_brand").value.trim(),
+          car_color: document.getElementById("car_color").value.trim()
+        })
+      });
+
+      const result = await response.json();
+      if (result.status === "success") {
+        window.location.href = "index.html";
+      } else {
+        message.textContent = result.message || "Inscription impossible";
+      }
+    });
+  </script>
+</body>
+</html>
+

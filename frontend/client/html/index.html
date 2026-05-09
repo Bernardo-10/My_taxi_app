@@ -1,0 +1,67 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Taxi App UI</title>
+
+  <link rel="stylesheet" href="../../css/style.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+  <script src="../js/client-api.js" defer></script>
+  <script src="../js/client-ui.js" defer></script>
+</head>
+<body>
+
+<div class="container">
+  <div class="user-header">
+    <strong id="currentUserName">Utilisateur</strong>
+    <button id="logoutBtn" class="btn-logout" type="button">Logout</button>
+  </div>
+
+  <div class="tabs">
+    <button id="clientBtn" class="active">Client</button>
+    <button id="historyBtn">Historique</button>
+  </div>
+
+  <div id="map"></div>
+
+  <div id="historyList" class="history-list" style="display: none;">
+    <h3>Mes Courses</h3>
+    <div id="ridesContainer"></div>
+    <button id="backToMapBtn" class="btn-back">Retour à la carte</button>
+  </div>
+
+  <div class="form">
+    <div class="input-group">
+      <input type="text" id="pickup" placeholder="Your location" autocomplete="off">
+      <div id="pickup-suggestions" class="suggestions"></div>
+    </div>
+
+    <div class="input-group">
+      <input type="text" id="destination" placeholder="Enter destination" autocomplete="off">
+      <div id="destination-suggestions" class="suggestions"></div>
+    </div>
+
+    <div class="passengers">
+      <label for="passengers">Passengers</label>
+      <input type="number" id="passengers" value="1" min="1">
+    </div>
+
+    <button id="findRideBtn" class="btn-find">Find Rides</button>
+    <div class="ride-status" id="rideStatusMessage">Aucune course en cours.</div>
+    <button id="refreshMapBtn" class="btn-refresh" type="button">Rafraîchir la carte</button>
+
+    <div class="fare-box">
+      <p><strong>Distance:</strong> <span id="routeDistance">-</span></p>
+      <p><strong>Time:</strong> <span id="routeDuration">-</span></p>
+      <p><strong>Price:</strong> <span id="routePrice">-</span></p>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
+
+

@@ -1,0 +1,386 @@
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    background: #f0f2f5;
+    color: #333;
+    min-height: 100vh;
+}
+
+.container {
+    max-width: 450px;
+    margin: 20px auto;
+    background: #ffffff;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+    padding: 18px;
+    box-sizing: border-box;
+}
+.container-driver {
+    max-width: 600px;
+    margin: 20px auto;
+    background: #ffffff;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+    padding: 18px;
+    box-sizing: border-box;
+}
+
+.user-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid #eee;
+}
+
+.user-header strong {
+    min-width: 0;
+    color: #1f2937;
+    font-size: 15px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.btn-logout {
+    flex: 0 0 auto;
+    padding: 9px 12px;
+    border: none;
+    border-radius: 8px;
+    background: #ef4444;
+    color: white;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.btn-logout:hover {
+    background: #dc2626;
+}
+
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 12px;
+}
+
+.page-header h2 {
+    font-size: 20px;
+    margin: 0;
+    color: #2c3e50;
+}
+
+.subtitle {
+    margin: 6px 0 0;
+    color: #6b7280;
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+/* Leaflet panel */
+.map-panel {
+    width: 100%;
+    height: 350px;
+    border-radius: 0;
+    overflow: hidden;
+    border: none;
+    margin: 0;
+
+    /* Important: keep Leaflet under the tabs so tab clicks work reliably */
+    position: relative;
+    z-index: 1;
+}
+
+/* Tabs: même style que l'interface client */
+.tabs {
+    display: flex;
+    background: #f8f9fa;
+    border-bottom: 1px solid #eee;
+    margin: 12px -18px 16px; /* compense padding container */
+    padding: 0 0;
+    gap: 0;
+
+    /* Important: ensure tabs are above Leaflet layers */
+    position: relative;
+    z-index: 10000;
+    pointer-events: auto;
+}
+
+.tab-btn {
+    flex: 1;
+    padding: 15px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-weight: 700;
+    transition: background 0.25s ease, color 0.25s ease;
+    color: #6b7280;
+    border-bottom: 3px solid transparent;
+    border-radius: 0;
+
+    position: relative;
+    z-index: 10001;
+    pointer-events: auto;
+}
+
+.tab-btn:hover {
+    background: rgba(39, 174, 96, 0.08);
+}
+
+.tab-btn.active {
+    color: #111827;
+    border-bottom-color: #27ae60;
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+.rides-section {
+    padding-bottom: 6px;
+}
+
+.rides-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.column {
+    min-width: 0;
+}
+
+.column h3 {
+    margin-top: 0;
+    margin-bottom: 16px;
+    color: #2c3e50;
+    font-size: 20px;
+}
+
+.ride-list {
+    display: grid;
+    gap: 14px;
+    max-height: 420px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+/* Cartes courses: style proche de .ride-item côté client */
+.ride-card {
+    display: block;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    padding: 18px;
+    box-shadow: none;
+    transition: transform 0.15s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ride-card:hover {
+    background: #f6fbff;
+    transform: translateY(-1px);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.06);
+}
+
+.ride-card h4 {
+    margin: 0 0 10px;
+    font-size: 16px;
+    color: #1f2937;
+}
+
+.ride-card p {
+    margin: 6px 0;
+    color: #4b5563;
+    font-size: 14px;
+}
+
+.ride-card .ride-status {
+    display: inline-block;
+    margin-top: 12px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.ride-status.pending {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.ride-status.accepted {
+    background: #d4edda;
+    color: #155724;
+}
+
+.ride-status.completed {
+    background: #d1fae5;
+    color: #166534;
+}
+
+/* Boutons (chauffeur actions) - on conserve mais on harmonise */
+.btn {
+    padding: 10px 16px;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 700;
+    transition: background 0.3s ease, transform 0.2s ease;
+}
+
+.btn-refresh {
+    width: 110px;
+    background: #3498db;
+    color: white;
+    border-radius: 12px;
+}
+
+.btn-refresh:hover {
+    background: #2980b9;
+}
+
+/* Si chauffeur-ui.js rend des boutons pour actions, on les style simplement */
+.actions {
+    margin-top: 12px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.btn-accept {
+    background: #27ae60;
+    color: white;
+}
+.btn-accept:hover { background: #219150; }
+
+.btn-refuse {
+    background: #ef4444;
+    color: white;
+}
+.btn-refuse:hover { background: #dc2626; }
+
+.btn-cancel {
+    background: #f59e0b;
+    color: white;
+}
+.btn-cancel:hover { background: #d97706; }
+
+.btn-complete {
+    background: #1d4ed8;
+    color: white;
+}
+.btn-complete:hover { background: #1e40af; }
+
+.empty-state {
+    text-align: center;
+    color: #6b7280;
+    font-size: 14px;
+    padding: 18px 0;
+}
+
+/* Tableau de bord: léger */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.dashboard-card,
+.dashboard-card-full {
+    background: #ffffff;
+    padding: 16px;
+    border-radius: 14px;
+    border: 1px solid #ebedef;
+    box-shadow: none;
+}
+
+.dashboard-card-full {
+    grid-column: 1 / -1;
+}
+
+.dashboard-label {
+    display: block;
+    color: #6b7280;
+    margin-bottom: 10px;
+    font-size: 13px;
+}
+
+.dashboard-card strong {
+    display: block;
+    font-size: 24px;
+    color: #111827;
+}
+
+.history-list {
+    padding: 20px;
+    background: white;
+    border-radius: 20px;
+    margin: 20px 0 0;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+    border: 1px solid #ebedef;
+}
+
+.history-list h3 {
+    margin-top: 0;
+    margin-bottom: 16px;
+    color: #2c3e50;
+    font-size: 20px;
+}
+
+/* Markers */
+.driver-marker {
+    font-size: 30px;
+    text-align: center;
+    line-height: 40px;
+}
+
+.pickup-marker {
+    font-size: 24px;
+    text-align: center;
+    line-height: 30px;
+}
+
+.destination-marker {
+    font-size: 28px;
+    text-align: center;
+    line-height: 30px;
+}
+
+@media (max-width: 520px) {
+    .container {
+        border-radius: 0;
+        min-height: 100vh;
+        margin: 0;
+    }
+
+    .tabs {
+        margin-left: 0;
+        margin-right: 0;
+    }
+
+    .tabs {
+        flex-direction: column;
+        border-bottom: none;
+    }
+
+    .rides-container {
+        grid-template-columns: 1fr;
+    }
+
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+}
