@@ -11,8 +11,6 @@ $fullName = trim($data["full_name"] ?? "");
 $phone = trim($data["phone"] ?? "");
 $email = trim($data["email"] ?? "");
 $password = $data["password"] ?? "";
-$carBrand = trim($data["car_brand"] ?? "");
-$carColor = trim($data["car_color"] ?? "");
 
 if ($fullName === "" || $phone === "" || $email === "" || $password === "") {
     json_response(["status" => "error", "message" => "Nom, telephone, email et mot de passe requis"], 400);
@@ -41,10 +39,10 @@ if ($exists) {
 
 $passwordHash = password_hash($password, PASSWORD_DEFAULT);
 $stmt = $conn->prepare("
-    INSERT INTO client (full_name, phone, email, password_hash, car_brand, car_color, status)
-    VALUES (?, ?, ?, ?, ?, ?, 'active')
+    INSERT INTO client (full_name, phone, email, password_hash, status)
+    VALUES (?, ?, ?, ?, 'active')
 ");
-$stmt->bind_param("ssssss", $fullName, $phone, $email, $passwordHash, $carBrand, $carColor);
+$stmt->bind_param("ssss", $fullName, $phone, $email, $passwordHash);
 
 if (!$stmt->execute()) {
     $stmt->close();

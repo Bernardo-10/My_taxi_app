@@ -74,7 +74,7 @@ function getUserLocation() {
     }
 
     navigator.geolocation.getCurrentPosition(
-        (position) => {
+        async(position) => {
             const lat = position.coords.latitude;
             const lng = position.coords.longitude;
             const accuracy = position.coords.accuracy;
@@ -87,7 +87,13 @@ function getUserLocation() {
                 .bindPopup(`Vous êtes ici (±${Math.round(accuracy)} m)`)
                 .openPopup();
 
-            document.getElementById("pickup").value = "Ma position actuelle";
+            // Dans le champ pickup, afficher le nom correspondant aux coordonnées
+            try {
+                const address = await reverseGeocode(lat, lng);
+                document.getElementById("pickup").value = address || "Position inconnue";
+            } catch {
+                document.getElementById("pickup").value = "Position inconnue";
+            }
         },
         (error) => {
             console.error("Erreur géolocalisation :", error);
@@ -249,21 +255,37 @@ function showMap() {
 }
 
 function displayRides() {
-    const completedRides = userRides.filter(ride => ride.status === "completed");
+    const historyRides = userRides.filter(ride =>
+        ride.status === "completed" ||
+        ride.status === "cancelled" ||
+        ride.status === "cancelled_client"
+    );
 
     if (userRides.length === 0) {
         ridesContainer.innerHTML = "<p>Aucune course trouvée.</p>";
         return;
     }
 
-    ridesContainer.innerHTML = completedRides.map(ride => `
+    if (historyRides.length === 0) {
+        ridesContainer.innerHTML = "<p>Aucune course terminée/annulée trouvée.</p>";
+        return;
+    }
+
+    const statusLabel = (status) => {
+        if (status === "completed") return "Terminée";
+        if (status === "cancelled_client") return "Annulée (client)";
+        if (status === "cancelled") return "Annulée";
+        return status;
+    };
+
+    ridesContainer.innerHTML = historyRides.map(ride => `
         <div class="ride-item" onclick="selectRide(${ride.id})">
             <div class="details">
                 <strong>${ride.pickup} → ${ride.destination}</strong>
                 <div>Distance: ${ride.distance_km} km | Prix: ${ride.price_fcfa} FCFA</div>
                 <div>Passagers: ${ride.passengers} | Créée: ${new Date(ride.created_at).toLocaleString()}</div>
             </div>
-            <span class="status ${ride.status}">${ride.status === "completed" ? "Terminée" : "En attente"}</span>
+            <span class="status ${ride.status}">${statusLabel(ride.status)}</span>
         </div>
     `).join("");
 }

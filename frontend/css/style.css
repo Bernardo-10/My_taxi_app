@@ -7,7 +7,7 @@ body {
 
 .container {
     max-width: 450px;
-    margin: 20px auto;
+    margin: 0px auto;
     background: white;
     border-radius: 20px;
     overflow: hidden;
@@ -94,7 +94,6 @@ body {
     padding: 20px;
     background: white;
     border-radius: 20px;
-    margin: 20px 0;
     box-shadow: 0 6px 18px rgba(0,0,0,0.12);
     border: 1px solid #ebedef;
 }
@@ -104,6 +103,13 @@ body {
     margin-bottom: 16px;
     color: #2c3e50;
     font-size: 20px;
+}
+
+/* Scroll uniquement sur la liste "Mes Courses" */
+#ridesContainer {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    max-height: 915px; /* ajustable si tu veux plus/moins de hauteur sur téléphone */
 }
 
 .ride-item {
@@ -154,6 +160,17 @@ body {
 .ride-item .status.accepted {
     background: #d4edda;
     color: #155724;
+}
+
+.ride-item .status.completed {
+    background: #d4edda;
+    color: #155724;
+}
+
+.ride-item .status.cancelled,
+.ride-item .status.cancelled_client {
+    background: #ffe6e6;
+    color: #b91c1c;
 }
 
 .btn-back {
@@ -257,6 +274,13 @@ h3 {
     border: 1px solid #d6eaf8;
     border-radius: 8px;
     font-size: 14px;
+}
+
+/* Cancel button should always be clickable (avoid overlays / leaflet captures) */
+#cancelRideBtn {
+    position: relative;
+    z-index: 1001;
+    pointer-events: auto;
 }
 
 .suggestions {

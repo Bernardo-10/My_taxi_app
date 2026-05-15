@@ -32,12 +32,6 @@
       <label for="password">Mot de passe</label>
       <input id="password" type="password" minlength="6" required>
 
-      <label for="car_brand">Marque de voiture</label>
-      <input id="car_brand">
-
-      <label for="car_color">Couleur</label>
-      <input id="car_color">
-
       <button type="submit">Créer mon compte</button>
       <div id="message" class="message"></div>
       <div class="link">Déjà un compte ? <a href="login.html">Se connecter</a></div>
@@ -57,9 +51,7 @@
           full_name: document.getElementById("full_name").value.trim(),
           phone: document.getElementById("phone").value.trim(),
           email: document.getElementById("email").value.trim(),
-          password: document.getElementById("password").value,
-          car_brand: document.getElementById("car_brand").value.trim(),
-          car_color: document.getElementById("car_color").value.trim()
+          password: document.getElementById("password").value
         })
       });
 

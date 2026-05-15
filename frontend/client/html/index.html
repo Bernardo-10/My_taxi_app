@@ -45,23 +45,25 @@
     </div>
 
     <div class="passengers">
-      <label for="passengers">Passengers</label>
+      <label for="passengers">Passagers</label>
       <input type="number" id="passengers" value="1" min="1">
     </div>
 
-    <button id="findRideBtn" class="btn-find">Find Rides</button>
+    <button id="findRideBtn" class="btn-find">Trouver une course</button>
     <div class="ride-status" id="rideStatusMessage">Aucune course en cours.</div>
     <button id="refreshMapBtn" class="btn-refresh" type="button">Rafraîchir la carte</button>
 
+    <button id="cancelRideBtn" class="btn-refresh" type="button" style="background:#ef4444;margin-top:12px; display:none;">
+      Annuler ma course
+    </button>
+
     <div class="fare-box">
       <p><strong>Distance:</strong> <span id="routeDistance">-</span></p>
-      <p><strong>Time:</strong> <span id="routeDuration">-</span></p>
-      <p><strong>Price:</strong> <span id="routePrice">-</span></p>
+      <p><strong>Temps:</strong> <span id="routeDuration">-</span></p>
+      <p><strong>Prix:</strong> <span id="routePrice">-</span></p>
     </div>
   </div>
 </div>
 
 </body>
 </html>
-
-

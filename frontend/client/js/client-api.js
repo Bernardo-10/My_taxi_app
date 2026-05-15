@@ -181,6 +181,12 @@ async function sendToBackend(data) {
             currentRideId = result.ride_id;
             startRideTracking();
             showWaitingMessage();
+
+            const cancelBtn = document.getElementById("cancelRideBtn");
+            if (cancelBtn) {
+                cancelBtn.style.display = "block";
+                cancelBtn.disabled = false;
+            }
         }
 
         return result;
@@ -193,6 +199,12 @@ async function sendToBackend(data) {
 function startRideTracking() {
     if (rideStatusCheckInterval) {
         clearInterval(rideStatusCheckInterval);
+    }
+
+    const cancelBtn = document.getElementById("cancelRideBtn");
+    if (cancelBtn) {
+        cancelBtn.style.display = "block";
+        cancelBtn.disabled = false;
     }
 
     rideAccepted = false;
@@ -225,11 +237,16 @@ async function checkRideStatus(forceRefresh = false) {
                 updateRideStatusMessage(`✅ Course acceptée par ${result.driver_name || "le chauffeur"} (${result.driver_plate || ""}) 🚕`);
             }
             await updateDriverPosition();
+        } else if (result.ride_status === "cancelled_client") {
+            clearInterval(rideStatusCheckInterval);
+            clearInterval(driverStatusInterval);
+            rideAccepted = false;
+            updateRideStatusMessage("❌ Vous avez annulé la course.");
         } else if (result.ride_status === "cancelled") {
             clearInterval(rideStatusCheckInterval);
             clearInterval(driverStatusInterval);
             rideAccepted = false;
-            updateRideStatusMessage("❌ Course annulée.");
+            updateRideStatusMessage("❌ Course annulée par le chauffeur.");
         } else if (result.ride_status === "completed") {
             clearInterval(rideStatusCheckInterval);
             clearInterval(driverStatusInterval);
@@ -372,3 +389,56 @@ async function drawRouteOnMap(fromCoords, toCoords) {
         console.error("Erreur affichage itinéraire historique:", error);
     }
 }
+
+document.addEventListener("DOMContentLoaded", () => {
+    const cancelBtn = document.getElementById("cancelRideBtn");
+    if (!cancelBtn) return;
+
+    // Désactivé tant qu'il n'y a pas une course active (currentRideId)
+    cancelBtn.disabled = true;
+
+    cancelBtn.addEventListener("click", async () => {
+        if (!currentRideId) {
+            updateRideStatusMessage("Aucune course à annuler.");
+            return;
+        }
+
+        const ok = window.confirm("Annuler cette course ?");
+        if (!ok) return;
+
+        try {
+            const response = await fetch(`${CLIENT_API_BASE}/client/cancel_ride.php`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ride_id: currentRideId })
+            });
+
+            const result = await response.json();
+
+            if (result.status === "success") {
+                // On arrête la course côté UI immédiatement
+                updateRideStatusMessage("❌ Vous avez annulé la course.");
+                currentRideId = null;
+                rideAccepted = false;
+
+                const rideStatusIntervalId = rideStatusCheckInterval;
+                const driverStatusIntervalId = driverStatusInterval;
+
+                if (rideStatusIntervalId) clearInterval(rideStatusIntervalId);
+                if (driverStatusIntervalId) clearInterval(driverStatusIntervalId);
+
+                // Masquer le bouton
+                cancelBtn.style.display = "none";
+                cancelBtn.disabled = true;
+
+                // Rafraîchir l'historique
+                await loadUserRides();
+            } else {
+                updateRideStatusMessage(result.message || "Annulation impossible.");
+            }
+        } catch (error) {
+            console.error("Erreur annulation:", error);
+            updateRideStatusMessage("Erreur lors de l'annulation.");
+        }
+    });
+});

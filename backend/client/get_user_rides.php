@@ -8,7 +8,7 @@ $stmt = $conn->prepare("
     SELECT *
     FROM rides
     WHERE user_id = ?
-      AND status IN ('pending', 'accepted', 'completed', 'cancelled')
+      AND status IN ('pending', 'accepted', 'completed', 'cancelled', 'cancelled_client', 'started')
     ORDER BY created_at DESC
 ");
 $stmt->bind_param("i", $userId);
@@ -25,4 +25,3 @@ $conn->close();
 
 json_response($rides);
 ?>
-
