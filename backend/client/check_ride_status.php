@@ -10,9 +10,12 @@ if (!$rideId) {
 
 $conn = db_connect();
 $stmt = $conn->prepare("
-    SELECT status, driver_name, driver_plate, driver_id, driver_lat, driver_lng
-    FROM rides
-    WHERE id = ? AND user_id = ?
+    SELECT r.status, r.driver_name, r.driver_plate, r.driver_id, r.driver_lat, r.driver_lng,
+           r.pickup_lat, r.pickup_lng, r.destination_lat, r.destination_lng,
+           c.phone AS driver_phone, c.car_color AS driver_color
+    FROM rides r
+    LEFT JOIN chauffeur c ON c.id = r.driver_id
+    WHERE r.id = ? AND r.user_id = ?
 ");
 $stmt->bind_param("ii", $rideId, $userId);
 $stmt->execute();
@@ -30,7 +33,13 @@ if ($result->num_rows > 0) {
         "driver_plate" => $ride["driver_plate"],
         "driver_id" => $ride["driver_id"],
         "driver_lat" => $ride["driver_lat"],
-        "driver_lng" => $ride["driver_lng"]
+        "driver_lng" => $ride["driver_lng"],
+        "driver_phone" => $ride["driver_phone"],
+        "driver_color" => $ride["driver_color"],
+        "pickup_lat" => $ride["pickup_lat"],
+        "pickup_lng" => $ride["pickup_lng"],
+        "destination_lat" => $ride["destination_lat"],
+        "destination_lng" => $ride["destination_lng"]
     ]);
 }
 
@@ -38,4 +47,3 @@ $stmt->close();
 $conn->close();
 json_response(["status" => "error", "message" => "Course non trouvee"], 404);
 ?>
-

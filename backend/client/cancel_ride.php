@@ -18,7 +18,7 @@ $stmt = $conn->prepare("
     SET status = 'cancelled_client'
     WHERE id = ?
       AND user_id = ?
-      AND status IN ('pending', 'accepted', 'started')
+      AND status IN ('pending', 'accepted', 'arrived', 'started')
 ");
 $stmt->bind_param("ii", $rideId, $userId);
 

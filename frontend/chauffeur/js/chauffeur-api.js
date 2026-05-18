@@ -118,6 +118,11 @@ async function initUserHeader(loginPage) {
                 profileAvatarLg: initial,
                 profileName    : name,
                 profileRowName : name,
+                profileRowPhone: result.user.phone || "—",
+                profileRowEmail: result.user.email || "—",
+                profileRowPlate: result.user.plate || "—",
+                profileRowBrand: result.user.car_brand || "—",
+                profileRowColor: result.user.car_color || "—",
             };
             Object.entries(ids).forEach(([id, val]) => {
                 const el = document.getElementById(id);
@@ -218,7 +223,7 @@ async function updateDriverPosition() {
 
 async function updateDriverPositionInDB(lat, lng) {
     const activeRides = (allRides || []).filter(
-        r => r.status === "accepted" || r.status === "started"
+        r => r.status === "accepted" || r.status === "arrived" || r.status === "started"
     );
 
     for (const ride of activeRides) {
@@ -338,8 +343,32 @@ async function startRide(id, btn) {
         if (result.status === "success") {
             showToast("Bonne route ! Course démarrée. 🚗", "success");
             await checkNewRides();
+            if (typeof setRideFilter === "function") setRideFilter("started");
         } else {
             showToast(result.message || "Impossible de démarrer", "error");
+        }
+    } catch {
+        showToast("Erreur de connexion", "error");
+    } finally {
+        restore();
+    }
+}
+
+async function arriveRide(id, btn) {
+    const restore = setButtonLoading(btn, "Arrivee...");
+    try {
+        const res    = await fetch(`${DRIVER_API_BASE}/chauffeur/arrive_ride.php`, {
+            method : "POST",
+            headers: { "Content-Type": "application/json" },
+            body   : JSON.stringify({ id })
+        });
+        const result = await res.json();
+        if (result.status === "success") {
+            showToast("Arrivee confirmee. Le client est prevenu.", "success");
+            await checkNewRides();
+            if (typeof setRideFilter === "function") setRideFilter("arrived");
+        } else {
+            showToast(result.message || "Impossible de confirmer l'arrivee", "error");
         }
     } catch {
         showToast("Erreur de connexion", "error");

@@ -61,10 +61,11 @@ let positionTimeout     = null;
 
 // Tab / filter state
 let activeTab           = "map";
-let activeFilter        = "all";
+let activeFilter        = "accepted";
 
 // Report modal state
 let reportRideId        = null;
+let shownClientReports  = new Set();
 
 // Statut en ligne
 let isOnline            = false;
@@ -259,7 +260,7 @@ function initStatusToggle() {
         // Tentative de passage hors ligne → vérifier les courses actives
         if (isOnline) {
             const activeRides = allRides.filter(
-                r => r.status === "accepted" || r.status === "started"
+                r => r.status === "accepted" || r.status === "arrived" || r.status === "started"
             );
             if (activeRides.length > 0) {
                 const nb = activeRides.length;
@@ -389,12 +390,25 @@ function closeProfile() {
 function initFilterPills() {
     document.querySelectorAll(".filter-pill").forEach(pill => {
         pill.addEventListener("click", () => {
-            document.querySelectorAll(".filter-pill").forEach(p => p.classList.remove("active-pill"));
-            pill.classList.add("active-pill");
-            activeFilter = pill.dataset.filter;
-            renderActiveCourses();
+            setRideFilter(pill.dataset.filter);
         });
     });
+}
+
+function setRideFilter(filter) {
+    if (!["accepted", "arrived", "started"].includes(filter)) return;
+
+    activeFilter = filter;
+    document.querySelectorAll(".filter-pill").forEach(pill => {
+        pill.classList.toggle("active-pill", pill.dataset.filter === filter);
+    });
+
+    if (activeTab !== "courses") {
+        switchTab("courses");
+        return;
+    }
+
+    renderActiveCourses();
 }
 
 /* ═══════════════════════════════════════════════
@@ -482,6 +496,8 @@ function updateRideLists() {
     renderPendingRides();
     if (activeTab === "courses") renderActiveCourses();
     updateNavBadges();
+    updateFilterCounts();
+    showClientProblemAlerts();
 }
 
 function renderPendingRides() {
@@ -525,10 +541,11 @@ function renderActiveCourses() {
     const subEl     = document.getElementById("activeCoursesSub");
     if (!container) return;
 
-    const active = allRides.filter(r => r.status === "accepted" || r.status === "started");
+    const active = allRides.filter(r => r.status === "accepted" || r.status === "arrived" || r.status === "started");
 
     let filtered = active;
     if (activeFilter === "accepted") filtered = active.filter(r => r.status === "accepted");
+    if (activeFilter === "arrived")  filtered = active.filter(r => r.status === "arrived");
     if (activeFilter === "started")  filtered = active.filter(r => r.status === "started");
 
     if (subEl) {
@@ -543,7 +560,7 @@ function renderActiveCourses() {
         container.appendChild(emptyState(
             "🚕",
             "Aucune course ici",
-            activeFilter === "all" ? "Acceptez une course depuis la carte" : "Changez le filtre"
+            activeFilter === "accepted" ? "Acceptez une course depuis la carte" : "Changez le filtre"
         ));
         return;
     }
@@ -551,8 +568,18 @@ function renderActiveCourses() {
     filtered.forEach(ride => container.appendChild(createRideCard(ride)));
 }
 
+function updateFilterCounts() {
+    const accepted = allRides.filter(r => r.status === "accepted").length;
+    const arrived  = allRides.filter(r => r.status === "arrived").length;
+    const started  = allRides.filter(r => r.status === "started").length;
+
+    setText("acceptedFilterCount", accepted);
+    setText("arrivedFilterCount", arrived);
+    setText("startedFilterCount", started);
+}
+
 function updateNavBadges() {
-    const active         = allRides.filter(r => r.status === "accepted" || r.status === "started");
+    const active         = allRides.filter(r => r.status === "accepted" || r.status === "arrived" || r.status === "started");
     const navActiveBadge = document.getElementById("navActivesBadge");
     if (navActiveBadge) {
         navActiveBadge.textContent = active.length || "";
@@ -643,6 +670,9 @@ function createRideCard(ride) {
         actions.appendChild(makeActionBtn("btn-accept", "✓ Accepter", btn => acceptRide(ride.id, btn)));
         actions.appendChild(makeActionBtn("btn-refuse", "✕ Refuser",  btn => refuseRide(ride.id, btn)));
     } else if (status === "accepted") {
+        actions.appendChild(makeActionBtn("btn-start",  "Arrivé", btn => arriveRide(ride.id, btn)));
+        actions.appendChild(makeActionBtn("btn-cancel", "✕ Annuler",   btn => cancelRide(ride.id, btn)));
+    } else if (status === "arrived") {
         actions.appendChild(makeActionBtn("btn-start",  "🚀 Commencer", btn => startRide(ride.id, btn)));
         actions.appendChild(makeActionBtn("btn-cancel", "✕ Annuler",   btn => cancelRide(ride.id, btn)));
     } else if (status === "started") {
@@ -682,11 +712,13 @@ function emptyState(icon, title, desc) {
 
 function badgeClass(status) {
     return { pending: "badge-pending", accepted: "badge-accepted",
+             arrived: "badge-arrived",
              started: "badge-started", completed: "badge-completed" }[status] || "";
 }
 
 function statusLabel(status) {
     return { pending: "En attente", accepted: "Acceptée",
+             arrived: "Arrivée",
              started: "En cours",   completed: "Terminée" }[status] || status;
 }
 
@@ -702,7 +734,7 @@ async function updateRideMarkers() {
         if (!driverPos) return;
 
         const { lat: driverLat, lng: driverLng } = driverPos;
-        const activeRides = allRides.filter(r => r.status === "accepted" || r.status === "started");
+        const activeRides = allRides.filter(r => r.status === "accepted" || r.status === "arrived" || r.status === "started");
         const activeIds   = new Set(activeRides.map(r => r.id));
 
         routeCache.forEach((_, id) => { if (!activeIds.has(id)) routeCache.delete(id); });
@@ -720,7 +752,7 @@ async function updateRideMarkers() {
 
             if ([pickupLat, pickupLng, destLat, destLng].some(isNaN)) continue;
 
-            if (ride.status === "accepted") {
+            if (ride.status === "accepted" || ride.status === "arrived") {
                 const pm = L.marker([pickupLat, pickupLng], {
                     icon: L.divIcon({ html: "📍", className: "pickup-marker", iconSize: [30, 30], iconAnchor: [15, 30] })
                 }).addTo(map);
@@ -752,7 +784,7 @@ async function updateRideMarkers() {
             } else {
                 const layers = [];
 
-                if (ride.status === "accepted") {
+                if (ride.status === "accepted" || ride.status === "arrived") {
                     const r1 = await calculateRoute(driverLng, driverLat, pickupLng, pickupLat);
                     if (r1) {
                         const l = L.geoJSON(r1, { style: { color: "#f59e0b", weight: 5, opacity: .85 } }).addTo(map);
@@ -815,7 +847,7 @@ function createSafePopup(title, body) {
 ═══════════════════════════════════════════════ */
 function updateDashboard() {
     const completed = allRides.filter(r => r.status === "completed");
-    const active    = allRides.filter(r => r.status === "accepted" || r.status === "started");
+    const active    = allRides.filter(r => r.status === "accepted" || r.status === "arrived" || r.status === "started");
     const total     = completed.reduce((s, r) => s + parseInt(r.price_fcfa || 0), 0);
     const avg       = completed.length ? Math.round(total / completed.length) : 0;
     const dist      = completed.reduce((s, r) => s + parseFloat(r.distance_km || 0), 0);
@@ -841,6 +873,65 @@ function updateDashboard() {
 function setText(id, val) {
     const el = document.getElementById(id);
     if (el) el.textContent = val;
+}
+
+function showClientProblemAlerts() {
+    (allRides || []).forEach(ride => {
+        const problem = (ride.client_problem_description || "").trim();
+        if (!problem) return;
+
+        const key = `${ride.id}:${ride.client_problem_at || problem}`;
+        if (shownClientReports.has(key)) return;
+
+        shownClientReports.add(key);
+        openClientProblemAlert(ride, problem);
+    });
+}
+
+function openClientProblemAlert(ride, problem) {
+    const existing = document.getElementById("clientProblemAlert");
+    if (existing) existing.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "clientProblemAlert";
+    overlay.className = "client-problem-alert";
+    overlay.setAttribute("role", "alertdialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-label", "Alerte de securite client");
+
+    const box = document.createElement("div");
+    box.className = "client-problem-box";
+
+    const title = document.createElement("div");
+    title.className = "client-problem-title";
+    title.textContent = "ALERTE SECURITE";
+
+    const warning = document.createElement("div");
+    warning.className = "client-problem-warning";
+    warning.textContent = "Un client vient de signaler un probleme. Cette course est surveillee et vos actions peuvent etre verifiees.";
+
+    const rideRef = document.createElement("div");
+    rideRef.className = "client-problem-ride";
+    rideRef.textContent = `Course #${ride.id}`;
+
+    const msg = document.createElement("div");
+    msg.className = "client-problem-message";
+    msg.textContent = problem;
+
+    const action = document.createElement("button");
+    action.className = "client-problem-action";
+    action.type = "button";
+    action.textContent = "J'ai compris";
+    action.addEventListener("click", () => overlay.remove());
+
+    box.appendChild(title);
+    box.appendChild(warning);
+    box.appendChild(rideRef);
+    box.appendChild(msg);
+    box.appendChild(action);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    action.focus();
 }
 
 /* ═══════════════════════════════════════════════

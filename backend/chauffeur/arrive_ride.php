@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . "/../config/auth.php";
 
 $driverId = require_driver_id();
@@ -10,12 +10,15 @@ if (!$id) {
 }
 
 $conn = db_connect();
-$stmt = $conn->prepare("UPDATE rides SET status = 'cancelled' WHERE id = ? AND driver_id = ? AND status IN ('accepted', 'arrived')");
+$stmt = $conn->prepare("UPDATE rides SET status = 'arrived' WHERE id = ? AND driver_id = ? AND status = 'accepted'");
 $stmt->bind_param("ii", $id, $driverId);
 $stmt->execute();
 $updated = $stmt->affected_rows > 0;
 $stmt->close();
 $conn->close();
 
-json_response(["status" => $updated ? "success" : "error", "message" => $updated ? "Course annulée" : "Impossible d'annuler (course non acceptée, non arrivée ou déjà démarrée)"]);
+json_response([
+    "status" => $updated ? "success" : "error",
+    "message" => $updated ? "Arrivee chauffeur confirmee" : "Impossible de marquer la course comme arrivee"
+]);
 ?>

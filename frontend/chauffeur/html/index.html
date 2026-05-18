@@ -65,9 +65,9 @@
       <div class="panel-subtitle" id="activeCoursesSub">Aucune course active</div>
     </div>
     <div class="filter-pills" role="group" aria-label="Filtrer par statut">
-      <button class="filter-pill active-pill" data-filter="all">Toutes</button>
-      <button class="filter-pill" data-filter="accepted">Acceptées</button>
-      <button class="filter-pill" data-filter="started">En cours</button>
+      <button class="filter-pill active-pill" data-filter="accepted">Acceptées <span id="acceptedFilterCount">0</span></button>
+      <button class="filter-pill" data-filter="arrived">Arrivées <span id="arrivedFilterCount">0</span></button>
+      <button class="filter-pill" data-filter="started">En cours <span id="startedFilterCount">0</span></button>
     </div>
     <div class="panel-scroll" id="activeRidesList" role="list">
       <div class="empty-state">
@@ -139,6 +139,26 @@
         <div class="profile-row">
           <span class="profile-row-label"><i class="ti ti-user" aria-hidden="true"></i> Nom</span>
           <span class="profile-row-val" id="profileRowName">—</span>
+        </div>
+        <div class="profile-row">
+          <span class="profile-row-label"><i class="ti ti-phone" aria-hidden="true"></i> Téléphone</span>
+          <span class="profile-row-val" id="profileRowPhone">—</span>
+        </div>
+        <div class="profile-row">
+          <span class="profile-row-label"><i class="ti ti-mail" aria-hidden="true"></i> Email</span>
+          <span class="profile-row-val" id="profileRowEmail">—</span>
+        </div>
+        <div class="profile-row">
+          <span class="profile-row-label"><i class="ti ti-id" aria-hidden="true"></i> Plaque</span>
+          <span class="profile-row-val" id="profileRowPlate">—</span>
+        </div>
+        <div class="profile-row">
+          <span class="profile-row-label"><i class="ti ti-car" aria-hidden="true"></i> Marque</span>
+          <span class="profile-row-val" id="profileRowBrand">—</span>
+        </div>
+        <div class="profile-row">
+          <span class="profile-row-label"><i class="ti ti-palette" aria-hidden="true"></i> Couleur</span>
+          <span class="profile-row-val" id="profileRowColor">—</span>
         </div>
         <div class="profile-row">
           <span class="profile-row-label"><i class="ti ti-wifi" aria-hidden="true"></i> Statut</span>

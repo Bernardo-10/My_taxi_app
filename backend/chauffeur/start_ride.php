@@ -10,12 +10,29 @@ if (!$id) {
 }
 
 $conn = db_connect();
-$stmt = $conn->prepare("UPDATE rides SET status = 'started' WHERE id = ? AND driver_id = ? AND status = 'accepted'");
+$stmt = $conn->prepare("UPDATE rides SET status = 'started' WHERE id = ? AND driver_id = ? AND status = 'arrived'");
 $stmt->bind_param("ii", $id, $driverId);
 $stmt->execute();
 $updated = $stmt->affected_rows > 0;
 $stmt->close();
+
+if (!$updated) {
+    $checkStmt = $conn->prepare("SELECT status FROM rides WHERE id = ? AND driver_id = ?");
+    $checkStmt->bind_param("ii", $id, $driverId);
+    $checkStmt->execute();
+    $ride = $checkStmt->get_result()->fetch_assoc();
+    $checkStmt->close();
+    $conn->close();
+
+    $message = "Impossible de demarrer la course";
+    if (($ride["status"] ?? "") === "accepted") {
+        $message = "Marquez d'abord votre arrivee avant de demarrer";
+    }
+
+    json_response(["status" => "error", "message" => $message], 409);
+}
+
 $conn->close();
 
-json_response(["status" => $updated ? "success" : "error", "message" => $updated ? "Course commencee" : "Impossible de demarrer la course"]);
+json_response(["status" => "success", "message" => "Course commencee"]);
 ?>

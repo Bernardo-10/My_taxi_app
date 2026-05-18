@@ -575,7 +575,19 @@ body {
 
 .driver-sheet .ride-state-title,
 .driver-sheet .ride-state-sub {
-  text-align: left;
+    text-align: left;
+}
+
+.ride-arrived-notice {
+    margin: 10px 0 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #ecfdf5;
+    color: #065f46;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.35;
+    border: 1px solid #bbf7d0;
 }
 
 .driver-sheet .ride-state-title {
@@ -973,6 +985,35 @@ body {
 
 .profile-menu { display: flex; flex-direction: column; gap: 4px; }
 
+.profile-info-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0 12px;
+}
+
+.profile-info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--gray-100);
+  font-size: 13px;
+}
+
+.profile-info-row span {
+  color: var(--gray-400);
+}
+
+.profile-info-row strong {
+  color: var(--gray-800);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
 .profile-item {
   display: flex;
   align-items: center;
@@ -1082,6 +1123,22 @@ body {
   align-items: center;
   justify-content: center;
   filter: drop-shadow(0 3px 7px rgba(0,0,0,.38));
+}
+
+.driver-marker-icon {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.driver-marker-dot {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,.5));
 }
 
 /* ── SUGGESTIONS (inline, kept for pickup) ───────── */

@@ -5,6 +5,7 @@
    ============================================================ */
 
 // â”€â”€ Variables globales attendues par client-api.js â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+let currentDriverPosition = { lat: null, lng: null };  // pour le suivi ETA en temps réel
 let map;
 let routeLayer        = null;
 let pickupMarker      = null;
@@ -20,11 +21,11 @@ let rideAccepted      = false;
 let lastDriverLat     = null;
 let lastDriverLng     = null;
 let userRides         = [];
-
+let etaUpdateInterval = null;
 // â”€â”€ AppState â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const AppState = {
   activeTab: "map",   // 'map' | 'ride' | 'profile'
-  rideState: "idle",  // 'idle' | 'searching' | 'accepted' | 'completed'
+  rideState: "idle",  // 'idle' | 'searching' | 'accepted' | 'arrived' | 'started' | 'completed'
   passengers: 1,
   currentUser: null,
   currentDriver: null,
@@ -49,6 +50,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initFindRideBtn();
   initCancelBtns();
   initDriverActions();
+  initReportProblem();
   initRefreshBtn();
   initProfileTabs();
   watchUserPosition();
@@ -96,7 +98,7 @@ function syncAppMode() {
   if (!app) return;
 
   app.classList.toggle("ride-searching", AppState.rideState === "searching");
-  app.classList.toggle("ride-accepted", AppState.rideState === "accepted");
+  app.classList.toggle("ride-accepted", AppState.rideState === "accepted" || AppState.rideState === "arrived" || AppState.rideState === "started");
   app.classList.toggle("tab-map", AppState.activeTab === "map");
   app.classList.toggle("tab-ride", AppState.activeTab === "ride");
   app.classList.toggle("tab-profile", AppState.activeTab === "profile");
@@ -399,45 +401,11 @@ function updateRideStatusMessage(msg) {
 
 // Accepte soit un objet { name, plate, car, rating } (depuis client-api.js)
 // soit une chaîne texte (fallback legacy)
-function onRideAccepted(driverData) {
-  if (AppState.rideState === "accepted") return;
-  AppState.rideState = "accepted";
-  syncAppMode();
 
-  let info;
-  if (typeof driverData === "object" && driverData !== null) {
-    info = {
-      name:    driverData.name   || "Votre chauffeur",
-      vehicle: driverData.car    || driverData.vehicle || "Véhicule",
-      plate:   driverData.plate  || "-",
-      rating:  driverData.rating || "4.8",
-      phone:   driverData.phone  || ""
-    };
-  } else {
-    // Fallback: parse depuis texte
-    const statusMsg  = String(driverData || "");
-    const nameMatch  = statusMsg.match(/par\s+([^(]+?)\s*(\(|$)/);
-    const plateMatch = statusMsg.match(/\(([^)]+)\)/);
-    info = {
-      name:    nameMatch  ? nameMatch[1].trim()  : "Votre chauffeur",
-      plate:   plateMatch ? plateMatch[1].trim() : "-",
-      vehicle: "Véhicule",
-      rating:  "4.8"
-    };
-  }
 
-  setDriverInfo(info);
-  AppState.currentDriver = info;
-  setRideState("accepted");
-
-  // Auto-switch vers l'onglet Course pour afficher directement les détails chauffeur
-  switchTab("ride");
-  showToast(`🚕 ${info.name} arrive !`);
-}
-
-function setDriverInfo({ name, vehicle, plate, rating }) {
+function setDriverInfo({ name, color, plate, rating }) {
   document.getElementById("rideDriverName").textContent   = name    || "-";
-  document.getElementById("rideDriverCar").textContent    = vehicle || "-";
+  document.getElementById("rideDriverCar").textContent    = color ? `Couleur ${color}` : "-";
   document.getElementById("rideDriverPlate").textContent  = plate   || "-";
   document.getElementById("rideDriverRating").textContent = rating  || "-";
 
@@ -447,7 +415,7 @@ function setDriverInfo({ name, vehicle, plate, rating }) {
 
 function initDriverActions() {
   document.getElementById("driverCallBtn")?.addEventListener("click", () => {
-    const phone = AppState.currentDriver?.phone;
+    const phone = normalizePhone(AppState.currentDriver?.phone);
     if (phone) {
       window.location.href = `tel:${phone}`;
       return;
@@ -456,13 +424,22 @@ function initDriverActions() {
   });
 
   document.getElementById("driverMsgBtn")?.addEventListener("click", () => {
-    const phone = AppState.currentDriver?.phone;
+    const phone = normalizePhone(AppState.currentDriver?.phone);
     if (phone) {
       window.location.href = `sms:${phone}`;
       return;
     }
     showToast("Messagerie chauffeur indisponible.");
   });
+}
+
+function normalizePhone(phone) {
+  return String(phone || "").replace(/[^\d+]/g, "");
+}
+
+function setText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
 }
 
 function updateDriverETA(distanceMeters, durationSeconds) {
@@ -482,28 +459,18 @@ function updateDriverETA(distanceMeters, durationSeconds) {
   etaEl.textContent = `${minutes} min`;
 }
 
-function onRideCompleted() {
-  AppState.rideState = "idle";
-  currentRideId  = null;
-  rideAccepted   = false;
-  AppState.currentDriver = null;
-
-  $navBtns.ride.disabled = true;
-  syncAppMode();
-  showToast("Course terminée. Merci !");
-
-  setTimeout(() => {
-    switchTab("map");
-    resetMapPanel();
-  }, 1200);
-}
-
 function onRideCancelled() {
   AppState.rideState = "idle";
+  currentRideId = null;
+  rideAccepted = false;
   AppState.currentDriver = null;
+  if (rideStatusCheckInterval) clearInterval(rideStatusCheckInterval);
+  if (driverStatusInterval) clearInterval(driverStatusInterval);
+  if (etaUpdateInterval) clearInterval(etaUpdateInterval);
   $navBtns.ride.disabled = true;
   syncAppMode();
   switchTab("map");
+  resetMapPanel();
 }
 
 function resetMapPanel() {
@@ -635,6 +602,10 @@ async function initUserSession() {
       const infoName    = document.getElementById("infoName");
       if (profileName) profileName.textContent = name;
       if (infoName)    infoName.textContent    = name;
+      setText("profileInfoName", name);
+      setText("profileInfoPhone", result.user?.phone || "-");
+      setText("profileInfoEmail", result.user?.email || "-");
+      setText("profileInfoStatus", result.user?.status === "active" ? "Actif" : (result.user?.status || "-"));
     }
   } catch (e) {
     console.error("Session:", e);
@@ -753,5 +724,364 @@ function showToast(msg, duration = 2500) {
   }, duration);
 }
 
+
+// Appelée lorsque le statut "started" est détecté
+function onRideStarted(rideData) {
+    if (AppState.rideState === "started") return;
+    AppState.rideState = "started";
+    syncAppMode();
+    removeArrivedNotice();
+
+    // Modifier l'UI du panneau Course
+    const rideTitle = document.querySelector("#rideAcceptedMsg .ride-state-title");
+    if (rideTitle) rideTitle.textContent = "Course en cours 🚗";
+    const rideSub = document.getElementById("rideStatusMessage");
+    if (rideSub) rideSub.textContent = "Course en cours";
+
+    // Désactiver l'affichage du temps d'arrivée et distance du départ
+    const etaElements = document.querySelectorAll(".driver-eta");
+    etaElements.forEach(el => {
+        el.style.display = "none";
+    });
+
+    // Cacher les boutons d'appel / message / annuler
+    const callBtn = document.getElementById("driverCallBtn");
+    const msgBtn = document.getElementById("driverMsgBtn");
+    const cancelBtn = document.getElementById("cancelRideBtnDriver");
+    if (callBtn) callBtn.style.display = "none";
+    if (msgBtn) msgBtn.style.display = "none";
+    if (cancelBtn) cancelBtn.style.display = "none";
+
+    // Afficher le bouton "Signaler un problème"
+    const reportBtn = document.getElementById("reportProblemBtn");
+    if (reportBtn) reportBtn.style.display = "flex";
+
+    // Masquer le bloc ETA chauffeur pendant le trajet
+    const liveDiv = document.getElementById("driverLiveInfo");
+    if (liveDiv) liveDiv.style.display = "none";
+
+    // Démarrer le suivi temps réel du trajet
+    startRideProgressTracking();
+}
+
+function onRideArrived(rideData) {
+    if (AppState.rideState === "arrived") return;
+    AppState.rideState = "arrived";
+    syncAppMode();
+
+    const driver = rideData?.driver || {};
+    const info = {
+        name:    driver.name   || "Votre chauffeur",
+        color:   driver.color  || "",
+        plate:   driver.plate  || "-",
+        rating:  driver.rating || "4.8",
+        phone:   driver.phone  || ""
+    };
+
+    setDriverInfo(info);
+    AppState.currentDriver = info;
+    setRideState("accepted");
+
+    const rideTitle = document.querySelector("#rideAcceptedMsg .ride-state-title");
+    if (rideTitle) rideTitle.textContent = "Le chauffeur est arrivé";
+
+    updateRideStatusMessage("Votre chauffeur vous attend au point de départ.");
+    showArrivedNotice();
+
+    document.querySelectorAll(".driver-eta").forEach(el => {
+        el.style.display = "none";
+    });
+
+    const reportBtn = document.getElementById("reportProblemBtn");
+    if (reportBtn) reportBtn.style.display = "none";
+
+    const callBtn = document.getElementById("driverCallBtn");
+    const msgBtn = document.getElementById("driverMsgBtn");
+    const cancelBtn = document.getElementById("cancelRideBtnDriver");
+    if (callBtn) callBtn.style.display = "flex";
+    if (msgBtn) msgBtn.style.display = "flex";
+    if (cancelBtn) cancelBtn.style.display = "flex";
+
+    if (etaUpdateInterval) clearInterval(etaUpdateInterval);
+    const liveDiv = document.getElementById("driverLiveInfo");
+    if (liveDiv) liveDiv.style.display = "none";
+
+    switchTab("ride");
+}
+
+function showArrivedNotice() {
+    const panel = document.getElementById("rideAcceptedMsg");
+    if (!panel || document.getElementById("rideArrivedNotice")) return;
+
+    const notice = document.createElement("div");
+    notice.id = "rideArrivedNotice";
+    notice.className = "ride-arrived-notice";
+    notice.textContent = "Le chauffeur est sur place. Vous pouvez le rejoindre au point de départ.";
+
+    const status = document.getElementById("rideStatusMessage");
+    if (status && status.nextSibling) {
+        panel.insertBefore(notice, status.nextSibling);
+    } else {
+        panel.appendChild(notice);
+    }
+}
+
+function removeArrivedNotice() {
+    document.getElementById("rideArrivedNotice")?.remove();
+}
+
+// Démarre le suivi de la position du chauffeur pour afficher ETA / distance
+function startDriverLiveTracking(rideData) {
+    const liveDiv = document.getElementById("driverLiveInfo");
+    if (liveDiv) liveDiv.style.display = "block";
+
+    // Initialiser la position à partir des données reçues
+    if (rideData.driver && rideData.driver.lat && rideData.driver.lng) {
+        currentDriverPosition = {
+            lat: rideData.driver.lat,
+            lng: rideData.driver.lng
+        };
+    }
+
+    async function updateLiveETA() {
+        await updateLiveETAFromCurrentPosition();
+    }
+
+    if (etaUpdateInterval) clearInterval(etaUpdateInterval);
+    etaUpdateInterval = setInterval(updateLiveETA, 5000);
+    updateLiveETA(); // premier appel immédiat
+}
+
+
+/* ============================================================
+   SUIVI TEMPS RÉEL DE LA COURSE
+============================================================ */
+
+async function updateRideProgress() {
+    if (!pickupCoords || !destinationCoords) return;
+
+    try {
+        const url = `https://router.project-osrm.org/route/v1/driving/${pickupCoords.lng},${pickupCoords.lat};${destinationCoords.lng},${destinationCoords.lat}?overview=false`;
+
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (!data.routes || !data.routes.length) return;
+
+        const route = data.routes[0];
+
+        const distanceKm = (route.distance / 1000).toFixed(1);
+        const durationMin = Math.round(route.duration / 60);
+
+        const distanceEl = document.getElementById("routeDistance");
+        const durationEl = document.getElementById("routeDuration");
+
+        if (distanceEl) distanceEl.textContent = `${distanceKm} km`;
+        if (durationEl) durationEl.textContent = `${durationMin} min`;
+
+        const pillDistance = document.getElementById("pillDistance");
+        const pillDuration = document.getElementById("pillDuration");
+
+        if (pillDistance) pillDistance.textContent = `${distanceKm} km`;
+        if (pillDuration) pillDuration.textContent = `${durationMin} min`;
+
+    } catch (error) {
+        console.error("Erreur suivi progression course :", error);
+    }
+}
+
+function startRideProgressTracking() {
+    if (etaUpdateInterval) clearInterval(etaUpdateInterval);
+
+    etaUpdateInterval = setInterval(() => {
+        if (AppState.rideState === "started") {
+            updateRideProgress();
+        }
+    }, 5000);
+
+    updateRideProgress();
+}
+
+
+// Modifier la fonction onRideCompleted pour afficher un message en grand
+function onRideCompleted() {
+    AppState.rideState = "idle";
+    currentRideId = null;
+    rideAccepted = false;
+    AppState.currentDriver = null;
+
+    if (etaUpdateInterval) clearInterval(etaUpdateInterval);
+
+    // Afficher un modal ou une grande notification
+    showCompletionMessage();
+
+    $navBtns.ride.disabled = true;
+    syncAppMode();
+    setTimeout(() => {
+        switchTab("map");
+        resetMapPanel();
+    }, 3000);
+}
+
+function showCompletionMessage() {
+    // Créer un overlay temporaire
+    const overlay = document.createElement("div");
+    overlay.style.position = "fixed";
+    overlay.style.top = "0";
+    overlay.style.left = "0";
+    overlay.style.width = "100%";
+    overlay.style.height = "100%";
+    overlay.style.backgroundColor = "rgba(0,0,0,0.8)";
+    overlay.style.zIndex = "10000";
+    overlay.style.display = "flex";
+    overlay.style.alignItems = "center";
+    overlay.style.justifyContent = "center";
+    overlay.style.flexDirection = "column";
+    overlay.style.color = "white";
+    overlay.style.fontSize = "2rem";
+    overlay.style.fontWeight = "bold";
+    overlay.innerHTML = `
+        <div style="text-align: center; background: #1f2937; padding: 2rem; border-radius: 20px;">
+            <div style="font-size: 4rem;">✅</div>
+            <div>Course terminée !</div>
+            <div style="font-size: 1rem; margin-top: 1rem;">Merci d'avoir voyagé avec TaxiGo</div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+    setTimeout(() => overlay.remove(), 3000);
+}
+
+// Modifier onRideAccepted pour cacher le bouton report si jamais (par sécurité)
+function onRideAccepted(driverData) {
+    if (AppState.rideState === "accepted") return;
+    AppState.rideState = "accepted";
+    syncAppMode();
+    removeArrivedNotice();
+
+    let info;
+    if (typeof driverData === "object" && driverData !== null) {
+        info = {
+            name:    driverData.name   || "Votre chauffeur",
+            color:   driverData.color  || "",
+            plate:   driverData.plate  || "-",
+            rating:  driverData.rating || "4.8",
+            phone:   driverData.phone  || ""
+        };
+    } else {
+        const statusMsg  = String(driverData || "");
+        const nameMatch  = statusMsg.match(/par\s+([^(]+?)\s*(\(|$)/);
+        const plateMatch = statusMsg.match(/\(([^)]+)\)/);
+        info = {
+            name:    nameMatch  ? nameMatch[1].trim()  : "Votre chauffeur",
+            plate:   plateMatch ? plateMatch[1].trim() : "-",
+            color: "",
+            rating:  "4.8"
+        };
+    }
+
+    // ✅ AJOUT CRITIQUE : afficher les infos du chauffeur
+    setDriverInfo(info);
+
+    AppState.currentDriver = info;
+    setRideState("accepted");
+    const rideTitle = document.querySelector("#rideAcceptedMsg .ride-state-title");
+    if (rideTitle) rideTitle.textContent = "Chauffeur en route";
+    updateRideStatusMessage("Le chauffeur arrive");
+
+    document.querySelectorAll(".driver-eta").forEach(el => {
+        el.style.display = "";
+    });
+
+    // Cacher le bouton "Signaler un problème" si visible
+    const reportBtn = document.getElementById("reportProblemBtn");
+    if (reportBtn) reportBtn.style.display = "none";
+
+    // Réafficher les boutons d'appel / message / annuler
+    const callBtn = document.getElementById("driverCallBtn");
+    const msgBtn = document.getElementById("driverMsgBtn");
+    const cancelBtn = document.getElementById("cancelRideBtnDriver");
+    if (callBtn) callBtn.style.display = "flex";
+    if (msgBtn) msgBtn.style.display = "flex";
+    if (cancelBtn) cancelBtn.style.display = "flex";
+
+    // Arrêter l’ancien suivi ETA (si existant) et cacher l'info live
+    if (etaUpdateInterval) clearInterval(etaUpdateInterval);
+    const liveDiv = document.getElementById("driverLiveInfo");
+    if (liveDiv) liveDiv.style.display = "none";
+
+    switchTab("ride");
+    showToast(`🚕 ${info.name} arrive !`);
+}
+
+// Ajouter l'écouteur pour le bouton "Signaler un problème"
+function initReportProblem() {
+    const btn = document.getElementById("reportProblemBtn");
+    if (!btn) return;
+    btn.addEventListener("click", () => {
+        if (!currentRideId) return;
+        const problem = prompt("Décrivez le problème rencontré :");
+        if (!problem) return;
+        fetch(`${CLIENT_API_BASE}/client/report_problem.php`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ride_id: currentRideId, problem: problem })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === "success") {
+                showToast("Problème signalé, merci.");
+            } else {
+                showToast("Erreur lors de l'envoi.");
+            }
+        })
+        .catch(() => showToast("Erreur réseau."));
+    });
+}
+
+// Appelée à chaque polling (checkRideStatus) pour mettre à jour la position chauffeur
+function onRideStatusUpdate(rideData) {
+    if (!rideData || !rideData.driver) return;
+
+    // Mettre à jour la position globale
+    if (rideData.driver.lat && rideData.driver.lng) {
+        currentDriverPosition = {
+            lat: rideData.driver.lat,
+            lng: rideData.driver.lng
+        };
+    }
+
+    // Si la course est en "started" et que l'affichage ETA est actif, on rafraîchit
+    if (AppState.rideState === "started") {
+        const liveDiv = document.getElementById("driverLiveInfo");
+        if (liveDiv && liveDiv.style.display !== "none") {
+            updateLiveETAFromCurrentPosition();
+        }
+    }
+}
+
+// Recalcule l’ETA à partir de la dernière position connue du chauffeur
+async function updateLiveETAFromCurrentPosition() {
+    if (!currentDriverPosition.lat || !currentDriverPosition.lng) return;
+    if (!pickupCoords) return;
+
+    const url = `https://router.project-osrm.org/route/v1/driving/${currentDriverPosition.lng},${currentDriverPosition.lat};${pickupCoords.lng},${pickupCoords.lat}?overview=false`;
+    try {
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.routes && data.routes.length) {
+            const distanceM = data.routes[0].distance;
+            const durationSec = data.routes[0].duration;
+            const km = (distanceM / 1000).toFixed(1);
+            const minutes = Math.round(durationSec / 60);
+            document.getElementById("liveDistance").textContent = `${km} km`;
+            document.getElementById("liveETA").textContent = `${minutes} min`;
+        } else {
+            document.getElementById("liveDistance").textContent = "Calcul...";
+            document.getElementById("liveETA").textContent = "--";
+        }
+    } catch (e) {
+        console.warn("Erreur calcul ETA temps réel", e);
+    }
+}
 // â”€â”€ UTILS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }

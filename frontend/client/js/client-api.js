@@ -91,9 +91,7 @@ async function findRoute() {
         const durationMin = Math.round(route.duration / 60);
         const passengers = parseInt(document.getElementById("passengers")?.value, 10) || 1;
         const basePrice = distanceKm * 75;
-        const discountRate = 0.10 * (passengers - 1);
-        const finalDiscount = Math.min(discountRate, 0.7);
-        const totalPrice = basePrice * passengers * (1 - finalDiscount);
+        const totalPrice = basePrice * passengers;
         const priceFcfa = Math.round(totalPrice);
 
         if (routeLayer) map.removeLayer(routeLayer);
@@ -220,7 +218,7 @@ function startRideTracking() {
 }
 
 async function checkRideStatus(forceRefresh = false) {
-    if (!currentRideId) return;
+    if (!currentRideId) return null;
 
     try {
         const response = await fetch(`${CLIENT_API_BASE}/client/check_ride_status.php?ride_id=${currentRideId}`);
@@ -228,46 +226,65 @@ async function checkRideStatus(forceRefresh = false) {
 
         if (result.status !== "success") {
             updateRideStatusMessage("Impossible de vérifier le statut de la course.");
-            return;
+            return null;
         }
 
-        if (result.ride_status === "accepted") {
-            if (!rideAccepted || forceRefresh) {
-                rideAccepted = true;
-                // Pass structured driver data for rich UI update
-                onRideAccepted({
-                    name:   result.driver_name  || "Votre chauffeur",
-                    plate:  result.driver_plate || "-",
-                    car:    result.driver_car   || result.driver_vehicle || "Véhicule",
-                    rating: result.driver_rating || "4.8",
-                    phone:  result.driver_phone || result.driver_tel || ""
-                });
-                updateRideStatusMessage(`Course acceptée par ${result.driver_name || "le chauffeur"} (${result.driver_plate || ""})`);
+        const rideData = {
+            status: result.ride_status,
+            driver: {
+                name: result.driver_name || "Votre chauffeur",
+                plate: result.driver_plate || "-",
+                color: result.driver_color || "",
+                rating: result.driver_rating || "4.8",
+                phone: result.driver_phone || result.driver_tel || "",
+                lat: parseFloat(result.driver_lat),
+                lng: parseFloat(result.driver_lng)
+            },
+            pickup: {
+                lat: parseFloat(result.pickup_lat),
+                lng: parseFloat(result.pickup_lng)
+            },
+            destination: {
+                lat: parseFloat(result.destination_lat),
+                lng: parseFloat(result.destination_lng)
             }
-            await updateDriverPosition();
-        } else if (result.ride_status === "cancelled_client") {
-            clearInterval(rideStatusCheckInterval);
-            clearInterval(driverStatusInterval);
-            rideAccepted = false;
-            if (typeof onRideCancelled === "function") onRideCancelled();
-            else updateRideStatusMessage("Vous avez annulé la course.");
-        } else if (result.ride_status === "cancelled") {
-            clearInterval(rideStatusCheckInterval);
-            clearInterval(driverStatusInterval);
-            rideAccepted = false;
-            if (typeof onRideCancelled === "function") onRideCancelled();
-            else updateRideStatusMessage("Course annulée par le chauffeur.");
-        } else if (result.ride_status === "completed") {
+        };
+
+        // Appeler la fonction UI pour mettre à jour l'affichage selon le statut
+        if (typeof onRideStatusUpdate === "function") {
+            onRideStatusUpdate(rideData);
+        }
+
+        // Gestion des transitions
+        if (rideData.status === "accepted" && !rideAccepted) {
+            rideAccepted = true;
+            onRideAccepted(rideData.driver);
+        } 
+        else if (rideData.status === "arrived") {
+            rideAccepted = true;
+            if (typeof onRideArrived === "function") onRideArrived(rideData);
+        }
+        else if (rideData.status === "started") {
+            rideAccepted = true;
+            // On notifie l'UI que la course a commencé
+            if (typeof onRideStarted === "function") onRideStarted(rideData);
+        }
+        else if (rideData.status === "completed") {
             clearInterval(rideStatusCheckInterval);
             clearInterval(driverStatusInterval);
             if (typeof onRideCompleted === "function") onRideCompleted();
-            else updateRideStatusMessage("Course terminée. Merci !");
-        } else {
-            updateRideStatusMessage("Course toujours en attente d'acceptation...");
         }
+        else if (rideData.status === "cancelled_client" || rideData.status === "cancelled") {
+            clearInterval(rideStatusCheckInterval);
+            clearInterval(driverStatusInterval);
+            if (typeof onRideCancelled === "function") onRideCancelled();
+        }
+
+        return rideData;
     } catch (error) {
         console.error("Erreur vérification statut de course:", error);
         updateRideStatusMessage("Erreur lors de la vérification du statut.");
+        return null;
     }
 }
 
@@ -297,10 +314,10 @@ async function updateDriverPosition() {
             driverPositionMarker.setLatLng([driverLat, driverLng]);
         } else {
             const taxiIcon = L.divIcon({
-                html: '<div class="taxi-map-icon" aria-label="Chauffeur"><svg width="34" height="34" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="8" y="20" width="32" height="14" rx="5" fill="#facc15"/><path d="M14 20l4-8h12l4 8" fill="#fde68a"/><path d="M18 12h12l4 8H14l4-8z" stroke="#111827" stroke-width="2" stroke-linejoin="round"/><rect x="8" y="20" width="32" height="14" rx="5" stroke="#111827" stroke-width="2"/><circle cx="16" cy="35" r="4" fill="#111827"/><circle cx="32" cy="35" r="4" fill="#111827"/><circle cx="16" cy="35" r="1.5" fill="#f9fafb"/><circle cx="32" cy="35" r="1.5" fill="#f9fafb"/><path d="M21 16h6" stroke="#111827" stroke-width="2" stroke-linecap="round"/></svg></div>',
-                className: "",
+                html: '<div class="driver-marker-dot" aria-label="Chauffeur">🚕</div>',
+                className: "driver-marker-icon",
                 iconSize: [40, 40],
-                iconAnchor: [20, 38],
+                iconAnchor: [20, 40],
                 popupAnchor: [0, -40]
             });
             driverPositionMarker = L.marker([driverLat, driverLng], { icon: taxiIcon })

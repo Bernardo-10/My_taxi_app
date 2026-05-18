@@ -24,7 +24,7 @@ $conn = db_connect();
 $stmt = $conn->prepare("
     UPDATE rides
     SET driver_lat = ?, driver_lng = ?, update_position_driver = NOW()
-    WHERE id = ? AND driver_id = ? AND status IN ('accepted', 'started')
+    WHERE id = ? AND driver_id = ? AND status IN ('accepted', 'arrived', 'started')
 ");
 
 if (!$stmt) {
@@ -50,4 +50,3 @@ if ($updated) {
 
 json_response(["status" => "error", "message" => "Course non trouvee ou non attribuee a ce chauffeur"], 404);
 ?>
-
