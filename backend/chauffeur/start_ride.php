@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . "/../config/auth.php";
 
 $driverId = require_driver_id();
@@ -10,13 +10,12 @@ if (!$id) {
 }
 
 $conn = db_connect();
-$stmt = $conn->prepare("UPDATE rides SET status = 'completed' WHERE id = ? AND driver_id = ? AND status = 'started'");
+$stmt = $conn->prepare("UPDATE rides SET status = 'started' WHERE id = ? AND driver_id = ? AND status = 'accepted'");
 $stmt->bind_param("ii", $id, $driverId);
 $stmt->execute();
 $updated = $stmt->affected_rows > 0;
 $stmt->close();
 $conn->close();
 
-json_response(["status" => $updated ? "success" : "error", "message" => $updated ? "Course terminée" : "Impossible de terminer (course non démarrée)"]);
+json_response(["status" => $updated ? "success" : "error", "message" => $updated ? "Course commencee" : "Impossible de demarrer la course"]);
 ?>
-

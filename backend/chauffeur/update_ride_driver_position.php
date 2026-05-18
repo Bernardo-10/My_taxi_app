@@ -24,7 +24,7 @@ $conn = db_connect();
 $stmt = $conn->prepare("
     UPDATE rides
     SET driver_lat = ?, driver_lng = ?, update_position_driver = NOW()
-    WHERE id = ? AND driver_id = ? AND status = 'accepted'
+    WHERE id = ? AND driver_id = ? AND status IN ('accepted', 'started')
 ");
 
 if (!$stmt) {

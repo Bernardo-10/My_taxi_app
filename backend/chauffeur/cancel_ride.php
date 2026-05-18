@@ -17,6 +17,6 @@ $updated = $stmt->affected_rows > 0;
 $stmt->close();
 $conn->close();
 
-json_response(["status" => $updated ? "ok" : "error"]);
+json_response(["status" => $updated ? "success" : "error", "message" => $updated ? "Course annulée" : "Impossible d'annuler (course non acceptée ou déjà démarrée)"]);
 ?>
 

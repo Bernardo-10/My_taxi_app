@@ -8,7 +8,7 @@ $stmt = $conn->prepare("
     SELECT *
     FROM rides
     WHERE status = 'pending'
-       OR (driver_id = ? AND status IN ('accepted', 'completed'))
+       OR (driver_id = ? AND status IN ('accepted', 'started', 'completed'))
     ORDER BY created_at DESC
 ");
 $stmt->bind_param("i", $driverId);

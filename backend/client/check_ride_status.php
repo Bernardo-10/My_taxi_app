@@ -10,7 +10,7 @@ if (!$rideId) {
 
 $conn = db_connect();
 $stmt = $conn->prepare("
-    SELECT status, driver_name, driver_plate
+    SELECT status, driver_name, driver_plate, driver_id, driver_lat, driver_lng
     FROM rides
     WHERE id = ? AND user_id = ?
 ");
@@ -27,7 +27,10 @@ if ($result->num_rows > 0) {
         "status" => "success",
         "ride_status" => $ride["status"],
         "driver_name" => $ride["driver_name"],
-        "driver_plate" => $ride["driver_plate"]
+        "driver_plate" => $ride["driver_plate"],
+        "driver_id" => $ride["driver_id"],
+        "driver_lat" => $ride["driver_lat"],
+        "driver_lng" => $ride["driver_lng"]
     ]);
 }
 
