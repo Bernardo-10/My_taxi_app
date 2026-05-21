@@ -172,7 +172,16 @@ function watchUserPosition() {
 function updateMarker(type, lat, lng) {
   if (type === "pickup") {
     if (pickupMarker) map.removeLayer(pickupMarker);
-    pickupMarker = L.marker([lat, lng], { draggable: true }).addTo(map).bindPopup("Déplacez-moi");
+
+    const pickupIcon = L.divIcon({
+      html: '<div style="font-size:28px;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.35));user-select:none;">📍</div>',
+      className: "",
+      iconSize:   [28, 28],
+      iconAnchor: [14, 28],
+      popupAnchor:[0, -30]
+    });
+
+    pickupMarker = L.marker([lat, lng], { draggable: true, icon: pickupIcon }).addTo(map).bindPopup("Déplacez-moi");
     pickupMarker.on("dragend", async () => {
       const { lat, lng } = pickupMarker.getLatLng();
       pickupCoords = { lat, lng };
