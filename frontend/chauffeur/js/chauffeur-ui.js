@@ -250,13 +250,39 @@ function switchTab(tab) {
    STATUS TOGGLE
    BUG #1 FIX : pas de checkNewRides() manuel ici.
                 schedulePoll() reprend au prochain cycle si isOnline=true.
-   BUG #6 FIX : onStatusChange(false) purge allRides et les marqueurs.
+   BUG #6 FIX : onGoOffline() purge allRides et les marqueurs.
+   FIX is_online : le toggle envoie la demande au serveur via setDriverStatus().
 ═══════════════════════════════════════════════ */
+
+/**
+ * Initialise l'état du toggle depuis la valeur is_online retournée
+ * par current_user.php.
+ */
+function initToggleFromServer(serverIsOnline) {
+    isOnline = serverIsOnline;
+    const btn = document.getElementById("statusToggle");
+    if (!btn) return;
+
+    btn.classList.toggle("online", isOnline);
+    btn.setAttribute("aria-pressed", isOnline);
+
+    const label = document.getElementById("statusLabel");
+    const profileStatus = document.getElementById("profileRowStatus");
+    const labelText = isOnline ? "En ligne" : "Hors ligne";
+    if (label) label.textContent = labelText;
+    if (profileStatus) profileStatus.textContent = labelText;
+
+    // Si le chauffeur est hors ligne, on nettoie tout de suite
+    if (!isOnline) {
+        onGoOffline();
+    }
+}
+
 function initStatusToggle() {
     const btn = document.getElementById("statusToggle");
     if (!btn) return;
 
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
         // Tentative de passage hors ligne → vérifier les courses actives
         if (isOnline) {
             const activeRides = allRides.filter(
@@ -269,30 +295,43 @@ function initStatusToggle() {
                     "warning",
                     4000
                 );
-                // Vibration courte si supportée
                 if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
-                // Shake visuel du bouton
                 btn.classList.add("shake");
                 setTimeout(() => btn.classList.remove("shake"), 500);
-                return; // Annuler le toggle
+                return;
             }
         }
 
-        isOnline = !isOnline;
-        btn.classList.toggle("online", isOnline);
-        btn.setAttribute("aria-pressed", isOnline);
+        // Mise à jour UI immédiate (optimiste)
+        const newOnline = !isOnline;
+        isOnline = newOnline;
+        btn.classList.toggle("online", newOnline);
+        btn.setAttribute("aria-pressed", newOnline);
 
         const label = document.getElementById("statusLabel");
         const profileStatus = document.getElementById("profileRowStatus");
-        const labelText = isOnline ? "En ligne" : "Hors ligne";
+        const labelText = newOnline ? "En ligne" : "Hors ligne";
         if (label) label.textContent = labelText;
         if (profileStatus) profileStatus.textContent = labelText;
 
-        if (isOnline) {
-            showToast("Vous êtes maintenant en ligne", "success");
-        } else {
-            showToast("Vous êtes hors ligne", "info");
-            onGoOffline();
+        try {
+            // Envoyer au serveur
+            await setDriverStatus(newOnline);
+
+            if (newOnline) {
+                showToast("Vous êtes maintenant en ligne", "success");
+            } else {
+                showToast("Vous êtes hors ligne", "info");
+                onGoOffline();
+            }
+        } catch (err) {
+            // Échec → rollback de l'UI
+            isOnline = !newOnline;
+            btn.classList.toggle("online", isOnline);
+            btn.setAttribute("aria-pressed", isOnline);
+            if (label) label.textContent = isOnline ? "En ligne" : "Hors ligne";
+            if (profileStatus) profileStatus.textContent = isOnline ? "En ligne" : "Hors ligne";
+            showToast("Erreur de connexion au serveur", "error");
         }
     });
 }

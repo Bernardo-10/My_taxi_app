@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS chauffeur (
   session_token VARCHAR(128) DEFAULT NULL,
   session_updated_at TIMESTAMP NULL DEFAULT NULL,
   status ENUM('active','disabled') NOT NULL DEFAULT 'active',
+  is_online TINYINT(1) NOT NULL DEFAULT 0,
 
   total_accepted_amount_fcfa BIGINT NOT NULL DEFAULT 0,
   total_accepted_rides INT NOT NULL DEFAULT 0,
@@ -67,7 +68,7 @@ CREATE TABLE IF NOT EXISTS rides (
   price_fcfa INT,
   passengers INT DEFAULT 1,
 
-  status ENUM('pending', 'accepted', 'cancelled', 'completed') DEFAULT 'pending',
+  status ENUM('pending','accepted','arrived','started','completed','cancelled','cancelled_client','reported') DEFAULT 'pending',
 
   driver_id INT DEFAULT NULL,
   driver_name VARCHAR(100) DEFAULT NULL,
@@ -101,14 +102,16 @@ ALTER TABLE chauffeur
   ADD COLUMN IF NOT EXISTS car_color VARCHAR(50) DEFAULT NULL,
   ADD COLUMN IF NOT EXISTS session_token VARCHAR(128) DEFAULT NULL,
   ADD COLUMN IF NOT EXISTS session_updated_at TIMESTAMP NULL DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS status ENUM('active','disabled') NOT NULL DEFAULT 'active';
+  ADD COLUMN IF NOT EXISTS status ENUM('active','disabled') NOT NULL DEFAULT 'active',
+  ADD COLUMN IF NOT EXISTS is_online TINYINT(1) NOT NULL DEFAULT 0 AFTER status;
 
 ALTER TABLE rides
   MODIFY COLUMN user_id INT NOT NULL,
   MODIFY COLUMN driver_id INT DEFAULT NULL,
   MODIFY COLUMN driver_name VARCHAR(100) DEFAULT NULL,
   MODIFY COLUMN driver_plate VARCHAR(50) DEFAULT NULL,
-  MODIFY COLUMN update_position_driver TIMESTAMP NULL DEFAULT NULL;
+  MODIFY COLUMN update_position_driver TIMESTAMP NULL DEFAULT NULL,
+  MODIFY COLUMN status ENUM('pending','accepted','arrived','started','completed','cancelled','cancelled_client','reported') NOT NULL DEFAULT 'pending';
 
 -- Comptes de test. Mot de passe: password
 INSERT INTO client (id, full_name, phone, email, password_hash, status)

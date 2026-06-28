@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TaxiGo Admin — Connexion</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: 'DM Sans', system-ui, sans-serif;
+      background: #f3f4f6;
+      color: #111827;
+    }
+    .login-wrap {
+      width: min(400px, calc(100% - 32px));
+    }
+    .login-brand {
+      text-align: center;
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 24px;
+      letter-spacing: -.3px;
+    }
+    .login-brand span { color: #f97316; }
+    .login-brand small {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .8px;
+      text-transform: uppercase;
+      color: #6b7280;
+      margin-top: 2px;
+    }
+    .login-card {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 28px 28px 24px;
+      box-shadow: 0 4px 24px rgba(0,0,0,.08);
+    }
+    .login-card h2 {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 20px;
+      color: #111827;
+    }
+    label {
+      display: block;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 5px;
+      margin-top: 14px;
+    }
+    label:first-of-type { margin-top: 0; }
+    input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 7px;
+      font-family: inherit;
+      font-size: 14px;
+      color: #111827;
+      background: #f9fafb;
+      outline: none;
+      transition: border-color .18s;
+    }
+    input:focus { border-color: #f97316; background: #fff; }
+    .login-btn {
+      width: 100%;
+      margin-top: 20px;
+      padding: 11px;
+      background: #f97316;
+      color: #fff;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 700;
+      border: none;
+      border-radius: 7px;
+      cursor: pointer;
+      transition: background .18s;
+    }
+    .login-btn:hover { background: #ea580c; }
+    .login-btn:disabled { opacity: .6; cursor: not-allowed; }
+    .error-msg {
+      min-height: 18px;
+      margin-top: 12px;
+      font-size: 13px;
+      color: #dc2626;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-brand">
+      Taxi<span>Go</span>
+      <small>Administration</small>
+    </div>
+    <div class="login-card">
+      <h2>Connexion administrateur</h2>
+      <label for="login">Email ou identifiant</label>
+      <input id="login" type="text" autocomplete="username" placeholder="admin@taxigo.cm">
+
+      <label for="password">Mot de passe</label>
+      <input id="password" type="password" autocomplete="current-password">
+
+      <button class="login-btn" id="loginBtn">Se connecter</button>
+      <div class="error-msg" id="errorMsg"></div>
+    </div>
+  </div>
+
+  <script>
+    const API = "../../../backend/admin";
+
+    document.getElementById("loginBtn").addEventListener("click", async () => {
+      const btn      = document.getElementById("loginBtn");
+      const errorMsg = document.getElementById("errorMsg");
+      errorMsg.textContent = "";
+      btn.disabled = true;
+      btn.textContent = "Connexion…";
+
+      try {
+        const res = await fetch(`${API}/login_admin.php`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            login:    document.getElementById("login").value.trim(),
+            password: document.getElementById("password").value
+          })
+        });
+        const data = await res.json();
+        if (data.status === "success") {
+          window.location.href = "index.html";
+        } else {
+          errorMsg.textContent = data.message || "Identifiants invalides";
+        }
+      } catch (e) {
+        errorMsg.textContent = "Erreur réseau — vérifiez votre connexion";
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Se connecter";
+      }
+    });
+
+    // Entrée clavier
+    ["login","password"].forEach(id => {
+      document.getElementById(id).addEventListener("keydown", e => {
+        if (e.key === "Enter") document.getElementById("loginBtn").click();
+      });
+    });
+  </script>
+</body>
+</html>

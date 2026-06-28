@@ -4,7 +4,7 @@
 ═══════════════════════════════════════════════════ */
 
 /* ── RESET & TOKENS ──────────────────────────────── */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; border-radius: 20px; }
 
 :root {
   --green:        #1db954;
@@ -46,7 +46,7 @@ body {
   display: flex;
   flex-direction: column;
   max-width: 480px;
-  margin: 0 auto;
+  margin: 10px auto;
   background: var(--gray-50);
   box-shadow: 0 0 80px rgba(0,0,0,.18);
 }
@@ -56,6 +56,7 @@ body {
   position: absolute;
   inset: 0 0 var(--nav-h) 0;
   z-index: 0;
+  border-radius : 20px
 }
 
 #map {
@@ -202,6 +203,8 @@ body {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 16px;
+  font-size: 20px;
+  font-weight: 600;
 }
 
 .user-chip {
@@ -1120,7 +1123,7 @@ body {
 
 /* ── LEAFLET OVERRIDES ───────────────────────────── */
 .leaflet-div-icon { background: transparent !important; border: none !important; }
-.leaflet-control-zoom { border-radius: 12px !important; overflow: hidden; }
+.leaflet-control-zoom { border-radius: 12px !important; overflow: hidden; top : 30px !important; }
 
 .taxi-map-icon {
   width: 40px;

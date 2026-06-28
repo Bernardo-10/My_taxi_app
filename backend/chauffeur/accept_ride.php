@@ -23,7 +23,7 @@ if ($driverLat === null || $driverLng === null) {
 
 $conn = db_connect();
 
-$driverStmt = $conn->prepare("SELECT name, plate FROM chauffeur WHERE id = ? AND status = 'active'");
+$driverStmt = $conn->prepare("SELECT name, plate FROM chauffeur WHERE id = ? AND status = 'active' AND is_online = 1");
 $driverStmt->bind_param("i", $driverId);
 $driverStmt->execute();
 $driver = $driverStmt->get_result()->fetch_assoc();
@@ -87,4 +87,3 @@ if ($accepted) {
 
 json_response(["status" => "error", "message" => "Course non en pending ou deja acceptee"], 409);
 ?>
-

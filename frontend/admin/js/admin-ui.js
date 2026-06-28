@@ -1,0 +1,632 @@
+/* ============================================================
+   TaxiGo Admin — admin-ui.js
+   Gestion de l'interface : navigation, rendu des sections,
+   carte temps réel, tableaux, filtres.
+   ============================================================ */
+
+"use strict";
+
+/* ── État global ──────────────────────────────────────────── */
+const AdminState = {
+    currentSection: "dashboard",
+    adminUser: null,
+    driversMap: null,          // instance Leaflet
+    driverMarkers: {},         // { id: marker }
+    refreshInterval: null,     // pour la carte live
+    ridesInterval: null,       // intervalle section courses
+    ridesFilter: { status: "", q: "", date_from: "", date_to: "" },
+    chauffeursFilter: { q: "", status: "" },
+    clientsFilter: { q: "", status: "" },
+    dashboardInterval: null
+};
+
+/* ── DOM ready ────────────────────────────────────────────── */
+document.addEventListener("DOMContentLoaded", async () => {
+    const admin = await checkAdminAuth();
+    if (!admin) return;
+    AdminState.adminUser = admin;
+
+    renderAdminUser(admin);
+    initNavigation();
+    initSidebarMobile();
+    initLogout();
+    showSection("dashboard");
+});
+
+/* ── Auth header ─────────────────────────────────────────── */
+function renderAdminUser(admin) {
+    const name    = admin.username || "Admin";
+    const initial = name.charAt(0).toUpperCase();
+    const elName  = document.getElementById("adminName");
+    const elInit  = document.getElementById("adminInitial");
+    if (elName)  elName.textContent  = name;
+    if (elInit)  elInit.textContent  = initial;
+}
+
+/* ── Navigation sidebar ──────────────────────────────────── */
+function initNavigation() {
+    document.querySelectorAll(".nav-item[data-section]").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const section = btn.dataset.section;
+            showSection(section);
+            // ferme sidebar sur mobile
+            document.querySelector(".sidebar").classList.remove("open");
+            document.querySelector(".sidebar-overlay").classList.remove("open");
+        });
+    });
+}
+
+function showSection(name) {
+    AdminState.currentSection = name;
+
+    // Mise à jour nav active
+    document.querySelectorAll(".nav-item[data-section]").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.section === name);
+    });
+
+    // Affichage des pages
+    document.querySelectorAll(".page-section").forEach(el => {
+        el.classList.toggle("active", el.id === `section-${name}`);
+    });
+
+    // Titre topbar
+    const titles = {
+        dashboard:  "Tableau de bord",
+        map:        "Carte en temps réel",
+        rides:      "Courses",
+        chauffeurs: "Chauffeurs",
+        clients:    "Clients"
+    };
+
+    // Mettre à jour le filtre dans la section courses si des statuts y sont affichés
+    updateRidesFilterOptions();
+    const el = document.getElementById("topbarTitle");
+    if (el) el.textContent = titles[name] || name;
+
+    // Arrêter le refresh de la carte si on quitte
+    if (name !== "map" && AdminState.refreshInterval) {
+        clearInterval(AdminState.refreshInterval);
+        AdminState.refreshInterval = null;
+    }
+
+    // Arrêter le refresh du dashboard si on quitte
+    if (name !== "dashboard" && AdminState.dashboardInterval) {
+        clearInterval(AdminState.dashboardInterval);
+        AdminState.dashboardInterval = null;
+    }
+
+    // Arrêter le refresh des courses si on quitte
+    if (name !== "rides" && AdminState.ridesInterval) {
+        clearInterval(AdminState.ridesInterval);
+        AdminState.ridesInterval = null;
+    }
+
+    // Charger la section
+    switch (name) {
+        case "dashboard":  loadDashboard();  break;
+        case "map":        loadMapSection(); break;
+        case "rides":      loadRides();      break;
+        case "chauffeurs": loadChauffeurs(); break;
+        case "clients":    loadClients();    break;
+    }
+}
+
+/* ── Mobile sidebar ───────────────────────────────────────── */
+function initSidebarMobile() {
+    const toggle  = document.getElementById("menuToggle");
+    const overlay = document.querySelector(".sidebar-overlay");
+    const sidebar = document.querySelector(".sidebar");
+
+    toggle?.addEventListener("click", () => {
+        sidebar.classList.toggle("open");
+        overlay.classList.toggle("open");
+    });
+    overlay?.addEventListener("click", () => {
+        sidebar.classList.remove("open");
+        overlay.classList.remove("open");
+    });
+}
+
+function initLogout() {
+    document.getElementById("logoutBtn")?.addEventListener("click", () => {
+        if (confirm("Déconnecter l'administrateur ?")) logoutAdmin();
+    });
+}
+
+/* ══════════════════════════════════════════════════════════
+   SECTION : DASHBOARD
+══════════════════════════════════════════════════════════ */
+async function loadDashboard() {
+    const el = document.getElementById("section-dashboard");
+    el.innerHTML = `<div style="display:flex;justify-content:center;padding:60px"><div class="spinner"></div></div>`;
+
+    let stats;
+    try { stats = await fetchStats(); }
+    catch (e) {
+        el.innerHTML = `<p style="color:var(--c-red);padding:20px">Erreur de chargement des statistiques.</p>`;
+        return;
+    }
+
+    el.innerHTML = `
+    <div class="stats-grid">
+      ${statCard("Clients", stats.clients_total, "blue", `${stats.clients_actifs} actifs`)}
+      ${statCard("Chauffeurs", stats.chauffeurs_total, "amber", `${stats.chauffeurs_actifs} en ligne`)}
+      ${statCard("Courses totales", stats.courses_total, "", `${stats.taux_completion}% complétées`)}
+      ${statCard("En attente", stats.courses_pending, "red", "courses pending")}
+      ${statCard("En cours", stats.courses_en_cours, "blue", "accepted / started")}
+      ${statCard("Terminées", stats.courses_completees, "green", "courses complétées")}
+      ${statCard("Annulées", stats.courses_annulees, "red",
+          `${stats.courses_annulees_clients || 0} par le client · ${(stats.courses_annulees - (stats.courses_annulees_clients || 0))} par le chauffeur`)}
+      ${statCard("Chiffre d'affaires", formatFcfa(stats.chiffre_affaires_fcfa), "green", "courses terminées")}
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Activité — 7 derniers jours</span>
+      </div>
+      <div class="card-body">
+        ${renderSparkChart(stats.courbes_7j)}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Dernières courses</span>
+        <button class="btn btn-primary" onclick="showSection('rides')" style="font-size:12px;padding:6px 12px">Voir tout</button>
+      </div>
+      <div id="dash-recent-rides"><div class="empty-state"><div class="spinner"></div></div></div>
+    </div>
+    `;
+
+    // Charger les 10 dernières courses
+    try {
+        const rides = await fetchRides({ limit: 10 });
+        document.getElementById("dash-recent-rides").innerHTML = renderRidesTable(rides, true);
+    } catch(e) {}
+
+    // Auto-refresh toutes les 20 secondes
+    if (AdminState.dashboardInterval) clearInterval(AdminState.dashboardInterval);
+    AdminState.dashboardInterval = setInterval(refreshDashboardStats, 20000);
+}
+
+/**
+ * Rafraîchit uniquement les stats du dashboard sans spinner ni réinitialisation.
+ */
+async function refreshDashboardStats() {
+    const el = document.getElementById("section-dashboard");
+    if (!el || !document.getElementById("section-dashboard")?.classList.contains("active")) return;
+
+    try {
+        const stats = await fetchStats();
+        if (stats) {
+            // Mettre à jour chaque carte stat individuellement
+            updateStatValue("Chauffeurs", stats.chauffeurs_total, `${stats.chauffeurs_actifs} en ligne`);
+            updateStatValue("Annulées", stats.courses_annulees,
+                `${stats.courses_annulees_clients || 0} par le client · ${(stats.courses_annulees - (stats.courses_annulees_clients || 0))} par le chauffeur`);
+            updateStatValue("En attente", stats.courses_pending, "courses pending");
+            updateStatValue("En cours", stats.courses_en_cours, "accepted / started");
+            updateStatValue("Terminées", stats.courses_completees, "courses complétées");
+            updateStatValue("Courses totales", stats.courses_total, `${stats.taux_completion}% complétées`);
+            updateStatValue("Clients", stats.clients_total, `${stats.clients_actifs} actifs`);
+            updateStatValue("Chiffre d'affaires", formatFcfa(stats.chiffre_affaires_fcfa), "courses terminées");
+        }
+
+        const rideWrap = document.getElementById("dash-recent-rides");
+        if (rideWrap) {
+            const rides = await fetchRides({ limit: 10 });
+            rideWrap.innerHTML = renderRidesTable(rides, true);
+        }
+    } catch(e) {
+        // Silencieux — on ne casse pas l'affichage existant
+    }
+}
+
+function updateStatValue(label, value, value2, sub) {
+    const cards = document.querySelectorAll(".stat-card");
+    for (const card of cards) {
+        const labelEl = card.querySelector(".stat-label");
+        if (labelEl && labelEl.textContent === label) {
+            const valEl = card.querySelector(".stat-value");
+            const subEl = card.querySelector(".stat-sub");
+            if (valEl) valEl.textContent = value;
+            if (subEl && sub) subEl.textContent = sub;
+            break;
+        }
+    }
+}
+
+function statCard(label, value, color, sub) {
+    return `<div class="stat-card">
+      <div class="stat-label">${label}</div>
+      <div class="stat-value ${color}">${value}</div>
+      ${sub ? `<div class="stat-sub">${sub}</div>` : ""}
+    </div>`;
+}
+
+function renderSparkChart(data) {
+    if (!data || !data.length) {
+        return `<p style="color:var(--c-text-3);font-size:13px">Aucune donnée disponible.</p>`;
+    }
+    const max = Math.max(...data.map(d => d.nb)) || 1;
+    const bars = data.map(d => {
+        const h = Math.max(8, Math.round((d.nb / max) * 80));
+        const label = d.jour.slice(5); // MM-DD
+        return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1">
+          <div style="font-size:11px;color:var(--c-text-3)">${d.nb}</div>
+          <div style="height:${h}px;width:100%;background:var(--c-amber);border-radius:4px 4px 0 0;opacity:.85"></div>
+          <div style="font-size:10px;color:var(--c-text-3)">${label}</div>
+        </div>`;
+    }).join("");
+    return `<div style="display:flex;align-items:flex-end;gap:6px;height:120px">${bars}</div>`;
+}
+
+/* ══════════════════════════════════════════════════════════
+   SECTION : CARTE TEMPS RÉEL
+══════════════════════════════════════════════════════════ */
+async function loadMapSection() {
+    const el = document.getElementById("section-map");
+
+    // Initialiser la carte si pas encore fait
+    if (!AdminState.driversMap) {
+        // Attendre que le DOM de la section soit visible
+        await new Promise(r => setTimeout(r, 80));
+        initDriversMap();
+    } else {
+        AdminState.driversMap.invalidateSize();
+    }
+
+    await refreshDriversOnMap();
+
+    // Auto-refresh toutes les 15 secondes
+    if (AdminState.refreshInterval) clearInterval(AdminState.refreshInterval);
+    AdminState.refreshInterval = setInterval(refreshDriversOnMap, 15000);
+
+    // Badge "dernière MAJ"
+    updateMapRefreshBadge();
+}
+
+function initDriversMap() {
+    const map = L.map("map-drivers", { zoomControl: true }).setView([4.0511, 9.7679], 13);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "&copy; OpenStreetMap contributors",
+        maxZoom: 19
+    }).addTo(map);
+    AdminState.driversMap = map;
+}
+
+async function refreshDriversOnMap() {
+    let drivers;
+    try {
+        drivers = await fetchDriverPositions();
+    } catch (e) {
+        return;
+    }
+
+    const map    = AdminState.driversMap;
+    const seen   = new Set();
+
+    drivers.forEach(driver => {
+        seen.add(driver.id);
+        const lat = driver.driver_lat;
+        const lng = driver.driver_lng;
+        const isActive   = driver.course_active > 0;
+        const bgColor    = isActive ? "#f97316" : "#16a34a";
+        const iconHtml   = `<div class="driver-pin ${isActive ? 'active' : 'available'}">🚕</div>`;
+
+        const popupHtml = `
+            <div style="font-family:'DM Sans',sans-serif;min-width:160px">
+              <strong style="font-size:14px">${driver.name}</strong><br>
+              <span style="color:#6b7280;font-size:12px">${driver.plate} · ${driver.car_brand || ''} ${driver.car_color || ''}</span><br>
+              <span style="color:#6b7280;font-size:12px">📱 ${driver.phone || '—'}</span><br>
+              <div style="margin-top:6px">
+                ${driver.course_active > 0
+                    ? `<span style="background:#f97316;color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">En course</span>`
+                    : `<span style="background:#16a34a;color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">Disponible</span>`
+                }
+              </div>
+              <div style="color:#9ca3af;font-size:11px;margin-top:4px">
+                Pos. ${formatDate(driver.update_position_driver)}
+              </div>
+            </div>`;
+
+        if (AdminState.driverMarkers[driver.id]) {
+            AdminState.driverMarkers[driver.id]
+                .setLatLng([lat, lng])
+                .setPopupContent(popupHtml);
+        } else {
+            const icon = L.divIcon({
+                html: iconHtml,
+                iconSize: [36, 36],
+                iconAnchor: [18, 18],
+                className: ""
+            });
+            const marker = L.marker([lat, lng], { icon })
+                .addTo(map)
+                .bindPopup(popupHtml);
+            AdminState.driverMarkers[driver.id] = marker;
+        }
+    });
+
+    // Supprimer les marqueurs des chauffeurs absents
+    Object.keys(AdminState.driverMarkers).forEach(id => {
+        if (!seen.has(parseInt(id))) {
+            AdminState.driversMap.removeLayer(AdminState.driverMarkers[id]);
+            delete AdminState.driverMarkers[id];
+        }
+    });
+
+    // Mettre à jour le compteur
+    const countEl = document.getElementById("map-driver-count");
+    if (countEl) countEl.textContent = `${drivers.length} chauffeur${drivers.length > 1 ? "s" : ""} en ligne`;
+
+    updateMapRefreshBadge();
+}
+
+function updateMapRefreshBadge() {
+    const el = document.getElementById("map-last-refresh");
+    if (el) {
+        const now = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+        el.textContent = `Dernière MAJ : ${now}`;
+    }
+}
+
+/* ══════════════════════════════════════════════════════════
+   SECTION : COURSES
+══════════════════════════════════════════════════════════ */
+async function loadRides() {
+    const section = document.getElementById("section-rides");
+    const f = AdminState.ridesFilter;
+
+    section.querySelector("#rides-table-wrap").innerHTML =
+        `<div class="empty-state"><div class="spinner"></div></div>`;
+
+    try {
+        const rides = await fetchRides(f);
+        section.querySelector("#rides-table-wrap").innerHTML = renderRidesTable(rides, false);
+    } catch (e) {
+        section.querySelector("#rides-table-wrap").innerHTML =
+            `<p style="color:var(--c-red);padding:20px">Erreur de chargement.</p>`;
+    }
+
+    if (AdminState.ridesInterval) clearInterval(AdminState.ridesInterval);
+    AdminState.ridesInterval = setInterval(refreshRides, 20000);
+}
+
+async function refreshRides() {
+    const section = document.getElementById("section-rides");
+    if (!section || !section.classList.contains("active")) return;
+
+    try {
+        const rides = await fetchRides(AdminState.ridesFilter);
+        section.querySelector("#rides-table-wrap").innerHTML = renderRidesTable(rides, false);
+    } catch (e) {
+        // Ne pas interrompre l'affichage existant
+    }
+}
+
+function renderRidesTable(rides, compact) {
+    if (!rides.length) return `<div class="empty-state"><div class="empty-state-icon">🚗</div><div class="empty-state-text">Aucune course trouvée</div></div>`;
+
+    const rows = rides.map(r => `
+        <tr>
+          <td><span class="text-mono">#${r.id}</span></td>
+          <td>${statusBadge(r.status)}</td>
+          <td>
+            <div>${r.client_name || "—"}</div>
+            ${!compact ? `<div class="ride-detail">${r.client_phone || ""}</div>` : ""}
+          </td>
+          <td>
+            <div>${r.driver_name || "—"}</div>
+            ${!compact ? `<div class="ride-detail">${r.driver_plate || ""}</div>` : ""}
+          </td>
+          <td>
+            <div style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.pickup || ''}">
+              ${r.pickup || "—"}
+            </div>
+          </td>
+          ${!compact ? `
+          <td>
+            <div style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.destination || ''}">
+              ${r.destination || "—"}
+            </div>
+          </td>
+          <td>${r.distance_km ? parseFloat(r.distance_km).toFixed(1) + " km" : "—"}</td>` : ""}
+          <td style="white-space:nowrap">${r.price_fcfa ? formatFcfa(r.price_fcfa) : "—"}</td>
+          <td style="white-space:nowrap">${formatDate(r.created_at)}</td>
+          ${!compact && r.problem_description ? `<td><span class="topbar-badge badge-red" title="${r.problem_description}">⚠ Problème</span></td>` : (!compact ? `<td>—</td>` : "")}
+        </tr>`).join("");
+
+    return `<div class="table-wrap"><table>
+      <thead><tr>
+        <th>#</th><th>Statut</th><th>Client</th><th>Chauffeur</th><th>Départ</th>
+        ${!compact ? "<th>Destination</th><th>Distance</th>" : ""}
+        <th>Prix</th><th>Date</th>
+        ${!compact ? "<th>Alerte</th>" : ""}
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+}
+
+/* ══════════════════════════════════════════════════════════
+   SECTION : CHAUFFEURS
+══════════════════════════════════════════════════════════ */
+async function loadChauffeurs() {
+    const section = document.getElementById("section-chauffeurs");
+    const f = AdminState.chauffeursFilter;
+    section.querySelector("#chauffeurs-table-wrap").innerHTML =
+        `<div class="empty-state"><div class="spinner"></div></div>`;
+
+    try {
+        const list = await fetchChauffeurs(f.q, f.status);
+        section.querySelector("#chauffeurs-table-wrap").innerHTML = renderChauffeursTable(list);
+    } catch (e) {
+        section.querySelector("#chauffeurs-table-wrap").innerHTML =
+            `<p style="color:var(--c-red);padding:20px">Erreur de chargement.</p>`;
+    }
+}
+
+function renderChauffeursTable(list) {
+    if (!list.length) return `<div class="empty-state"><div class="empty-state-icon">🚕</div><div class="empty-state-text">Aucun chauffeur trouvé</div></div>`;
+
+    const rows = list.map(c => {
+        // is_online = statut en ligne (toggle chauffeur)
+        // status    = activation du compte (admin)
+        const onlineLabel = c.is_online == 1 ? "En ligne" : "Inactif";
+        const onlineCls   = c.is_online == 1 ? "badge-green" : "badge-red";
+        return `<tr>
+          <td>${c.name}</td>
+          <td>${c.email || "—"}<div class="ride-detail">${c.phone || ""}</div></td>
+          <td><span class="text-mono">${c.plate}</span><div class="ride-detail">${c.car_brand || ""} ${c.car_color || ""}</div></td>
+          <td>
+            <span class="topbar-badge ${onlineCls}">${onlineLabel}</span>
+            ${c.status !== "active" ? '<span class="topbar-badge badge-gray" style="margin-left:4px">Désactivé</span>' : ""}
+          </td>
+          <td>${c.total_completed_rides}</td>
+          <td>${c.total_accepted_rides}</td>
+          <td>${formatFcfa(c.total_accepted_amount_fcfa)}</td>
+          <td>${formatDateShort(c.created_at)}</td>
+          <td>
+            ${c.status === "active"
+                ? `<button class="btn btn-danger btn-sm" onclick="toggleUser('chauffeur', ${c.id}, 'disabled', this)">Désactiver</button>`
+                : `<button class="btn btn-success btn-sm" onclick="toggleUser('chauffeur', ${c.id}, 'active', this)">Activer</button>`
+            }
+          </td>
+        </tr>`;
+    }).join("");
+
+    return `<div class="table-wrap"><table>
+      <thead><tr>
+        <th>Nom</th><th>Contact</th><th>Plaque</th><th>Statut</th>
+        <th>Courses <br>terminées</th><th>Courses <br>acceptées</th>
+        <th>C.A. accepté</th><th>Inscrit le</th><th>Action</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+}
+
+/* ══════════════════════════════════════════════════════════
+   SECTION : CLIENTS
+══════════════════════════════════════════════════════════ */
+async function loadClients() {
+    const section = document.getElementById("section-clients");
+    const f = AdminState.clientsFilter;
+    section.querySelector("#clients-table-wrap").innerHTML =
+        `<div class="empty-state"><div class="spinner"></div></div>`;
+
+    try {
+        const list = await fetchClients(f.q, f.status);
+        section.querySelector("#clients-table-wrap").innerHTML = renderClientsTable(list);
+    } catch (e) {
+        section.querySelector("#clients-table-wrap").innerHTML =
+            `<p style="color:var(--c-red);padding:20px">Erreur de chargement.</p>`;
+    }
+}
+
+function renderClientsTable(list) {
+    if (!list.length) return `<div class="empty-state"><div class="empty-state-icon">👤</div><div class="empty-state-text">Aucun client trouvé</div></div>`;
+
+    const rows = list.map(c => `
+        <tr>
+          <td>${c.full_name}</td>
+          <td>${c.email || "—"}</td>
+          <td>${c.phone || "—"}</td>
+          <td>${userStatusBadge(c.status)}</td>
+          <td>${c.nb_courses}</td>
+          <td>${formatFcfa(c.total_depense_fcfa)}</td>
+          <td>${formatDateShort(c.created_at)}</td>
+          <td>
+            ${c.status === "active"
+                ? `<button class="btn btn-danger btn-sm" onclick="toggleUser('client', ${c.id}, 'disabled', this)">Désactiver</button>`
+                : `<button class="btn btn-success btn-sm" onclick="toggleUser('client', ${c.id}, 'active', this)">Activer</button>`
+            }
+          </td>
+        </tr>`).join("");
+
+    return `<div class="table-wrap"><table>
+      <thead><tr>
+        <th>Nom</th><th>Email</th><th>Téléphone</th><th>Statut</th>
+        <th>Courses</th><th>Total dépensé</th><th>Inscrit le</th><th>Action</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+}
+
+/* ──────────────────────────────────────────────
+   Toggle statut utilisateur (commun)
+────────────────────────────────────────────── */
+async function toggleUser(type, id, newStatus, btn) {
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = "…";
+
+    try {
+        const res = await setUserStatus(type, id, newStatus);
+        if (res.status === "success") {
+            showToast(`Statut mis à jour : ${newStatus === "active" ? "activé" : "désactivé"}`);
+            // Rafraîchir la section courante
+            if (AdminState.currentSection === "chauffeurs") loadChauffeurs();
+            else if (AdminState.currentSection === "clients") loadClients();
+        } else {
+            showToast(res.message || "Erreur", "error");
+            btn.disabled = false;
+            btn.textContent = original;
+        }
+    } catch (e) {
+        showToast("Erreur réseau", "error");
+        btn.disabled = false;
+        btn.textContent = original;
+    }
+}
+
+/* ──────────────────────────────────────────────
+   Filtres — événements
+────────────────────────────────────────────── */
+document.addEventListener("DOMContentLoaded", () => {
+    // Filtres courses
+    bindFilter("rides-search",       val => { AdminState.ridesFilter.q      = val; loadRides(); }, 500);
+    bindFilter("rides-status-filter",val => { AdminState.ridesFilter.status = val; loadRides(); }, 0);
+    bindFilter("rides-date-from",    val => { AdminState.ridesFilter.date_from = val; loadRides(); }, 0);
+    bindFilter("rides-date-to",      val => { AdminState.ridesFilter.date_to   = val; loadRides(); }, 0);
+
+    // Filtres chauffeurs
+    bindFilter("chauffeurs-search",       val => { AdminState.chauffeursFilter.q      = val; loadChauffeurs(); }, 500);
+    bindFilter("chauffeurs-status-filter",val => { AdminState.chauffeursFilter.status = val; loadChauffeurs(); }, 0);
+
+    // Filtres clients
+    bindFilter("clients-search",       val => { AdminState.clientsFilter.q      = val; loadClients(); }, 500);
+    bindFilter("clients-status-filter",val => { AdminState.clientsFilter.status = val; loadClients(); }, 0);
+
+    // Bouton refresh carte
+    document.getElementById("map-refresh-btn")?.addEventListener("click", refreshDriversOnMap);
+});
+
+function bindFilter(id, cb, debounce) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    let timer;
+    const handler = () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => cb(el.value.trim()), debounce);
+    };
+    el.addEventListener(debounce > 0 ? "input" : "change", handler);
+}
+
+/* ──────────────────────────────────────────────
+   Filtre statut — ajout des options dynamiques
+────────────────────────────────────────────── */
+function updateRidesFilterOptions() {
+    const sel = document.getElementById("rides-status-filter");
+    if (!sel) return;
+    // Vérifier si l'option cancelled_client existe déjà
+    if (sel.querySelector('option[value="cancelled_client"]')) return;
+    // Insérer après l'option cancelled (chauffeur)
+    const ref = sel.querySelector('option[value="cancelled"]');
+    const opt = document.createElement("option");
+    opt.value = "cancelled_client";
+    opt.textContent = "Annulée (client)";
+    if (ref && ref.nextSibling) {
+        sel.insertBefore(opt, ref.nextSibling);
+    } else {
+        sel.appendChild(opt);
+    }
+}

@@ -20,7 +20,7 @@ if ($role === "client" && !empty($_SESSION["client_id"])) {
 } elseif ($role === "chauffeur" && !empty($_SESSION["driver_id"])) {
     $id = (int) $_SESSION["driver_id"];
     $stmt = $conn->prepare("
-        SELECT id, name, email, phone, plate, car_brand, car_color, status
+        SELECT id, name, email, phone, plate, car_brand, car_color, status, is_online
         FROM chauffeur
         WHERE id = ?
         LIMIT 1
@@ -48,4 +48,3 @@ json_response([
     "user" => $user
 ]);
 ?>
-

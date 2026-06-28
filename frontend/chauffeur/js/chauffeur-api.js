@@ -1,30 +1,5 @@
 /**
  * chauffeur-api.js — TaxiGo Chauffeur
- *
- * BUGS CORRIGÉS (session précédente) :
- *  ✅ BUG #1 — acceptation multiple / GPS timeout → cache lastKnownPos
- *  ✅ BUG #2 — "course non trouvée" → updateDriverPositionInDB utilise allRides global
- *  ✅ BUG #3 — profil vide → initUserHeader peuple les nouveaux IDs HTML
- *
- * BUGS CORRIGÉS (cette session) :
- *
- *  ✅ BUG #4 — GPS froid après pause hors ligne (warm-up timeout)
- *     CAUSE  : GPS_MAX_AGE_MS = 30s. Après 30s hors ligne, lastKnownPos est
- *              périmé → acceptRide() appelle getCurrentPosition() → GPS pas
- *              encore chaud → Timeout expired → toast "GPS indisponible".
- *     FIX    : getDriverPosition() utilise lastKnownPos même périmé si
- *              watchPosition est actif (lastKnownPos !== null). On passe
- *              maximumAge=Infinity : si le cache existe, on l'utilise ; sinon
- *              getCurrentPosition attend le prochain fix watchPosition.
- *              GPS_MAX_AGE_MS n'est plus utilisé comme garde-fou bloquant.
- *
- *  ✅ BUG #5 — restore() jamais appelé sur le chemin succès dans acceptRide()
- *     CAUSE  : Deux setButtonLoading() imbriqués créaient deux closures.
- *              restore() (phase GPS) n'était jamais appelé sur succès —
- *              uniquement dans le catch. Sur le chemin succès : restoreAccept()
- *              (finally) mais pas restore(), laissant un état intermédiaire.
- *     FIX    : Une seule closure. Le label du bouton change au fil des étapes
- *              via btn.innerHTML directement, sans créer de deuxième closure.
  */
 
 "use strict";
@@ -110,7 +85,8 @@ async function initUserHeader(loginPage) {
         const result = await response.json();
 
         if (result.status === "success" && result.user) {
-            const name    = result.user.name || "Chauffeur";
+            const user    = result.user;
+            const name    = user.name || "Chauffeur";
             const initial = name.charAt(0).toUpperCase();
 
             const ids = {
@@ -118,11 +94,11 @@ async function initUserHeader(loginPage) {
                 profileAvatarLg: initial,
                 profileName    : name,
                 profileRowName : name,
-                profileRowPhone: result.user.phone || "—",
-                profileRowEmail: result.user.email || "—",
-                profileRowPlate: result.user.plate || "—",
-                profileRowBrand: result.user.car_brand || "—",
-                profileRowColor: result.user.car_color || "—",
+                profileRowPhone: user.phone || "—",
+                profileRowEmail: user.email || "—",
+                profileRowPlate: user.plate || "—",
+                profileRowBrand: user.car_brand || "—",
+                profileRowColor: user.car_color || "—",
             };
             Object.entries(ids).forEach(([id, val]) => {
                 const el = document.getElementById(id);
@@ -132,6 +108,9 @@ async function initUserHeader(loginPage) {
             // Compatibilité ancien HTML
             const legacyEl = document.getElementById("currentUserName");
             if (legacyEl) legacyEl.textContent = name;
+
+            // Initialiser le toggle depuis l'état serveur
+            initToggleFromServer(user.is_online ? true : false);
         }
     } catch (error) {
         console.error("Erreur chargement utilisateur:", error);
@@ -214,6 +193,7 @@ async function calculateRoute(startLng, startLat, endLng, endLat) {
 ═══════════════════════════════════════════════ */
 
 async function updateDriverPosition() {
+    if (typeof isOnline !== "undefined" && !isOnline) return;
     if (!driverMarker) return;
     if (!lastKnownPos) return;
 
@@ -226,20 +206,32 @@ async function updateDriverPositionInDB(lat, lng) {
         r => r.status === "accepted" || r.status === "arrived" || r.status === "started"
     );
 
+    const requests = [];
+
     for (const ride of activeRides) {
-        try {
-            const res = await fetch(
-                `${DRIVER_API_BASE}/chauffeur/update_ride_driver_position.php` +
-                `?ride_id=${ride.id}&lat=${lat}&lng=${lng}`
-            );
-            const result = await res.json();
-            if (result.status !== "success") {
-                console.warn(`Position update #${ride.id}:`, result.message);
-            }
-        } catch (error) {
-            console.error(`Position update error #${ride.id}:`, error);
-        }
+        requests.push(
+            fetch(`${DRIVER_API_BASE}/chauffeur/update_ride_driver_position.php?ride_id=${ride.id}&lat=${lat}&lng=${lng}`)
+        );
     }
+
+    requests.push(
+        fetch(`${DRIVER_API_BASE}/chauffeur/update_ride_driver_position.php?lat=${lat}&lng=${lng}`)
+    );
+
+    const results = await Promise.allSettled(requests.map(req => req.then(res => res.json())));
+
+    results.forEach((result, index) => {
+        if (result.status === "rejected") {
+            console.error("Position update error:", result.reason);
+            return;
+        }
+
+        const payload = result.value;
+        if (!payload || payload.status !== "success") {
+            const rideLabel = index < activeRides.length ? `#${activeRides[index].id}` : "chauffeur";
+            console.warn(`Position update ${rideLabel}:`, payload?.message || "unknown error");
+        }
+    });
 }
 
 /* ═══════════════════════════════════════════════
@@ -424,5 +416,31 @@ async function submitReportAPI(id, problem, btn) {
         showToast("Erreur de connexion", "error");
     } finally {
         restore();
+    }
+}
+
+/* ═══════════════════════════════════════════════
+   STATUT EN LIGNE / HORS LIGNE
+═══════════════════════════════════════════════ */
+
+/**
+ * Met à jour le statut is_online du chauffeur côté serveur.
+ * Appelé par le toggle dans chauffeur-ui.js.
+ */
+async function setDriverStatus(isOnline) {
+    try {
+        const res = await fetch(`${DRIVER_API_BASE}/chauffeur/set_driver_status.php`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ is_online: isOnline })
+        });
+        const result = await res.json();
+        if (result.status !== "success") {
+            throw new Error(result.message || "Échec de la mise à jour du statut");
+        }
+        return result;
+    } catch (err) {
+        console.error("setDriverStatus error:", err);
+        throw err;
     }
 }
