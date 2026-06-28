@@ -29,6 +29,29 @@ if ($isOnline === null) {
 try {
     $conn = db_connect();
 
+    $checkStmt = $conn->prepare("SELECT status FROM chauffeur WHERE id = ? LIMIT 1");
+    if (!$checkStmt) {
+        throw new Exception('Erreur de préparation : ' . $conn->error);
+    }
+    $checkStmt->bind_param('i', $driverId);
+    $checkStmt->execute();
+    $result = $checkStmt->get_result();
+    $driver = $result->fetch_assoc();
+    $checkStmt->close();
+
+    if (!$driver) {
+        $conn->close();
+        json_response(['status' => 'error', 'message' => 'Chauffeur introuvable'], 404);
+    }
+
+    if ($driver['status'] !== 'active' && $isOnline) {
+        $conn->close();
+        json_response([
+            'status' => 'error',
+            'message' => 'Votre compte a été désactivé par l\'administrateur. Contactez l\'admin.'
+        ], 403);
+    }
+
     $stmt = $conn->prepare("
         UPDATE chauffeur 
         SET is_online = ?, updated_at = NOW() 

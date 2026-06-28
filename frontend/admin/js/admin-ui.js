@@ -14,6 +14,7 @@ const AdminState = {
     driverMarkers: {},         // { id: marker }
     refreshInterval: null,     // pour la carte live
     ridesInterval: null,       // intervalle section courses
+    chauffeursInterval: null,  // intervalle section chauffeurs
     ridesFilter: { status: "", q: "", date_from: "", date_to: "" },
     chauffeursFilter: { q: "", status: "" },
     clientsFilter: { q: "", status: "" },
@@ -99,6 +100,12 @@ function showSection(name) {
     if (name !== "rides" && AdminState.ridesInterval) {
         clearInterval(AdminState.ridesInterval);
         AdminState.ridesInterval = null;
+    }
+
+    // Arrêter le refresh des chauffeurs si on quitte
+    if (name !== "chauffeurs" && AdminState.chauffeursInterval) {
+        clearInterval(AdminState.chauffeursInterval);
+        AdminState.chauffeursInterval = null;
     }
 
     // Charger la section
@@ -462,6 +469,21 @@ async function loadChauffeurs() {
     } catch (e) {
         section.querySelector("#chauffeurs-table-wrap").innerHTML =
             `<p style="color:var(--c-red);padding:20px">Erreur de chargement.</p>`;
+    }
+
+    if (AdminState.chauffeursInterval) clearInterval(AdminState.chauffeursInterval);
+    AdminState.chauffeursInterval = setInterval(refreshChauffeurs, 20000);
+}
+
+async function refreshChauffeurs() {
+    const section = document.getElementById("section-chauffeurs");
+    if (!section || !section.classList.contains("active")) return;
+
+    try {
+        const list = await fetchChauffeurs(AdminState.chauffeursFilter.q, AdminState.chauffeursFilter.status);
+        section.querySelector("#chauffeurs-table-wrap").innerHTML = renderChauffeursTable(list);
+    } catch (e) {
+        // Ne pas interrompre l'affichage actuel
     }
 }
 

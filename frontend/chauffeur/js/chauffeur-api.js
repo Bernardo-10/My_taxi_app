@@ -110,7 +110,7 @@ async function initUserHeader(loginPage) {
             if (legacyEl) legacyEl.textContent = name;
 
             // Initialiser le toggle depuis l'état serveur
-            initToggleFromServer(user.is_online ? true : false);
+            initToggleFromServer(user.is_online ? true : false, user.status);
         }
     } catch (error) {
         console.error("Erreur chargement utilisateur:", error);

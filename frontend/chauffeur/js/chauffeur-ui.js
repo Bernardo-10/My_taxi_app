@@ -69,6 +69,7 @@ let shownClientReports  = new Set();
 
 // Statut en ligne
 let isOnline            = false;
+let isDisabled          = false;
 
 /* ═══════════════════════════════════════════════
    INIT
@@ -124,7 +125,10 @@ async function schedulePoll() {
 
     isCheckingRides = true;
     try {
-        await checkNewRides();
+        await refreshDriverStatus();
+        if (!isDisabled) {
+            await checkNewRides();
+        }
     } catch (err) {
         // Erreur réseau silencieuse — log seulement
         console.warn("Poll error (temporary):", err?.message);
@@ -138,6 +142,62 @@ async function schedulePoll() {
 async function schedulePositionUpdate() {
     await updateDriverPosition();
     positionTimeout = setTimeout(schedulePositionUpdate, 10000);
+}
+
+async function refreshDriverStatus() {
+    try {
+        const res = await fetch(`${DRIVER_API_BASE}/common/current_user.php`);
+        if (res.status === 401) {
+            window.location.href = "login.html";
+            return;
+        }
+
+        const result = await res.json();
+        if (result.status !== "success" || !result.user) return;
+
+        const serverStatus = result.user.status;
+        const serverOnline = result.user.is_online ? true : false;
+        const previouslyDisabled = isDisabled;
+
+        if (serverStatus !== "active") {
+            isDisabled = true;
+            if (isOnline) {
+                isOnline = false;
+                onGoOffline();
+            }
+            const btn = document.getElementById("statusToggle");
+            if (btn) btn.disabled = true;
+            const label = document.getElementById("statusLabel");
+            const profileStatus = document.getElementById("profileRowStatus");
+            if (label) label.textContent = "Compte désactivé";
+            if (profileStatus) profileStatus.textContent = "Compte désactivé";
+            if (!previouslyDisabled) {
+                showToast("Votre compte a été désactivé par l'administrateur. Contactez l'admin.", "error", 5000);
+            }
+            return;
+        }
+
+        if (isDisabled) {
+            isDisabled = false;
+            const btn = document.getElementById("statusToggle");
+            if (btn) btn.disabled = false;
+        }
+
+        // Si l'admin a forcé la mise hors ligne
+        if (!serverOnline && isOnline) {
+            isOnline = false;
+            onGoOffline();
+            const btn = document.getElementById("statusToggle");
+            if (btn) btn.classList.remove("online");
+            const label = document.getElementById("statusLabel");
+            const profileStatus = document.getElementById("profileRowStatus");
+            if (label) label.textContent = "Hors ligne";
+            if (profileStatus) profileStatus.textContent = "Hors ligne";
+            showToast("Votre statut a été changé hors ligne par l'administrateur.", "info", 4000);
+        }
+    } catch (error) {
+        console.warn("refreshDriverStatus error:", error);
+    }
 }
 
 /* ═══════════════════════════════════════════════
@@ -258,24 +318,36 @@ function switchTab(tab) {
  * Initialise l'état du toggle depuis la valeur is_online retournée
  * par current_user.php.
  */
-function initToggleFromServer(serverIsOnline) {
+function initToggleFromServer(serverIsOnline, serverStatus) {
     isOnline = serverIsOnline;
+    isDisabled = serverStatus !== "active";
     const btn = document.getElementById("statusToggle");
     if (!btn) return;
 
-    btn.classList.toggle("online", isOnline);
-    btn.setAttribute("aria-pressed", isOnline);
+    btn.classList.toggle("online", isOnline && !isDisabled);
+    btn.setAttribute("aria-pressed", isOnline && !isDisabled);
+    btn.disabled = isDisabled;
 
     const label = document.getElementById("statusLabel");
     const profileStatus = document.getElementById("profileRowStatus");
-    const labelText = isOnline ? "En ligne" : "Hors ligne";
+    let labelText;
+
+    if (isDisabled) {
+        labelText = "Compte désactivé";
+        btn.classList.remove("online");
+        if (isOnline) {
+            isOnline = false;
+            onGoOffline();
+        }
+    } else {
+        labelText = isOnline ? "En ligne" : "Hors ligne";
+        if (!isOnline) {
+            onGoOffline();
+        }
+    }
+
     if (label) label.textContent = labelText;
     if (profileStatus) profileStatus.textContent = labelText;
-
-    // Si le chauffeur est hors ligne, on nettoie tout de suite
-    if (!isOnline) {
-        onGoOffline();
-    }
 }
 
 function initStatusToggle() {
@@ -300,6 +372,12 @@ function initStatusToggle() {
                 setTimeout(() => btn.classList.remove("shake"), 500);
                 return;
             }
+        }
+
+        if (isDisabled) {
+            showToast("Votre compte a été désactivé par l'administrateur. Contactez l'admin.", "error", 5000);
+            if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+            return;
         }
 
         // Mise à jour UI immédiate (optimiste)
