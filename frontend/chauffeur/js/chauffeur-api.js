@@ -118,6 +118,14 @@ async function initUserHeader(loginPage) {
 
     if (logoutBtn) {
         logoutBtn.addEventListener("click", async () => {
+            const ok = await confirmAction({
+                title: "Se déconnecter ?",
+                confirmLabel: "Se déconnecter",
+                cancelLabel: "Annuler",
+                danger: true
+            });
+            if (!ok) return;
+
             const restore = setButtonLoading(logoutBtn, "Déconnexion…");
             try {
                 await fetch(`${DRIVER_API_BASE}/common/logout.php`, { method: "POST" });
@@ -302,6 +310,15 @@ async function refuseRide(id, btn) {
 }
 
 async function cancelRide(id, btn) {
+    const ok = await confirmAction({
+        title: "Annuler cette course ?",
+        message: "Le client sera prévenu de l'annulation.",
+        confirmLabel: "Annuler la course",
+        cancelLabel: "Retour",
+        danger: true
+    });
+    if (!ok) return;
+
     const restore = setButtonLoading(btn, "Annulation…");
     try {
         const res    = await fetch(`${DRIVER_API_BASE}/chauffeur/cancel_ride.php`, {

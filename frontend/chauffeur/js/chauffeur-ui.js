@@ -32,6 +32,13 @@
  *              PAS dans checkNewRides(). checkNewRides() est maintenant pur :
  *              il fetch, met à jour allRides et render. Toute exception
  *              remonte à schedulePoll() qui remet le flag à false dans finally.
+ *
+ *  ✅ CHANTIER 2 — Alertes plein écran qui réapparaissent au rafraîchissement
+ *     CAUSE  : shownClientReports/shownCancellations étaient de simples
+ *              Set() en mémoire, réinitialisés à chaque chargement de page.
+ *     FIX    : persistance dans localStorage (loadShownAlerts/persistShownAlerts/
+ *              markAlertShown), fenêtre de rétention 24h alignée sur la fenêtre
+ *              serveur de get_rides.php pour cancelled_client.
  */
 
 /* ═══════════════════════════════════════════════
@@ -65,14 +72,54 @@ let activeFilter        = "accepted";
 
 // Report modal state
 let reportRideId        = null;
-let shownClientReports  = new Set();
+
+// Persistance des alertes plein écran déjà vues (problème client, annulation
+// client) dans localStorage, pour survivre à un rafraîchissement de page —
+// même pattern que "taxigo_recents" côté client. Fenêtre de rétention de 24h,
+// alignée sur la fenêtre serveur de get_rides.php pour cancelled_client.
+const CLIENT_REPORTS_STORAGE_KEY = "taxigo_shown_client_reports";
+const CANCELLATIONS_STORAGE_KEY  = "taxigo_shown_cancellations";
+const SHOWN_ALERTS_MAX_AGE_MS    = 24 * 60 * 60 * 1000; // 24h
+
+function loadShownAlerts(storageKey) {
+    let raw = {};
+    try { raw = JSON.parse(localStorage.getItem(storageKey) || "{}"); }
+    catch (e) { raw = {}; }
+
+    const now = Date.now();
+    const map = new Map();
+    Object.entries(raw).forEach(([key, ts]) => {
+        if (typeof ts === "number" && now - ts < SHOWN_ALERTS_MAX_AGE_MS) map.set(key, ts);
+    });
+
+    persistShownAlerts(storageKey, map); // purge les entrées expirées dès le chargement
+    return map;
+}
+
+function persistShownAlerts(storageKey, map) {
+    try {
+        const obj = {};
+        map.forEach((ts, key) => { obj[key] = ts; });
+        localStorage.setItem(storageKey, JSON.stringify(obj));
+    } catch (e) {
+        // localStorage indisponible/plein : l'alerte reste dédupliquée pour
+        // la session en cours, seule la persistance au refresh est perdue
+    }
+}
+
+function markAlertShown(map, storageKey, key) {
+    map.set(key, Date.now());
+    persistShownAlerts(storageKey, map);
+}
+
+let shownClientReports  = loadShownAlerts(CLIENT_REPORTS_STORAGE_KEY);
 
 // Alerte annulation client (course déjà acceptée/arrivée/démarrée)
-let shownCancellations  = new Set();
+let shownCancellations  = loadShownAlerts(CANCELLATIONS_STORAGE_KEY);
 
 // Statut en ligne
 let isOnline            = false;
-let isDisabled          = false;
+let isDisabled           = false;
 
 /* ═══════════════════════════════════════════════
    INIT
@@ -1004,7 +1051,7 @@ function showClientProblemAlerts() {
         const key = `${ride.id}:${ride.client_problem_at || problem}`;
         if (shownClientReports.has(key)) return;
 
-        shownClientReports.add(key);
+        markAlertShown(shownClientReports, CLIENT_REPORTS_STORAGE_KEY, key);
         openClientProblemAlert(ride, problem);
     });
 }
@@ -1068,9 +1115,10 @@ function openClientProblemAlert(ride, problem) {
 function showClientCancellationAlerts() {
     (allRides || []).forEach(ride => {
         if (ride.status !== "cancelled_client") return;
-        if (shownCancellations.has(ride.id)) return;
+        const key = String(ride.id); // JSON.stringify convertit les clés en chaînes ; on normalise dès l'écriture pour que .has() reste cohérent après un rechargement depuis localStorage
+        if (shownCancellations.has(key)) return;
 
-        shownCancellations.add(ride.id);
+        markAlertShown(shownCancellations, CANCELLATIONS_STORAGE_KEY, key);
         openClientCancellationAlert(ride);
     });
 }

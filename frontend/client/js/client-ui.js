@@ -644,7 +644,12 @@ async function cancelCurrentRide() {
     updateRideStatusMessage("Aucune course à annuler.");
     return;
   }
-  const ok = window.confirm("Annuler cette course ?");
+  const ok = await confirmAction({
+    title: "Annuler cette course ?",
+    confirmLabel: "Annuler la course",
+    cancelLabel: "Retour",
+    danger: true
+  });
   if (!ok) return;
 
   try {
@@ -721,9 +726,19 @@ async function initUserSession() {
   }
 
   // Logout (carte)
-  document.getElementById("logoutBtn")?.addEventListener("click", doLogout);
+  document.getElementById("logoutBtn")?.addEventListener("click", confirmLogout);
   // Logout (profil)
-  document.getElementById("logoutBtnProfile")?.addEventListener("click", doLogout);
+  document.getElementById("logoutBtnProfile")?.addEventListener("click", confirmLogout);
+}
+
+async function confirmLogout() {
+  const ok = await confirmAction({
+    title: "Se déconnecter ?",
+    confirmLabel: "Se déconnecter",
+    cancelLabel: "Annuler",
+    danger: true
+  });
+  if (ok) doLogout();
 }
 
 async function doLogout() {

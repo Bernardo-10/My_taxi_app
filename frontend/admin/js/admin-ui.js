@@ -146,8 +146,14 @@ function refreshMapAfterSidebarToggle() {
 }
 
 function initLogout() {
-    document.getElementById("logoutBtn")?.addEventListener("click", () => {
-        if (confirm("Déconnecter l'administrateur ?")) logoutAdmin();
+    document.getElementById("logoutBtn")?.addEventListener("click", async () => {
+        const ok = await confirmAction({
+            title: "Déconnecter l'administrateur ?",
+            confirmLabel: "Déconnecter",
+            cancelLabel: "Annuler",
+            danger: true
+        });
+        if (ok) logoutAdmin();
     });
 }
 
