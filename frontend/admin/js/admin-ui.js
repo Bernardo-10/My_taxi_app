@@ -127,11 +127,22 @@ function initSidebarMobile() {
     toggle?.addEventListener("click", () => {
         sidebar.classList.toggle("open");
         overlay.classList.toggle("open");
+        refreshMapAfterSidebarToggle();
     });
     overlay?.addEventListener("click", () => {
         sidebar.classList.remove("open");
         overlay.classList.remove("open");
+        refreshMapAfterSidebarToggle();
     });
+}
+
+// Filet de sécurité : si la carte temps réel est visible, force Leaflet à
+// recalculer sa taille/son rendu une fois la transition de la sidebar
+// terminée, pour éviter tout artefact visuel résiduel après ouverture/
+// fermeture du menu burger sur mobile.
+function refreshMapAfterSidebarToggle() {
+    if (AdminState.currentSection !== "map" || !AdminState.driversMap) return;
+    setTimeout(() => AdminState.driversMap.invalidateSize(), 260); // après la transition CSS (.25s)
 }
 
 function initLogout() {

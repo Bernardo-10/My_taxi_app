@@ -386,6 +386,14 @@ tbody tr:hover td { background: var(--c-bg); }
   border-radius: var(--radius);
   overflow: hidden;
   border: 1px solid var(--c-border);
+  /* Leaflet utilise des z-index internes élevés (jusqu'à 1000) pour ses
+     panneaux et contrôles. Sans contexte d'empilement propre, ces valeurs
+     se comparent directement aux éléments globaux positionnés (sidebar
+     mobile, overlay) et peuvent passer au-dessus d'eux. `isolation: isolate`
+     confine la carte dans son propre contexte, quel que soit son z-index. */
+  position: relative;
+  isolation: isolate;
+  z-index: 0;
 }
 
 .map-legend {
