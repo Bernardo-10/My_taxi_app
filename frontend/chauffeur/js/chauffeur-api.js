@@ -397,24 +397,73 @@ async function arriveRide(id, btn) {
 async function completeRide(id, btn) {
     const restore = setButtonLoading(btn, "Finalisation…");
     try {
-        const res    = await fetch(`${DRIVER_API_BASE}/chauffeur/complete_ride.php`, {
-            method : "POST",
-            headers: { "Content-Type": "application/json" },
-            body   : JSON.stringify({ id })
-        });
-        const result = await res.json();
-        if (result.status === "success") {
-            showToast("Course terminée ! Bravo. ✅", "success");
-            await checkNewRides();
-            updateDashboard();
+        await performCompleteRide(id, false);
+        showToast("Course terminée ! Bravo. ✅", "success");
+        await checkNewRides();
+        updateDashboard();
+    } catch (err) {
+        if (err && err.needsConfirmation) {
+            const ok = await confirmAction({
+                title: "Terminer malgré la distance ?",
+                message: `Vous êtes à environ ${err.distance} m de la destination prévue. Confirmez seulement si le client est bien descendu ici.`,
+                confirmLabel: "Terminer quand même",
+                cancelLabel: "Annuler",
+                danger: false
+            });
+            if (ok) {
+                try {
+                    await performCompleteRide(id, true);
+                    showToast("Course terminée ! Bravo. ✅", "success");
+                    await checkNewRides();
+                    updateDashboard();
+                } catch {
+                    showToast("Impossible de terminer", "error");
+                }
+            }
         } else {
-            showToast(result.message || "Impossible de terminer", "error");
+            showToast(err?.message || "Erreur de connexion", "error");
         }
-    } catch {
-        showToast("Erreur de connexion", "error");
     } finally {
         restore();
     }
+}
+
+/**
+ * Effectue l'appel réseau de finalisation de course, avec la position GPS
+ * fraîche du chauffeur (même pattern que arriveRide()). Si le serveur juge
+ * le chauffeur trop loin de la destination et que force=false, lève une
+ * erreur marquée needsConfirmation pour que completeRide() propose la
+ * modale de confirmation plutôt que d'afficher une simple erreur.
+ *
+ * GPS indisponible : lat/lng restent null — le serveur ne bloque jamais sur
+ * une donnée GPS absente (cf. complete_ride.php), la course se termine donc
+ * normalement, sans confirmation, dans ce cas.
+ */
+async function performCompleteRide(id, force) {
+    let lat = null, lng = null;
+    try {
+        ({ lat, lng } = await getDriverPosition());
+    } catch (gpsErr) {
+        // Échec silencieux — voir commentaire ci-dessus.
+    }
+
+    const res    = await fetch(`${DRIVER_API_BASE}/chauffeur/complete_ride.php`, {
+        method : "POST",
+        headers: { "Content-Type": "application/json" },
+        body   : JSON.stringify({ id, lat, lng, force })
+    });
+    const result = await res.json();
+
+    if (result.status === "success") return;
+
+    if (result.status === "needs_confirmation") {
+        const err = new Error(result.message || "Confirmation requise");
+        err.needsConfirmation = true;
+        err.distance = result.distance;
+        throw err;
+    }
+
+    throw new Error(result.message || "Impossible de terminer");
 }
 
 function reportProblem(id) {
