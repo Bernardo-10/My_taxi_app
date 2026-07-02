@@ -349,10 +349,18 @@ async function startRide(id, btn) {
 async function arriveRide(id, btn) {
     const restore = setButtonLoading(btn, "Arrivee...");
     try {
+        let lat, lng;
+        try {
+            ({ lat, lng } = await getDriverPosition());   // ← nouveau : position GPS fraîche en cache (watchPosition), déjà utilisée pour acceptRide
+        } catch (gpsErr) {
+            showToast("Impossible d'obtenir votre position GPS. Activez la localisation pour confirmer l'arrivee.", "error");
+            return;
+        }
+
         const res    = await fetch(`${DRIVER_API_BASE}/chauffeur/arrive_ride.php`, {
             method : "POST",
             headers: { "Content-Type": "application/json" },
-            body   : JSON.stringify({ id })
+            body   : JSON.stringify({ id, lat, lng })      // ← lat/lng ajoutés au payload
         });
         const result = await res.json();
         if (result.status === "success") {
