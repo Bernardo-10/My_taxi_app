@@ -1,0 +1,4 @@
+# Bloque tout accès direct par navigateur à ce dossier.
+# schema.sql n'a jamais besoin d'être appelé par une URL — il est
+# importé manuellement via phpMyAdmin, jamais chargé par le code PHP.
+Require all denied

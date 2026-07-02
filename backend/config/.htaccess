@@ -1,0 +1,6 @@
+# Bloque tout accès direct par navigateur à ce dossier.
+# Sans effet sur le fonctionnement de l'app : db.php et auth.php
+# sont chargés par require_once (côté serveur), jamais appelés
+# par une URL — donc rien ne casse, on ferme juste une porte
+# qui n'a jamais besoin d'être ouverte.
+Require all denied

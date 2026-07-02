@@ -1,0 +1,35 @@
+# ════════════════════════════════════════════════════════
+# TaxiGo — routage des URLs courtes
+# Réécrit les URLs visibles en dossiers frontend/ sans changer l'URL.
+# ════════════════════════════════════════════════════════
+
+RewriteEngine On
+RewriteBase /
+
+# Ne pas réécrire si le fichier/dossier existe (évite de perturber les assets ou /backend)
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# Empêche le listing de répertoires vides
+Options -Indexes
+
+# Page d'accueil du site
+DirectoryIndex index.html
+
+# ── Espace client ──────────────────────────────────────
+RewriteRule ^client/register/?$  frontend/client/html/register.html  [L,END]
+RewriteRule ^client/login/?$     frontend/client/html/login.html     [L,END]
+RewriteRule ^client/?$           frontend/client/html/index.html     [L,END]
+
+# ── Espace chauffeur ────────────────────────────────────
+RewriteRule ^chauffeur/register/?$  frontend/chauffeur/html/register.html  [L,END]
+RewriteRule ^chauffeur/login/?$     frontend/chauffeur/html/login.html     [L,END]
+RewriteRule ^chauffeur/?$           frontend/chauffeur/html/index.html     [L,END]
+
+# ── Espace admin ────────────────────────────────────────
+RewriteRule ^admin/login/?$  frontend/admin/html/login.html  [L,END]
+RewriteRule ^admin/?$        frontend/admin/html/index.html  [L,END]
+
+# ── Gérer les 404 personnalisées (facultatif)
+# ErrorDocument 404 /404.html

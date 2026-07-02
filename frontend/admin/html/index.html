@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>TaxiGo — Administration</title>
+  <link rel="stylesheet" href="/frontend/admin/css/admin.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+</head>
+<body>
+
+<div id="toast-container"></div>
+
+<div class="sidebar-overlay"></div>
+
+<div class="admin-shell">
+
+  <!-- ═══════════════════════════════════════
+       SIDEBAR
+  ═══════════════════════════════════════ -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      Taxi<span>Go</span>
+      <small>Administration</small>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-section">Général</div>
+
+      <button class="nav-item active" data-section="dashboard">
+        <svg viewBox="0 0 24 24" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Tableau de bord
+      </button>
+
+      <button class="nav-item" data-section="map">
+        <svg viewBox="0 0 24 24" stroke-width="1.8"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+        Carte temps réel
+      </button>
+
+      <div class="nav-section" style="margin-top:8px">Données</div>
+
+      <button class="nav-item" data-section="rides">
+        <svg viewBox="0 0 24 24" stroke-width="1.8"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+        Courses
+      </button>
+
+      <button class="nav-item" data-section="chauffeurs">
+        <svg viewBox="0 0 24 24" stroke-width="1.8"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        Chauffeurs
+      </button>
+
+      <button class="nav-item" data-section="clients">
+        <svg viewBox="0 0 24 24" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Clients
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="admin-chip">
+        <div class="admin-avatar" id="adminInitial">A</div>
+        <span class="admin-chip-name" id="adminName">Admin</span>
+        <button class="logout-btn" id="logoutBtn" title="Se déconnecter">
+          <svg viewBox="0 0 24 24" stroke-width="1.8"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ═══════════════════════════════════════
+       ZONE PRINCIPALE
+  ═══════════════════════════════════════ -->
+  <div class="main-area">
+
+    <!-- Top bar -->
+    <div class="topbar">
+      <button class="menu-toggle" id="menuToggle" aria-label="Menu">
+        <svg viewBox="0 0 24 24" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <span class="topbar-title" id="topbarTitle">Tableau de bord</span>
+    </div>
+
+    <!-- Contenu scrollable -->
+    <div class="page-content">
+
+      <!-- ════════════════════════════════════
+           SECTION : TABLEAU DE BORD
+      ════════════════════════════════════ -->
+      <section id="section-dashboard" class="page-section active">
+        <div style="display:flex;justify-content:center;padding:60px">
+          <div class="spinner"></div>
+        </div>
+      </section>
+
+      <!-- ════════════════════════════════════
+           SECTION : CARTE TEMPS RÉEL
+      ════════════════════════════════════ -->
+      <section id="section-map" class="page-section">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Position des chauffeurs</span>
+            <span class="topbar-badge badge-green">
+              <span class="badge-dot"></span>
+              <span id="map-driver-count">Chargement…</span>
+            </span>
+            <button class="btn btn-primary" id="map-refresh-btn" style="font-size:12px;padding:6px 12px;margin-left:8px">
+              ↻ Rafraîchir
+            </button>
+          </div>
+
+          <!-- Carte Leaflet -->
+          <div id="map-drivers"></div>
+
+          <div class="map-legend">
+            <div class="legend-item">
+              <div class="legend-dot" style="background:#f97316"></div>
+              Chauffeur en course
+            </div>
+            <div class="legend-item">
+              <div class="legend-dot" style="background:#16a34a"></div>
+              Chauffeur disponible
+            </div>
+            <div class="legend-item" style="margin-left:auto;font-size:11px">
+              <span id="map-last-refresh" style="color:var(--c-text-3)"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tableau des chauffeurs actifs -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Chauffeurs avec position connue (10 dernières min.)</span>
+          </div>
+          <div id="map-drivers-list">
+            <div class="empty-state"><div class="spinner"></div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ════════════════════════════════════
+           SECTION : COURSES
+      ════════════════════════════════════ -->
+      <section id="section-rides" class="page-section">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Toutes les courses</span>
+          </div>
+
+          <div class="filters">
+            <input type="text" id="rides-search" class="search-input" placeholder="🔍 Client, chauffeur, adresse…">
+            <select id="rides-status-filter" class="filter-select">
+              <option value="">Tous les statuts</option>
+              <option value="pending">En attente</option>
+              <option value="accepted">Acceptée</option>
+              <option value="arrived">Arrivé</option>
+              <option value="started">En cours</option>
+              <option value="completed">Terminée</option>
+              <option value="cancelled">Annulée</option>
+              <option value="reported">Signalée</option>
+            </select>
+            <input type="date" id="rides-date-from" class="filter-select" title="Du">
+            <input type="date" id="rides-date-to"   class="filter-select" title="Au">
+          </div>
+
+          <div id="rides-table-wrap">
+            <div class="empty-state"><div class="spinner"></div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ════════════════════════════════════
+           SECTION : CHAUFFEURS
+      ════════════════════════════════════ -->
+      <section id="section-chauffeurs" class="page-section">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Gestion des chauffeurs</span>
+          </div>
+
+          <div class="filters">
+            <input type="text" id="chauffeurs-search" class="search-input" placeholder="🔍 Nom, email, téléphone, plaque…">
+            <select id="chauffeurs-status-filter" class="filter-select">
+              <option value="">Tous</option>
+              <option value="active">Actifs</option>
+              <option value="disabled">Désactivés</option>
+            </select>
+          </div>
+
+          <div id="chauffeurs-table-wrap">
+            <div class="empty-state"><div class="spinner"></div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ════════════════════════════════════
+           SECTION : CLIENTS
+      ════════════════════════════════════ -->
+      <section id="section-clients" class="page-section">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Gestion des clients</span>
+          </div>
+
+          <div class="filters">
+            <input type="text" id="clients-search" class="search-input" placeholder="🔍 Nom, email, téléphone…">
+            <select id="clients-status-filter" class="filter-select">
+              <option value="">Tous</option>
+              <option value="active">Actifs</option>
+              <option value="disabled">Désactivés</option>
+            </select>
+          </div>
+
+          <div id="clients-table-wrap">
+            <div class="empty-state"><div class="spinner"></div></div>
+          </div>
+        </div>
+      </section>
+
+    </div><!-- /page-content -->
+  </div><!-- /main-area -->
+</div><!-- /admin-shell -->
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/frontend/admin/js/admin-api.js"></script>
+<script src="/frontend/admin/js/admin-ui.js"></script>
+
+<!-- Mise à jour du tableau de la carte quand les positions refreshent -->
+<script>
+"use strict";
+const _origRefresh = typeof refreshDriversOnMap === "function" ? refreshDriversOnMap : null;
+
+// Surcharge pour aussi mettre à jour le tableau sous la carte
+const _baseRefresh = window.refreshDriversOnMap;
+window.refreshDriversOnMap = async function() {
+    await _baseRefresh();
+    const list = document.getElementById("map-drivers-list");
+    if (!list || !document.getElementById("section-map").classList.contains("active")) return;
+    try {
+        const drivers = await fetchDriverPositions();
+        if (!drivers.length) {
+            list.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🚕</div><div class="empty-state-text">Aucun chauffeur localisé actuellement</div></div>`;
+            return;
+        }
+        const rows = drivers.map(d => `
+            <tr>
+              <td>${d.name}</td>
+              <td class="text-mono">${d.plate}</td>
+              <td>${d.car_brand || "—"} ${d.car_color || ""}</td>
+              <td>${d.phone || "—"}</td>
+              <td>${d.course_active > 0
+                ? '<span class="topbar-badge badge-amber">En course</span>'
+                : '<span class="topbar-badge badge-green">Disponible</span>'}</td>
+              <td style="color:var(--c-text-3);font-size:12px">${formatDate(d.update_position_driver)}</td>
+            </tr>`).join("");
+        list.innerHTML = `<div class="table-wrap"><table>
+          <thead><tr><th>Nom</th><th>Plaque</th><th>Véhicule</th><th>Téléphone</th><th>Statut</th><th>Dernière position</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>`;
+    } catch(e) {}
+};
+</script>
+
+</body>
+</html>

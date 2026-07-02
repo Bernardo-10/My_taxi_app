@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>TaxiGo — Connexion client</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600;700&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --ink:        #111827;
+  --ink-2:      #4b5563;
+  --ink-3:      #9ca3af;
+  --paper:      #e8ede9;
+  --line:       #e5e7eb;
+  --white:      #ffffff;
+  --field-bg:   #f9fafb;
+  --accent:     #1db954;
+  --accent-d:   #15a045;
+  --accent-bg:  #e8f8ee;
+  --red:        #dc2626;
+  --font-head:  'Syne', sans-serif;
+  --font-body:  'DM Sans', system-ui, sans-serif;
+  --safe-top:   env(safe-area-inset-top, 0px);
+  --safe-bot:   env(safe-area-inset-bottom, 0px);
+}
+
+html, body { min-height: 100%; }
+
+body {
+  font-family: var(--font-body);
+  background: var(--paper);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  min-height: 100vh;
+}
+
+.wrap {
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+  padding: calc(var(--safe-top) + 40px) 24px calc(var(--safe-bot) + 32px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.route-motif { margin-bottom: 14px; }
+
+.brand {
+  font-family: var(--font-head);
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -.4px;
+  color: var(--ink);
+  text-decoration: none;
+}
+.brand span { color: #f97316; }
+
+.role-tag {
+  margin-top: 4px;
+  margin-bottom: 28px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--accent-d);
+}
+
+.card {
+  width: 100%;
+  background: var(--white);
+  border-radius: 22px;
+  padding: 28px 24px;
+  box-shadow: 0 24px 60px -12px rgba(17,24,39,.16), 0 4px 16px rgba(17,24,39,.06);
+}
+
+.card h1 {
+  font-family: var(--font-head);
+  font-size: 19px;
+  font-weight: 700;
+  margin-bottom: 22px;
+  color: var(--ink);
+}
+
+label {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin-bottom: 6px;
+  margin-top: 16px;
+}
+label:first-of-type { margin-top: 0; }
+
+input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  font-family: inherit;
+  font-size: 14.5px;
+  color: var(--ink);
+  background: var(--field-bg);
+  outline: none;
+  transition: border-color .18s, box-shadow .18s, background .18s;
+}
+
+input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(29,185,84,.14);
+  background: var(--white);
+}
+
+.field-wrap { position: relative; }
+
+.toggle-pass {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  padding: 6px;
+  display: flex;
+  border-radius: 8px;
+}
+.toggle-pass:hover { color: var(--ink-2); }
+
+button[type="submit"] {
+  width: 100%;
+  margin-top: 22px;
+  padding: 13px;
+  border: none;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--white);
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .18s, opacity .18s;
+}
+button[type="submit"]:hover { background: var(--accent-d); }
+button[type="submit"]:disabled { opacity: .65; cursor: not-allowed; }
+
+.message {
+  min-height: 18px;
+  margin-top: 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--red);
+}
+
+.link-row {
+  margin-top: 18px;
+  text-align: center;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+.link-row a { color: var(--accent-d); font-weight: 700; text-decoration: none; }
+.link-row a:hover { text-decoration: underline; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+</style>
+</head>
+<body>
+  <main class="wrap">
+
+    <svg class="route-motif" width="100" height="34" viewBox="0 0 120 40" fill="none" aria-hidden="true">
+      <path d="M8 10 C 35 10, 30 30, 60 30 S 95 10, 112 10" stroke="#d1d5db" stroke-width="2" stroke-dasharray="3 5" stroke-linecap="round"/>
+      <circle cx="8" cy="10" r="5" fill="#1db954"/>
+      <circle cx="112" cy="10" r="5" fill="#f97316"/>
+    </svg>
+
+    <a href="/" class="brand">Taxi<span>Go</span></a>
+    <span class="role-tag">Espace client</span>
+
+    <div class="card">
+      <h1>Connexion</h1>
+      <form id="loginForm" novalidate>
+        <label for="login">Email ou téléphone</label>
+        <input id="login" name="login" type="text" autocomplete="username" placeholder="vous@exemple.com" required>
+
+        <label for="password">Mot de passe</label>
+        <div class="field-wrap">
+          <input id="password" name="password" type="password" autocomplete="current-password" required>
+          <button type="button" class="toggle-pass" id="togglePass" aria-label="Afficher le mot de passe">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="eyeIcon"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+
+        <button type="submit" id="submitBtn">Se connecter</button>
+        <div class="message" id="message"></div>
+      </form>
+
+      <div class="link-row">Pas encore de compte ? <a href="/client/register">S'inscrire</a></div>
+    </div>
+
+  </main>
+
+  <script>
+    const togglePass = document.getElementById("togglePass");
+    const passwordInput = document.getElementById("password");
+    const eyeIcon = document.getElementById("eyeIcon");
+    togglePass.addEventListener("click", () => {
+      const show = passwordInput.type === "password";
+      passwordInput.type = show ? "text" : "password";
+      eyeIcon.innerHTML = show
+        ? '<path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a18.6 18.6 0 0 1 4.22-5.06M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
+        : '<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/>';
+      togglePass.setAttribute("aria-label", show ? "Masquer le mot de passe" : "Afficher le mot de passe");
+    });
+
+    document.getElementById("loginForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const message = document.getElementById("message");
+      const submitBtn = document.getElementById("submitBtn");
+      message.textContent = "";
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Connexion…";
+
+      try {
+        const response = await fetch("/backend/client/login_client.php", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            login: document.getElementById("login").value.trim(),
+            password: passwordInput.value
+          })
+        });
+
+        const result = await response.json();
+        if (result.status === "success") {
+          window.location.href = "/client";
+        } else {
+          message.textContent = result.message || "Connexion impossible";
+        }
+      } catch (err) {
+        message.textContent = "Erreur réseau — vérifiez votre connexion";
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Se connecter";
+      }
+    });
+  </script>
+</body>
+</html>

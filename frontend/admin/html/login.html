@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>TaxiGo — Administration</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600;700&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --ink:        #111827;
+  --ink-2:      #374151;
+  --ink-3:      #9ca3af;
+  --paper:      #f3f4f6;
+  --line:       #e5e7eb;
+  --white:      #ffffff;
+  --field-bg:   #f9fafb;
+  --accent:     #f97316;
+  --accent-d:   #ea580c;
+  --red:        #dc2626;
+  --font-head:  'Syne', sans-serif;
+  --font-body:  'DM Sans', system-ui, sans-serif;
+  --safe-top:   env(safe-area-inset-top, 0px);
+  --safe-bot:   env(safe-area-inset-bottom, 0px);
+}
+
+html, body { min-height: 100%; }
+
+body {
+  font-family: var(--font-body);
+  background: var(--paper);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  min-height: 100vh;
+}
+
+.wrap {
+  width: 100%;
+  max-width: 380px;
+  margin: 0 auto;
+  padding: calc(var(--safe-top) + 56px) 24px calc(var(--safe-bot) + 32px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.grid-motif { margin-bottom: 16px; opacity: .55; }
+
+.brand {
+  font-family: var(--font-head);
+  font-size: 25px;
+  font-weight: 800;
+  letter-spacing: -.4px;
+  color: var(--ink);
+  text-decoration: none;
+}
+.brand span { color: var(--accent); }
+
+.role-tag {
+  margin-top: 4px;
+  margin-bottom: 28px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.card {
+  width: 100%;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 26px 24px;
+  box-shadow: 0 20px 48px -12px rgba(17,24,39,.12), 0 4px 12px rgba(17,24,39,.05);
+}
+
+.card h1 {
+  font-family: var(--font-head);
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 20px;
+  color: var(--ink);
+}
+
+label {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin-bottom: 6px;
+  margin-top: 14px;
+}
+label:first-of-type { margin-top: 0; }
+
+input {
+  width: 100%;
+  padding: 11px 13px;
+  border: 1.5px solid var(--line);
+  border-radius: 9px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--field-bg);
+  outline: none;
+  transition: border-color .18s, background .18s;
+}
+
+input:focus { border-color: var(--accent); background: var(--white); }
+
+.field-wrap { position: relative; }
+
+.toggle-pass {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  padding: 5px;
+  display: flex;
+  border-radius: 7px;
+}
+.toggle-pass:hover { color: var(--ink-2); }
+
+button[type="submit"] {
+  width: 100%;
+  margin-top: 20px;
+  padding: 11px;
+  background: var(--accent);
+  color: var(--white);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background .18s, opacity .18s;
+}
+button[type="submit"]:hover { background: var(--accent-d); }
+button[type="submit"]:disabled { opacity: .6; cursor: not-allowed; }
+
+.message {
+  min-height: 18px;
+  margin-top: 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--red);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+</style>
+</head>
+<body>
+  <main class="wrap">
+
+    <svg class="grid-motif" width="44" height="28" viewBox="0 0 44 28" aria-hidden="true">
+      <circle cx="4" cy="4" r="2" fill="#f97316"/><circle cx="14" cy="4" r="2" fill="#d1d5db"/><circle cx="24" cy="4" r="2" fill="#d1d5db"/><circle cx="34" cy="4" r="2" fill="#d1d5db"/>
+      <circle cx="4" cy="14" r="2" fill="#d1d5db"/><circle cx="14" cy="14" r="2" fill="#f97316"/><circle cx="24" cy="14" r="2" fill="#d1d5db"/><circle cx="34" cy="14" r="2" fill="#d1d5db"/>
+      <circle cx="4" cy="24" r="2" fill="#d1d5db"/><circle cx="14" cy="24" r="2" fill="#d1d5db"/><circle cx="24" cy="24" r="2" fill="#f97316"/><circle cx="34" cy="24" r="2" fill="#d1d5db"/>
+    </svg>
+
+    <a href="/" class="brand">Taxi<span>Go</span></a>
+    <span class="role-tag">Administration</span>
+
+    <div class="card">
+      <h1>Connexion administrateur</h1>
+      <form id="loginForm" novalidate>
+        <label for="login">Email ou identifiant</label>
+        <input id="login" name="login" type="text" autocomplete="username" placeholder="admin@taxigo.cm" required>
+
+        <label for="password">Mot de passe</label>
+        <div class="field-wrap">
+          <input id="password" name="password" type="password" autocomplete="current-password" required>
+          <button type="button" class="toggle-pass" id="togglePass" aria-label="Afficher le mot de passe">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="eyeIcon"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+
+        <button type="submit" id="submitBtn">Se connecter</button>
+        <div class="message" id="message"></div>
+      </form>
+    </div>
+
+  </main>
+
+  <script>
+    const togglePass = document.getElementById("togglePass");
+    const passwordInput = document.getElementById("password");
+    const eyeIcon = document.getElementById("eyeIcon");
+    togglePass.addEventListener("click", () => {
+      const show = passwordInput.type === "password";
+      passwordInput.type = show ? "text" : "password";
+      eyeIcon.innerHTML = show
+        ? '<path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a18.6 18.6 0 0 1 4.22-5.06M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 7 11 7a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
+        : '<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/>';
+      togglePass.setAttribute("aria-label", show ? "Masquer le mot de passe" : "Afficher le mot de passe");
+    });
+
+    document.getElementById("loginForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const message = document.getElementById("message");
+      const submitBtn = document.getElementById("submitBtn");
+      message.textContent = "";
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Connexion…";
+
+      try {
+        const response = await fetch("/backend/admin/login_admin.php", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            login: document.getElementById("login").value.trim(),
+            password: passwordInput.value
+          })
+        });
+
+        const result = await response.json();
+        if (result.status === "success") {
+          window.location.href = "/admin";
+        } else {
+          message.textContent = result.message || "Identifiants invalides";
+        }
+      } catch (err) {
+        message.textContent = "Erreur réseau — vérifiez votre connexion";
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Se connecter";
+      }
+    });
+  </script>
+</body>
+</html>
