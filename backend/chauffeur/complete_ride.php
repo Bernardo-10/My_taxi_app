@@ -10,7 +10,7 @@ require_once __DIR__ . "/../common/geo.php";
 // Valeur mise à 2000 m (2 km) au lieu des 200 m prévus au départ, pour
 // garder l'application facilement testable (GPS de test peu précis,
 // trajets de démo courts). À resserrer à 200 m avant mise en production réelle.
-const COMPLETE_CONFIRM_DISTANCE_METERS = 2000;
+const COMPLETE_CONFIRM_DISTANCE_METERS = 200;
 
 $driverId = require_driver_id();
 $data  = json_decode(file_get_contents("php://input"), true);
