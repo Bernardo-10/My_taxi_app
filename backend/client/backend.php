@@ -22,6 +22,31 @@ $passengers = $data["passengers"] ?? 1;
 
 $conn = db_connect();
 
+// Empêche la création d'une 2e course active pour le même client (double
+// onglet, double-clic, refresh mal timé...) : une seule course pending/
+// accepted/arrived/started à la fois par user_id.
+$checkStmt = $conn->prepare("
+    SELECT id, status FROM rides
+    WHERE user_id = ?
+      AND status IN ('pending', 'accepted', 'arrived', 'started')
+    ORDER BY FIELD(status, 'started', 'arrived', 'accepted', 'pending'), created_at DESC
+    LIMIT 1
+");
+$checkStmt->bind_param("i", $user_id);
+$checkStmt->execute();
+$existing = $checkStmt->get_result()->fetch_assoc();
+$checkStmt->close();
+
+if ($existing) {
+    $conn->close();
+    json_response([
+        "status" => "error",
+        "message" => "Une course est deja en cours",
+        "existing_ride_id" => (int) $existing["id"],
+        "existing_ride_status" => $existing["status"]
+    ], 409);
+}
+
 $stmt = $conn->prepare("
     INSERT INTO rides (
         user_id,

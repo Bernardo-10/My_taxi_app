@@ -43,6 +43,7 @@ document.addEventListener("DOMContentLoaded", () => {
   cacheDOM();
   syncAppMode();
   initMap();
+  initActiveRideRecovery();
   initUserSession();
   initPassengerCounter();
   initDestinationOverlay();
@@ -437,6 +438,18 @@ function initFindRideBtn() {
 function showWaitingMessage() {
   AppState.rideState = "searching";
 
+  // Verrouiller le marqueur pickup dès que la course est envoyée (pending) :
+  // un drag ne serait ni sauvegardé côté serveur, ni reflété dans le tracé
+  // chauffeur (qui se base sur pickupCoords côté client-api.js), donc laisser
+  // le marqueur déplaçable après soumission induirait le client en erreur.
+  // Se déclenche aussi bien à la soumission normale qu'à la reprise après
+  // rafraîchissement, puisque showWaitingMessage() est le point de passage
+  // commun aux deux flux.
+  if (pickupMarker && pickupMarker.dragging) {
+    pickupMarker.dragging.disable();
+    pickupMarker.bindPopup("Point de départ");
+  }
+
   // S'assurer que le résumé est rempli avant d'afficher
   const pickupEl = document.getElementById("pickup");
   const destEl   = document.getElementById("destination");
@@ -449,6 +462,79 @@ function showWaitingMessage() {
   // Activer l'onglet Course et basculer automatiquement
   $navBtns.ride.disabled = false;
   switchTab("ride");
+}
+
+// ---- RECUPERATION DE COURSE APRES RAFRAICHISSEMENT ----------------
+// Interroge get_active_ride.php au chargement de la page : si une course est
+// toujours en cours côté serveur (pending / accepted / arrived / started),
+// on reconstruit l'état visuel exactement comme si la mise à jour venait
+// d'arriver par polling normal, puis on relance le suivi habituel.
+async function initActiveRideRecovery() {
+  const active = await fetchActiveRide(); // client-api.js
+  if (!active) return; // pas de course en cours : rien à faire
+
+  const status = active.ride_status;
+
+  // Repositionner pickup / destination (texte + coordonnées + marqueurs)
+  AppState.pickupText      = active.pickup      || "";
+  AppState.destinationText = active.destination || "";
+  const pickupEl = document.getElementById("pickup");
+  const destEl   = document.getElementById("destination");
+  if (pickupEl) pickupEl.value = AppState.pickupText;
+  if (destEl)   destEl.value   = AppState.destinationText;
+
+  if (active.pickup_lat && active.pickup_lng) {
+    pickupCoords = { lat: parseFloat(active.pickup_lat), lng: parseFloat(active.pickup_lng) };
+    updateMarker("pickup", pickupCoords.lat, pickupCoords.lng);
+  }
+
+  // Le marqueur destination ne doit être visible que pendant "pending" et
+  // "started" — masqué pendant "accepted"/"arrived" (onRideAccepted le retire,
+  // onRideStarted le remet), comportement voulu à respecter dès la reprise.
+  // destinationCoords, lui, est toujours renseigné : nécessaire pour le calcul
+  // Haversine et pour qu'onRideStarted puisse recréer le marqueur plus tard.
+  if (active.destination_lat && active.destination_lng) {
+    destinationCoords = { lat: parseFloat(active.destination_lat), lng: parseFloat(active.destination_lng) };
+    if (status === "pending" || status === "started") {
+      updateMarker("destination", destinationCoords.lat, destinationCoords.lng);
+    }
+  }
+
+  if (pickupCoords && destinationCoords && (status === "pending" || status === "started")) {
+    map.fitBounds(L.latLngBounds(
+      [pickupCoords.lat, pickupCoords.lng],
+      [destinationCoords.lat, destinationCoords.lng]
+    ), { padding: [40, 40] });
+  }
+
+  // Repeupler distance / durée / prix : en écrivant dans #routeDistance en
+  // dernier, on redéclenche le fareObserver existant (voir observeFareUpdate
+  // plus bas) qui se charge lui-même de remplir summaryDist/Dur/Price, le
+  // pill et d'afficher le fareStrip — évite de dupliquer cette logique ici.
+  // Sans ça, ces informations restaient vides après un rafraîchissement,
+  // aussi bien dans le panneau "recherche en cours" que dans le fare strip
+  // de l'onglet carte.
+  if (active.distance_km != null && active.duration_min != null && active.price_fcfa != null) {
+    const distanceKm  = parseFloat(active.distance_km);
+    const durationMin = parseInt(active.duration_min, 10);
+    const priceFcfa   = parseInt(active.price_fcfa, 10);
+    const passengers  = active.passengers || 1;
+
+    const routeDuration = document.getElementById("routeDuration");
+    const routePrice    = document.getElementById("routePrice");
+    const routeDistance = document.getElementById("routeDistance");
+    if (routeDuration) routeDuration.textContent = `${durationMin} min`;
+    if (routePrice)    routePrice.textContent    = `${priceFcfa} FCFA (${passengers} passagers)`;
+    if (routeDistance) routeDistance.textContent = `${distanceKm.toFixed(2)} km`;
+  }
+
+  // Reprendre l'identifiant de course : à partir de là, checkRideStatus()
+  // (client-api.js) retrouve le vrai statut serveur et déclenche lui-même
+  // onRideAccepted / onRideArrived / onRideStarted selon le cas.
+  currentRideId = active.ride_id;
+  $navBtns.ride.disabled = false;
+  showWaitingMessage();   // état de base "recherche", écrasé aussitôt si le statut réel est plus avancé
+  startRideTracking();    // client-api.js : appelle checkRideStatus() immédiatement + relance le polling
 }
 
 function setRideState(state) {
@@ -856,6 +942,21 @@ function onRideStarted(rideData) {
     syncAppMode();
     removeArrivedNotice();
 
+    // En flux normal ce panneau est déjà visible depuis onRideAccepted/
+    // onRideArrived, donc cet appel est un no-op. Mais à la reprise après
+    // rafraîchissement quand on atterrit directement sur "started" (sans
+    // passer par accepted/arrived dans cette session), rien d'autre ne
+    // basculait le panneau visible : "recherche en cours" restait affiché
+    // avec juste son texte modifié en coulisses.
+    setRideState("accepted");
+
+    // Idem : onRideAccepted/onRideArrived remplissent normalement le nom,
+    // la couleur, la plaque et la note du chauffeur — un no-op en flux
+    // normal, mais nécessaire ici pour la reprise directe sur "started".
+    const driver = rideData?.driver || {};
+    setDriverInfo(driver);
+    AppState.currentDriver = driver;
+
     // Modifier l'UI du panneau Course
     const rideTitle = document.querySelector("#rideAcceptedMsg .ride-state-title");
     if (rideTitle) rideTitle.textContent = "Course en cours 🚗";
@@ -1050,6 +1151,13 @@ async function updateRideProgress() {
 
         const response = await fetch(url);
         const data = await response.json();
+
+        // Re-vérifier après l'await : si la course a été complétée/annulée
+        // pendant l'attente réseau, resetMapPanel() a déjà remis #routeDistance
+        // à "-" et masqué le fare strip. Écrire ici sans ce garde redéclenche
+        // fareObserver (qui observe #routeDistance) et réaffiche le fare strip
+        // juste après son nettoyage.
+        if (!currentRideId || AppState.rideState !== "started") return;
 
         if (!data.routes || !data.routes.length) return;
 

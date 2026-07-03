@@ -188,10 +188,46 @@ async function sendToBackend(data) {
             }
         }
 
+        // Une course active existe déjà côté serveur (double onglet, double-clic...) :
+        // au lieu de laisser l'échec silencieux, on rebascule sur cette course
+        // existante via la même logique que la reprise après rafraîchissement.
+        if (response.status === 409 && result.existing_ride_id) {
+            if (typeof showToast === "function") {
+                showToast("Une course est déjà en cours");
+            }
+            if (typeof initActiveRideRecovery === "function") {
+                await initActiveRideRecovery();
+            }
+        }
+
         return result;
     } catch (error) {
         console.error("Erreur backend:", error);
         return { status: "error", message: "Erreur de connexion" };
+    }
+}
+
+// Appelée une seule fois au chargement de la page (voir initActiveRideRecovery
+// dans client-ui.js) pour savoir si une course est toujours en cours côté serveur
+// après un rafraîchissement forcé.
+async function fetchActiveRide() {
+    try {
+        const response = await fetch(`${CLIENT_API_BASE}/client/get_active_ride.php`);
+        const result = await response.json();
+
+        if (response.status === 401) {
+            window.location.href = "/client/login";
+            return null;
+        }
+
+        if (result.status !== "success" || !result.has_active_ride) {
+            return null;
+        }
+
+        return result;
+    } catch (error) {
+        console.error("Erreur récupération course active:", error);
+        return null;
     }
 }
 
@@ -290,6 +326,13 @@ async function checkRideStatus(forceRefresh = false) {
     }
 }
 
+// Vrai tant qu'une course est en cours et n'a pas été nettoyée entre-temps
+// (onRideCompleted/onRideCancelled). Sert à re-vérifier après un await, car
+// clearInterval() n'annule pas un appel déjà en vol au moment du cleanup.
+function rideStillActive() {
+    return !!currentRideId && typeof AppState !== "undefined" && AppState.rideState !== "idle";
+}
+
 async function updateDriverPosition() {
     if (!currentRideId || !rideAccepted) {
         return;
@@ -303,6 +346,11 @@ async function updateDriverPosition() {
     try {
         const response = await fetch(`${CLIENT_API_BASE}/client/get_driver_location.php?ride_id=${currentRideId}`);
         const data = await response.json();
+
+        // Re-vérifier après l'await : un onRideCompleted()/onRideCancelled() a pu
+        // nettoyer (resetMapPanel) pendant l'attente réseau. Sans ce re-check, on
+        // recrée le marqueur taxi + son popup juste après leur suppression.
+        if (!rideStillActive()) return;
 
         if (data.status !== "success") {
             updateRideStatusMessage("Attente de la position du chauffeur...");
@@ -359,7 +407,7 @@ async function updateDriverPosition() {
             // ── Chauffeur → Pickup : ligne bleue pleine (crossfade, sans clignotement)
             if (pickupCoords && posChanged) {
                 const route = await getRouteGeoJSON(driverLng, driverLat, pickupCoords.lng, pickupCoords.lat);
-                if (route) {
+                if (route && rideStillActive()) {
                     if (typeof updateDriverETA === "function") updateDriverETA(route.distance, route.duration);
                     const newLayer = L.geoJSON(route.geometry, {
                         style: { color: "#3b82f6", weight: 5, opacity: 0.9, dashArray: null }
@@ -374,7 +422,7 @@ async function updateDriverPosition() {
             // On trace si la position a changé OU si le tracé n'existe pas encore
             if (pickupCoords && (posChanged || !driverRouteLayer)) {
                 const route = await getRouteGeoJSON(driverLng, driverLat, pickupCoords.lng, pickupCoords.lat);
-                if (route) {
+                if (route && rideStillActive()) {
                     const newLayer = L.geoJSON(route.geometry, {
                         style: { color: "#9ca3af", weight: 4, opacity: 0.85, dashArray: "8, 10" }
                     }).addTo(map);
@@ -389,7 +437,7 @@ async function updateDriverPosition() {
             // On force le tracé à chaque appel si le tracé n'existe pas encore
             if (destinationCoords && pickupCoords && !driverRouteLayer) {
                 const route = await getRouteGeoJSON(pickupCoords.lng, pickupCoords.lat, destinationCoords.lng, destinationCoords.lat);
-                if (route) {
+                if (route && rideStillActive()) {
                     const newLayer = L.geoJSON(route.geometry, {
                         style: { color: "#1db954", weight: 5, opacity: 0.9, dashArray: null }
                     }).addTo(map);
@@ -399,7 +447,7 @@ async function updateDriverPosition() {
             } else if (destinationCoords && pickupCoords && posChanged) {
                 // Recalcul si le chauffeur (et donc le client) a bougé significativement
                 const route = await getRouteGeoJSON(pickupCoords.lng, pickupCoords.lat, destinationCoords.lng, destinationCoords.lat);
-                if (route) {
+                if (route && rideStillActive()) {
                     const newLayer = L.geoJSON(route.geometry, {
                         style: { color: "#1db954", weight: 5, opacity: 0.9, dashArray: null }
                     }).addTo(map);
