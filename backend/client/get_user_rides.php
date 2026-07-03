@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . "/../config/auth.php";
 
 $userId = require_client_id();

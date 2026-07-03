@@ -68,20 +68,57 @@ session_set_save_handler($handler, true);
 
 $sessionLifetime = SESSION_LIFETIME;
 
+// ── Domaine dynamique (remplace le domaine "taxigocmr.wuaze.com" codé en dur) ──
+// Un cookie dont l'attribut Domain ne correspond pas exactement au nom d'hôte
+// réellement visité est silencieusement rejeté par le navigateur : c'est ce
+// qui provoquait la boucle de login constatée chez un utilisateur arrivant
+// par un autre nom d'hôte que celui codé en dur.
+function get_request_host(): string {
+    $host = $_SERVER["HTTP_HOST"] ?? $_SERVER["SERVER_NAME"] ?? "";
+    return preg_replace('/:\d+$/', '', $host); // retire un éventuel port (ex: localhost:8080)
+}
+
+function get_cookie_domain(): ?string {
+    $host = get_request_host();
+    // Les navigateurs rejettent l'attribut Domain sur une IP, et il est
+    // inutile pour localhost : dans ces cas, on l'omet pour laisser le
+    // navigateur utiliser l'hôte courant par défaut.
+    if ($host === "" || $host === "localhost" || filter_var($host, FILTER_VALIDATE_IP)) {
+        return null;
+    }
+    return $host;
+}
+
+function get_allowed_origin(): string {
+    // Reflète l'origine réelle de la requête plutôt qu'un domaine figé —
+    // nécessaire dès qu'on utilise Access-Control-Allow-Credentials: true
+    // (la spec interdit "*" dans ce cas de toute façon).
+    if (!empty($_SERVER["HTTP_ORIGIN"])) {
+        return $_SERVER["HTTP_ORIGIN"];
+    }
+    $scheme = (!empty($_SERVER["HTTPS"]) && $_SERVER["HTTPS"] !== "off") ? "https" : "http";
+    return $scheme . "://" . get_request_host();
+}
+
+$cookieDomain = get_cookie_domain();
+
 if (session_status() === PHP_SESSION_NONE) {
     ini_set("session.gc_maxlifetime", (string) $sessionLifetime);
-    session_set_cookie_params([
+    $cookieParams = [
         "lifetime" => $sessionLifetime,
         "path"     => "/",
-        "domain"   => "taxigocmr.wuaze.com",
         "secure"   => true,
         "httponly" => true,
         "samesite" => "None"
-    ]);
+    ];
+    if ($cookieDomain !== null) {
+        $cookieParams["domain"] = $cookieDomain;
+    }
+    session_set_cookie_params($cookieParams);
     session_start();
 }
 
-header("Access-Control-Allow-Origin: https://taxigocmr.wuaze.com");
+header("Access-Control-Allow-Origin: " . get_allowed_origin());
 header("Access-Control-Allow-Credentials: true");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type");
@@ -100,14 +137,18 @@ function refresh_session_cookie() {
     if (session_status() !== PHP_SESSION_ACTIVE || !ini_get("session.use_cookies")) {
         return;
     }
-    setcookie(session_name(), session_id(), [
+    $params = [
         "expires"  => time() + $sessionLifetime,
         "path"     => "/",
-        "domain"   => "taxigocmr.wuaze.com",
         "secure"   => true,
         "httponly" => true,
         "samesite" => "None"
-    ]);
+    ];
+    $domain = get_cookie_domain();
+    if ($domain !== null) {
+        $params["domain"] = $domain;
+    }
+    setcookie(session_name(), session_id(), $params);
 }
 
 function expire_session() {
