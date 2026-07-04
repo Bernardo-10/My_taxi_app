@@ -23,7 +23,7 @@
   --white:        #ffffff;
   --sheet-radius: 24px;
   --nav-h:        68px;
-  --sheet-gap:    16px;
+  --sheet-gap:    12px;
   --sheet-peek-h: 112px;
   --font-head:    'Syne', sans-serif;
   --font-body:    'DM Sans', sans-serif;
@@ -102,7 +102,7 @@ body {
   left: 0; right: 0;
   background: var(--white);
   border-radius: var(--sheet-radius) var(--sheet-radius) 0 0;
-  padding: var(--sheet-gap) var(--sheet-gap) 24px;
+  padding: var(--sheet-gap) var(--sheet-gap) 10px;
   z-index: 20;
   box-shadow: 0 -6px 40px rgba(0,0,0,.10);
 
@@ -204,7 +204,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: 8px;
   font-size: 20px;
   font-weight: 600;
 }
@@ -243,15 +243,15 @@ body {
 .route-inputs {
   display: flex;
   align-items: stretch;
-  gap: 12px;
-  margin-bottom: 14px;
+  gap: 10px;
+  margin-bottom: 8px;
 }
 
 .dots-col {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-top: 14px;
+  padding-top: 11px;
   gap: 0;
 }
 
@@ -277,7 +277,7 @@ body {
 
 .input-stack input {
   width: 100%;
-  padding: 13px 14px;
+  padding: 10px 12px;
   border: 1.5px solid var(--gray-200);
   border-radius: 12px;
   font-family: var(--font-body);
@@ -306,14 +306,14 @@ body {
   background: var(--gray-100);
 }
 
-.input-divider { height: 8px; }
+.input-divider { height: 4px; }
 
 /* ── PAX ROW ─────────────────────────────────────── */
 .pax-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 14px;
+  margin-bottom: 8px;
 }
 
 .pax-label {
@@ -367,8 +367,8 @@ body {
   justify-content: space-between;
   background: var(--gray-100);
   border-radius: 14px;
-  padding: 12px 16px;
-  margin-bottom: 14px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
 }
 
 .fare-item {
@@ -408,7 +408,7 @@ body {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 15px;
+  padding: 12px;
   background: var(--green);
   color: var(--white);
   border: none;
@@ -587,12 +587,12 @@ body {
 }
 
 #app.ride-accepted.tab-ride #sheet-ride .sheet-handle {
-  margin-bottom: 18px;
+  margin-bottom: 8px;
 }
 
 .driver-sheet {
   align-items: stretch;
-  gap: 14px;
+  gap: 10px;
   padding: 0;
 }
 
@@ -610,26 +610,22 @@ body {
 }
 
 .driver-sheet .driver-info {
-  margin: 8px 0 2px;
+  margin: 4px 0 2px;
 }
 
 .driver-trip-meta {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 8px;
   align-items: stretch;
 }
 
-/* Ligne plaque + bouton signalement sur la même rangée */
-.plate-report-row {
+/* Ligne du bouton de signalement (la plaque est désormais sur la ligne du nom,
+   voir .driver-name-row) — ne prend de la place que lorsque le bouton est visible */
+.report-row {
   grid-column: 1 / -1;
   display: flex;
   align-items: center;
-  gap: 10px;
-}
-
-.plate-report-row .plate-badge {
-  flex-shrink: 0;
 }
 
 /* Bouton signaler inline (compact, hauteur plaque) */
@@ -646,7 +642,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   background: var(--gray-50);
   border: 1px solid var(--gray-200);
   border-radius: 12px;
@@ -679,7 +675,14 @@ body {
   justify-content: center;
 }
 
-.driver-details { flex: 1; }
+.driver-details { flex: 1; min-width: 0; }
+
+.driver-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 
 .driver-name {
   font-family: var(--font-head);
@@ -716,19 +719,20 @@ body {
   display: inline-block;
   background: var(--gray-100);
   border: 1.5px solid var(--gray-200);
-  border-radius: 8px;
-  padding: 5px 14px;
+  border-radius: 6px;
+  padding: 2px 8px;
   font-family: 'Courier New', monospace;
-  font-size: 15px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--gray-800);
-  letter-spacing: .08em;
+  letter-spacing: .06em;
+  flex-shrink: 0;
 }
 
 .driver-actions {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
-  gap: 10px;
+  gap: 8px;
 }
 
 .drv-btn {
@@ -736,8 +740,8 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding: 12px 8px;
+  gap: 4px;
+  padding: 10px 8px;
   border: none;
   border-radius: 14px;
   font-family: var(--font-body);
@@ -982,10 +986,10 @@ body {
 .profile-hero {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 8px 0 20px;
+  gap: 12px;
+  padding: 4px 0 14px;
   border-bottom: 1px solid var(--gray-100);
-  margin-bottom: 16px;
+  margin-bottom: 10px;
 }
 
 .profile-avatar {
@@ -1020,8 +1024,8 @@ body {
 .profile-info-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 4px 0 12px;
+  gap: 4px;
+  padding: 0 0 8px;
 }
 
 .profile-info-row {
@@ -1029,7 +1033,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 0;
+  padding: 6px 0;
   border-bottom: 1px solid var(--gray-100);
   font-size: 13px;
 }
@@ -1050,7 +1054,7 @@ body {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 15px 12px;
+  padding: 11px 12px;
   background: var(--gray-50);
   border: none;
   border-radius: 14px;
@@ -1200,7 +1204,7 @@ body {
 }
 
 .sheet-drag-area {
-  padding: 10px 0 4px;
+  padding: 3px 0 0;
   display: flex;
   flex-direction: column;
   align-items: center;
