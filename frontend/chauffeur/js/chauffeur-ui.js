@@ -39,6 +39,17 @@
  *     FIX    : persistance dans localStorage (loadShownAlerts/persistShownAlerts/
  *              markAlertShown), fenêtre de rétention 24h alignée sur la fenêtre
  *              serveur de get_rides.php pour cancelled_client.
+ *
+ *  ✅ CHANTIER 4 (v3) — Alerte "problème client" retirée du chauffeur
+ *     CAUSE  : afficher au chauffeur lui-même l'alerte "cette course est
+ *              surveillée" est contre-productif d'un point de vue sécurité —
+ *              ça prévient la personne surveillée qu'elle l'est.
+ *     FIX    : showClientProblemAlerts()/openClientProblemAlert() supprimées.
+ *              L'alerte vit désormais côté admin (frontend/admin/js/admin-ui.js),
+ *              avec un dédup serveur (rides.client_problem_resolved_at) plutôt
+ *              que localStorage, pour rester cohérent entre plusieurs postes admin.
+ *              get_rides.php ne renvoie plus client_problem_description/
+ *              client_problem_at au chauffeur (whitelist de colonnes).
  */
 
 /* ═══════════════════════════════════════════════
@@ -77,7 +88,6 @@ let reportRideId        = null;
 // client) dans localStorage, pour survivre à un rafraîchissement de page —
 // même pattern que "taxigo_recents" côté client. Fenêtre de rétention de 24h,
 // alignée sur la fenêtre serveur de get_rides.php pour cancelled_client.
-const CLIENT_REPORTS_STORAGE_KEY = "taxigo_shown_client_reports";
 const CANCELLATIONS_STORAGE_KEY  = "taxigo_shown_cancellations";
 const SHOWN_ALERTS_MAX_AGE_MS    = 24 * 60 * 60 * 1000; // 24h
 
@@ -111,8 +121,6 @@ function markAlertShown(map, storageKey, key) {
     map.set(key, Date.now());
     persistShownAlerts(storageKey, map);
 }
-
-let shownClientReports  = loadShownAlerts(CLIENT_REPORTS_STORAGE_KEY);
 
 // Alerte annulation client (course déjà acceptée/arrivée/démarrée)
 let shownCancellations  = loadShownAlerts(CANCELLATIONS_STORAGE_KEY);
@@ -664,7 +672,6 @@ function updateRideLists() {
     if (activeTab === "courses") renderActiveCourses();
     updateNavBadges();
     updateFilterCounts();
-    showClientProblemAlerts();
     showClientCancellationAlerts();
 }
 
@@ -1041,65 +1048,6 @@ function updateDashboard() {
 function setText(id, val) {
     const el = document.getElementById(id);
     if (el) el.textContent = val;
-}
-
-function showClientProblemAlerts() {
-    (allRides || []).forEach(ride => {
-        const problem = (ride.client_problem_description || "").trim();
-        if (!problem) return;
-
-        const key = `${ride.id}:${ride.client_problem_at || problem}`;
-        if (shownClientReports.has(key)) return;
-
-        markAlertShown(shownClientReports, CLIENT_REPORTS_STORAGE_KEY, key);
-        openClientProblemAlert(ride, problem);
-    });
-}
-
-function openClientProblemAlert(ride, problem) {
-    const existing = document.getElementById("clientProblemAlert");
-    if (existing) existing.remove();
-
-    const overlay = document.createElement("div");
-    overlay.id = "clientProblemAlert";
-    overlay.className = "client-problem-alert";
-    overlay.setAttribute("role", "alertdialog");
-    overlay.setAttribute("aria-modal", "true");
-    overlay.setAttribute("aria-label", "Alerte de securite client");
-
-    const box = document.createElement("div");
-    box.className = "client-problem-box";
-
-    const title = document.createElement("div");
-    title.className = "client-problem-title";
-    title.textContent = "ALERTE SECURITE";
-
-    const warning = document.createElement("div");
-    warning.className = "client-problem-warning";
-    warning.textContent = "Un client vient de signaler un probleme. Cette course est surveillee et vos actions peuvent etre verifiees.";
-
-    const rideRef = document.createElement("div");
-    rideRef.className = "client-problem-ride";
-    rideRef.textContent = `Course #${ride.id}`;
-
-    const msg = document.createElement("div");
-    msg.className = "client-problem-message";
-    msg.textContent = problem;
-
-    const action = document.createElement("button");
-    action.className = "client-problem-action";
-    action.type = "button";
-    action.textContent = "J'ai compris";
-    action.addEventListener("click", () => overlay.remove());
-
-    box.appendChild(title);
-    box.appendChild(warning);
-    box.appendChild(rideRef);
-    box.appendChild(msg);
-    box.appendChild(action);
-    overlay.appendChild(box);
-    document.body.appendChild(overlay);
-    action.focus();
 }
 
 /* ═══════════════════════════════════════════════

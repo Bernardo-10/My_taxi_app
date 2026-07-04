@@ -93,6 +93,25 @@ async function fetchRides({ status = "", q = "", date_from = "", date_to = "", l
 }
 
 /* ──────────────────────────────────────────────
+   SIGNALEMENTS (problèmes chauffeur + client)
+────────────────────────────────────────────── */
+
+async function fetchProblems() {
+    const res  = await fetch(`${ADMIN_API}/list_problems.php`);
+    const data = await res.json();
+    return data.problems || [];
+}
+
+async function resolveClientProblem(rideId) {
+    const res  = await fetch(`${ADMIN_API}/resolve_client_problem.php`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ ride_id: rideId })
+    });
+    return await res.json();
+}
+
+/* ──────────────────────────────────────────────
    GESTION DES UTILISATEURS
 ────────────────────────────────────────────── */
 

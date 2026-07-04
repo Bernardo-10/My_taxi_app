@@ -11,6 +11,8 @@ $result = $conn->query("
         r.price_fcfa, r.created_at, r.updated_at,
         r.problem_description,
         r.client_problem_description,
+        r.client_problem_at,
+        r.client_problem_resolved_at,
         c.full_name  AS client_name,  c.phone AS client_phone,
         r.driver_name, r.driver_plate,
         ch.phone AS driver_phone

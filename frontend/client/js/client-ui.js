@@ -30,7 +30,13 @@ const AppState = {
   currentUser: null,
   currentDriver: null,
   pickupText: "",
-  destinationText: ""
+  destinationText: "",
+  // Chantier 5 (v3) — true dès que le client a choisi un point de départ
+  // manuellement via l'overlay de recherche. watchUserPosition() arrête
+  // alors de réécrire pickupCoords avec la position GPS live, pour ne
+  // pas écraser le choix explicite. Remis à false par
+  // useCurrentPositionAsPickup() et par onRideStarted().
+  pickupLocked: false
 };
 
 // â”€â”€ DOM refs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -46,7 +52,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initActiveRideRecovery();
   initUserSession();
   initPassengerCounter();
-  initDestinationOverlay();
+  initSearchOverlay();
   initNavigation();
   initFindRideBtn();
   initCancelBtns();
@@ -132,6 +138,15 @@ function syncAppMode() {
   app.classList.toggle("tab-map", AppState.activeTab === "map");
   app.classList.toggle("tab-ride", AppState.activeTab === "ride");
   app.classList.toggle("tab-profile", AppState.activeTab === "profile");
+
+  // Chantier 2 (v3) : verrouillage réel des champs pickup/destination dès
+  // qu'une course existe (searching/accepted/arrived/started). Jusqu'ici
+  // seul l'attribut HTML `readonly` empêchait la saisie clavier — il ne
+  // bloque ni le clic ni le focus, donc l'overlay de recherche s'ouvrait
+  // encore et permettait de modifier pickup/destination en pleine course.
+  // Ce toggle pilote le CSS (pointer-events: none) ; openSearchOverlay()
+  // vérifie aussi AppState.rideState en défense en profondeur.
+  app.classList.toggle("route-locked", AppState.rideState !== "idle");
 
   // Une nouvelle transition de course rouvre toujours le sheet (jamais collapsed par surprise)
   const sheetRide = document.getElementById("sheet-ride");
@@ -220,6 +235,19 @@ function watchUserPosition() {
   if (!navigator.geolocation) return;
   navigator.geolocation.watchPosition(
     (pos) => {
+      // Chantier 5 (v3) : suivi GPS live autorisé dans deux cas —
+      //  - "idle" tant que le client n'a pas verrouillé un point de départ
+      //    choisi manuellement via l'overlay de recherche (pickupLocked)
+      //  - "started" : repris volontairement une fois la course en cours
+      //    (voir onRideStarted), pour permettre ailleurs dans l'app un
+      //    suivi du déplacement réel du client.
+      // Gelé dans tous les autres cas (searching/accepted/arrived — valeur
+      // déjà figée côté serveur depuis la création, chantier 2 v2 — ou
+      // idle verrouillé manuellement).
+      const allowed = (AppState.rideState === "idle" && !AppState.pickupLocked) ||
+                      AppState.rideState === "started";
+      if (!allowed) return;
+
       const { latitude: lat, longitude: lng } = pos.coords;
       pickupCoords = { lat, lng };
       if (pickupMarker) pickupMarker.setLatLng([lat, lng]);
@@ -242,15 +270,13 @@ function updateMarker(type, lat, lng) {
       popupAnchor:[0, -30]
     });
 
-    pickupMarker = L.marker([lat, lng], { draggable: true, icon: pickupIcon }).addTo(map).bindPopup("Déplacez-moi");
-    pickupMarker.on("dragend", async () => {
-      const { lat, lng } = pickupMarker.getLatLng();
-      pickupCoords = { lat, lng };
-      const addr = await reverseGeocode(lat, lng);
-      document.getElementById("pickup").value = addr || "Position ajustée";
-      AppState.pickupText = document.getElementById("pickup").value;
-      pickupMarker.bindPopup("Position mise à jour").openPopup();
-    });
+    // Chantier 5 (v3) : le marqueur pickup n'est plus draggable. Toute
+    // modification du point de départ passe désormais par l'overlay de
+    // recherche (initSearchOverlay), comme pour la destination — plus
+    // fiable que le drag, en particulier sur mobile.
+    pickupMarker = L.marker([lat, lng], { icon: pickupIcon })
+      .addTo(map)
+      .bindPopup("Point de départ");
   } else {
     if (destinationMarker) map.removeLayer(destinationMarker);
     destinationMarker = L.marker([lat, lng]).addTo(map).bindPopup("Destination");
@@ -279,47 +305,66 @@ function initPassengerCounter() {
   });
 }
 
-// â”€â”€ OVERLAY DESTINATION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function initDestinationOverlay() {
-  const destInput  = document.getElementById("destination");
-  const overlay    = document.getElementById("searchOverlay");
-  const overlayInput = document.getElementById("destinationOverlay");
-  const closeBtn   = document.getElementById("searchBack");
-  const resultsEl  = document.getElementById("overlayResults");
+// ── OVERLAY DE RECHERCHE (pickup + destination, partagé) ─────────
+// Chantier 5 (v3) : auparavant réservé à la destination. Un seul overlay
+// existe dans le DOM (#searchOverlay) — on le réutilise pour le pickup
+// plutôt que d'en dupliquer un second, avec `overlayField` qui retient
+// quel champ est en cours d'édition au moment de l'ouverture.
+let overlayField = "destination"; // "pickup" | "destination"
+
+function initSearchOverlay() {
+  const pickupInput   = document.getElementById("pickup");
+  const destInput     = document.getElementById("destination");
+  const overlay       = document.getElementById("searchOverlay");
+  const overlayInput  = document.getElementById("destinationOverlay"); // id historique, désormais partagé
+  const closeBtn      = document.getElementById("searchBack");
+  const resultsEl     = document.getElementById("overlayResults");
   const recentSection = document.getElementById("recentDestinations");
-  const recentEl   = document.getElementById("recentList");
-  const labelEl    = recentSection ? recentSection.querySelector(".recent-label") : null;
-  let debounceT    = null;
+  const recentEl      = document.getElementById("recentList");
+  const labelEl       = recentSection ? recentSection.querySelector(".recent-label") : null;
+  let debounceT       = null;
 
-  if (!destInput || !overlay || !overlayInput || !closeBtn || !resultsEl || !recentEl || !labelEl) return;
+  if (!pickupInput || !destInput || !overlay || !overlayInput || !closeBtn || !resultsEl || !recentEl || !labelEl) return;
 
-  // Ouvrir l'overlay
-  destInput.addEventListener("focus", () => openSearchOverlay());
-  destInput.addEventListener("click", () => openSearchOverlay());
+  // Ouvrir l'overlay — un listener par champ, routé via overlayField
+  pickupInput.addEventListener("focus", () => openSearchOverlay("pickup"));
+  pickupInput.addEventListener("click", () => openSearchOverlay("pickup"));
+  destInput.addEventListener("focus",   () => openSearchOverlay("destination"));
+  destInput.addEventListener("click",   () => openSearchOverlay("destination"));
 
-  function openSearchOverlay() {
+  function openSearchOverlay(field) {
+    // Chantier 2 (v3) : le CSS (.route-locked) bloque déjà le clic via
+    // pointer-events: none, mais on vérifie aussi ici — défense en
+    // profondeur si jamais cette fonction était appelée autrement qu'au
+    // clic (ex. focus programmatique depuis un futur appel de code).
+    if (AppState.rideState !== "idle") return;
+
+    overlayField = field;
+    const currentInput = field === "pickup" ? pickupInput : destInput;
     overlay.classList.remove("hidden");
     requestAnimationFrame(() => overlay.classList.add("visible"));
-    overlayInput.value = destInput.value || "";
+    overlayInput.placeholder = field === "pickup" ? "Votre point de départ…" : "Aéroport Nsimalen…";
+    overlayInput.value = currentInput.value || "";
     overlayInput.focus();
-    showRecentDestinations();
+    resultsEl.innerHTML = "";
+    showRecentPlaces();
   }
 
   function closeSearchOverlay() {
     overlay.classList.remove("visible");
     setTimeout(() => { overlay.classList.add("hidden"); }, 230);
-    destInput.blur();
+    overlayInput.blur();
   }
 
   closeBtn.addEventListener("click", closeSearchOverlay);
 
-  // Recherche avec debounce
+  // Recherche avec debounce — commune aux deux champs
   overlayInput.addEventListener("input", () => {
     const q = overlayInput.value.trim();
     if (debounceT) clearTimeout(debounceT);
 
     if (q.length < 2) {
-      showRecentDestinations();
+      showRecentPlaces();
       resultsEl.innerHTML = "";
       return;
     }
@@ -328,6 +373,27 @@ function initDestinationOverlay() {
 
     debounceT = setTimeout(() => fetchOverlayResults(q), 300);
   });
+
+  // Sélection d'un lieu (résultat de recherche ou entrée récente) — route
+  // vers pickupCoords/AppState.pickupLocked ou destinationCoords selon
+  // overlayField.
+  function selectPlace(label, lat, lng) {
+    const targetInput = overlayField === "pickup" ? pickupInput : destInput;
+    targetInput.value  = label;
+    overlayInput.value = label;
+
+    if (overlayField === "pickup") {
+      pickupCoords          = { lat, lng };
+      AppState.pickupText   = label;
+      AppState.pickupLocked = true;
+      updateMarker("pickup", lat, lng);
+    } else {
+      destinationCoords         = { lat, lng };
+      AppState.destinationText  = label;
+      updateMarker("destination", lat, lng);
+    }
+    closeSearchOverlay();
+  }
 
   async function fetchOverlayResults(query) {
     try {
@@ -362,13 +428,8 @@ function initDestinationOverlay() {
           </div>`;
 
         item.addEventListener("click", () => {
-          destinationCoords = { lat, lng };
-          destInput.value   = label;
-          overlayInput.value = label;
-          AppState.destinationText = label;
-          updateMarker("destination", lat, lng);
-          saveRecentDestination({ label, lat, lng });
-          closeSearchOverlay();
+          saveRecentPlace(overlayField, { label, lat, lng });
+          selectPlace(label, lat, lng);
         });
         resultsEl.appendChild(item);
       });
@@ -377,49 +438,103 @@ function initDestinationOverlay() {
     }
   }
 
-  function showRecentDestinations() {
-    labelEl.textContent = "Destinations récentes";
-    const recents = getRecentDestinations();
+  function showRecentPlaces() {
     recentEl.innerHTML = "";
-    if (!recents.length) { labelEl.textContent = "Tapez une adresse..."; return; }
+
+    // Chantier 5 (v3) : pour le pickup uniquement, première entrée fixe
+    // pour revenir au suivi GPS automatique — cf. point 5 du plan.
+    if (overlayField === "pickup") {
+      const gpsItem = document.createElement("div");
+      gpsItem.className = "recent-item";
+      gpsItem.innerHTML = `
+        <div class="recent-icon">📍</div>
+        <div>
+          <div class="recent-name">Utiliser ma position actuelle</div>
+          <div class="recent-sub">Géolocalisation</div>
+        </div>`;
+      gpsItem.addEventListener("click", () => useCurrentPositionAsPickup(closeSearchOverlay, overlayInput));
+      recentEl.appendChild(gpsItem);
+    }
+
+    const recents = getRecentPlaces(overlayField);
+
+    if (!recents.length) {
+      labelEl.textContent = overlayField === "pickup" ? "Suggestions" : "Tapez une adresse...";
+      if (overlayField === "destination") return;
+    } else {
+      labelEl.textContent = overlayField === "pickup" ? "Suggestions" : "Destinations récentes";
+    }
 
     recents.forEach(r => {
       const item = document.createElement("div");
-        item.className = "recent-item";
+      item.className = "recent-item";
       item.innerHTML = `
         <div class="recent-icon">↻</div>
         <div>
           <div class="recent-name">${r.label}</div>
           <div class="recent-sub">Récent</div>
         </div>`;
-      item.addEventListener("click", () => {
-        destinationCoords = { lat: r.lat, lng: r.lng };
-        destInput.value   = r.label;
-        overlayInput.value = r.label;
-        AppState.destinationText = r.label;
-        updateMarker("destination", r.lat, r.lng);
-        closeSearchOverlay();
-      });
+      item.addEventListener("click", () => selectPlace(r.label, r.lat, r.lng));
       recentEl.appendChild(item);
     });
   }
 }
 
-function saveRecentDestination(dest) {
+// Chantier 5 (v3) : bouton "Utiliser ma position actuelle" dans l'overlay
+// pickup. Géolocalisation ponctuelle fraîche (pas la valeur mise en cache
+// par watchUserPosition), déverrouille pickupLocked pour que le suivi GPS
+// automatique reprenne la main ensuite.
+async function useCurrentPositionAsPickup(closeSearchOverlay, overlayInput) {
+  if (!navigator.geolocation) return;
+  if (overlayInput) overlayInput.value = "Localisation…";
+
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => {
+      const { latitude: lat, longitude: lng } = pos.coords;
+      AppState.pickupLocked = false;
+      pickupCoords = { lat, lng };
+      updateMarker("pickup", lat, lng);
+
+      try {
+        const addr = await reverseGeocode(lat, lng);
+        const pickupEl = document.getElementById("pickup");
+        if (pickupEl) {
+          pickupEl.value = addr || "Position actuelle";
+          AppState.pickupText = pickupEl.value;
+        }
+      } catch {}
+
+      closeSearchOverlay();
+    },
+    () => {
+      showToast("Impossible de récupérer votre position");
+      closeSearchOverlay();
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+  );
+}
+
+// Historique des lieux récents — clé de stockage séparée par champ pour
+// ne pas mélanger les repères de départ avec les destinations habituelles.
+// "taxigo_recents" est conservé tel quel pour la destination (compatibilité
+// avec l'historique déjà enregistré chez les clients existants).
+function saveRecentPlace(field, place) {
+  const key = field === "pickup" ? "taxigo_recents_pickup" : "taxigo_recents";
   try {
-    let recents = JSON.parse(localStorage.getItem("taxigo_recents") || "[]");
-    recents = recents.filter(r => r.label !== dest.label);
-    recents.unshift(dest);
+    let recents = JSON.parse(localStorage.getItem(key) || "[]");
+    recents = recents.filter(r => r.label !== place.label);
+    recents.unshift(place);
     recents = recents.slice(0, 3);
-    localStorage.setItem("taxigo_recents", JSON.stringify(recents));
+    localStorage.setItem(key, JSON.stringify(recents));
   } catch {}
 }
-function getRecentDestinations() {
-  try { return JSON.parse(localStorage.getItem("taxigo_recents") || "[]"); }
+function getRecentPlaces(field) {
+  const key = field === "pickup" ? "taxigo_recents_pickup" : "taxigo_recents";
+  try { return JSON.parse(localStorage.getItem(key) || "[]"); }
   catch { return []; }
 }
 
-// â”€â”€ TROUVER UNE COURSE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── TROUVER UNE COURSE ─────────────────────────────────────────
 function initFindRideBtn() {
   document.getElementById("findRideBtn").addEventListener("click", async () => {
     AppState.pickupText      = document.getElementById("pickup").value.trim();
@@ -474,6 +589,12 @@ async function initActiveRideRecovery() {
   if (!active) return; // pas de course en cours : rien à faire
 
   const status = active.ride_status;
+
+  // Fixé avant tout placement de marqueur : une course reprise après
+  // rafraîchissement n'est par définition jamais "idle" — nécessaire pour
+  // que watchUserPosition()/updateMarker("pickup", …) traitent bien le
+  // point de départ comme figé dès la reprise (chantiers 2 et 5, v2/v3).
+  AppState.rideState = "searching";
 
   // Repositionner pickup / destination (texte + coordonnées + marqueurs)
   AppState.pickupText      = active.pickup      || "";
@@ -894,31 +1015,110 @@ function displayRides() {
   `).join("");
 }
 
+// Historique : consultation en lecture seule uniquement.
+//
+// L'ancienne implémentation (displayRideOnMap) réutilisait la carte et les
+// variables globales de la course active (pickupCoords, destinationCoords,
+// pickupMarker, destinationMarker, driverPositionMarker, driverRouteLayer)
+// pour "rejouer" une course de l'historique — un pis-aller antérieur au
+// mécanisme de reprise de course (get_active_ride.php / initActiveRideRecovery,
+// voir plus haut) qui gère aujourd'hui correctement la restauration d'une
+// course active après rafraîchissement. Regarder l'historique pendant qu'une
+// course est en cours effaçait alors le marqueur/tracé du chauffeur en
+// circulation et remplaçait pickupCoords/destinationCoords par ceux de la
+// course consultée — un client ne pouvant de toute façon avoir qu'une seule
+// course active à la fois, ce recyclage n'apportait rien et ne faisait que
+// risquer de corrompre l'affichage d'une course réelle en cours.
+// L'historique se contente désormais d'afficher les informations dans une
+// fenêtre dédiée, sans toucher à `map` ni à aucune variable partagée.
 function viewRideOnMap(rideId) {
   const ride = userRides.find(r => r.id == rideId);
   if (!ride) return;
-  switchTab("map");
-  displayRideOnMap(ride);
+  showRideDetailModal(ride);
 }
 
-async function displayRideOnMap(ride) {
-  [routeLayer, pickupMarker, destinationMarker, driverPositionMarker, driverRouteLayer].forEach(layer => {
-    if (layer) map.removeLayer(layer);
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str ?? "";
+  return div.innerHTML;
+}
+
+const RIDE_DETAIL_STYLE_ID = "tg-ride-detail-styles";
+function injectRideDetailStyles() {
+  if (document.getElementById(RIDE_DETAIL_STYLE_ID)) return;
+  const style = document.createElement("style");
+  style.id = RIDE_DETAIL_STYLE_ID;
+  style.textContent = `
+.tg-ride-detail-overlay {
+  position: fixed; inset: 0;
+  background: rgba(15, 23, 42, .55);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  z-index: 100000;
+}
+.tg-ride-detail-box {
+  background: #fff;
+  border-radius: 16px;
+  padding: 20px;
+  width: 100%;
+  max-width: 360px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.25);
+}
+.tg-ride-detail-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px;
+}
+.tg-ride-detail-close {
+  border: none; background: transparent; font-size: 22px; line-height: 1;
+  cursor: pointer; color: #64748b; padding: 4px 8px;
+}
+.tg-ride-detail-row {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 14px;
+}
+.tg-ride-detail-row:last-child { border-bottom: none; }
+.tg-ride-detail-row span { color: #64748b; }
+.tg-ride-detail-row strong { color: #0f172a; text-align: right; }
+`;
+  document.head.appendChild(style);
+}
+
+function showRideDetailModal(ride) {
+  injectRideDetailStyles();
+
+  const existing = document.getElementById("tg-ride-detail-overlay");
+  if (existing) existing.remove();
+
+  const labelMap = { completed: "Terminée", cancelled_client: "Annulée (client)", cancelled: "Annulée (chauffeur)" };
+
+  const overlay = document.createElement("div");
+  overlay.id = "tg-ride-detail-overlay";
+  overlay.className = "tg-ride-detail-overlay";
+
+  overlay.innerHTML = `
+    <div class="tg-ride-detail-box">
+      <div class="tg-ride-detail-header">
+        <span class="status ${ride.status}">${labelMap[ride.status] || ride.status}</span>
+        <button type="button" class="tg-ride-detail-close" aria-label="Fermer">&times;</button>
+      </div>
+      <div class="tg-ride-detail-row"><span>Départ</span><strong>${escapeHtml(ride.pickup)}</strong></div>
+      <div class="tg-ride-detail-row"><span>Arrivée</span><strong>${escapeHtml(ride.destination)}</strong></div>
+      <div class="tg-ride-detail-row"><span>Distance</span><strong>${ride.distance_km} km</strong></div>
+      <div class="tg-ride-detail-row"><span>Prix</span><strong>${ride.price_fcfa} FCFA</strong></div>
+      <div class="tg-ride-detail-row"><span>Passagers</span><strong>${ride.passengers}</strong></div>
+      <div class="tg-ride-detail-row"><span>Date</span><strong>${new Date(ride.created_at).toLocaleString("fr-FR")}</strong></div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  overlay.querySelector(".tg-ride-detail-close").addEventListener("click", () => overlay.remove());
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) overlay.remove();
   });
-  routeLayer = pickupMarker = destinationMarker = driverPositionMarker = driverRouteLayer = null;
-
-  pickupCoords      = { lat: ride.pickup_lat,      lng: ride.pickup_lng };
-  destinationCoords = { lat: ride.destination_lat, lng: ride.destination_lng };
-
-  pickupMarker      = L.marker([pickupCoords.lat, pickupCoords.lng]).addTo(map).bindPopup(`Départ: ${ride.pickup}`);
-  destinationMarker = L.marker([destinationCoords.lat, destinationCoords.lng]).addTo(map).bindPopup(`Arrivée: ${ride.destination}`);
-
-  await drawRouteOnMap(pickupCoords, destinationCoords);
-
-  map.fitBounds(L.latLngBounds([
-    [pickupCoords.lat, pickupCoords.lng],
-    [destinationCoords.lat, destinationCoords.lng]
-  ]), { padding: [30, 30] });
 }
 
 // â”€â”€ TOAST â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -939,6 +1139,9 @@ function showToast(msg, duration = 2500) {
 function onRideStarted(rideData) {
     if (AppState.rideState === "started") return;
     AppState.rideState = "started";
+    // Chantier 5 (v3) : le point de départ redevient vivant — watchUserPosition()
+    // recommence à suivre la position GPS réelle du client une fois en course.
+    AppState.pickupLocked = false;
     syncAppMode();
     removeArrivedNotice();
 

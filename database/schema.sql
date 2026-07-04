@@ -157,6 +157,7 @@ CREATE TABLE IF NOT EXISTS rides (
   cancelled_at                  TIMESTAMP NULL DEFAULT NULL,
   client_problem_description    TEXT DEFAULT NULL,
   client_problem_at             TIMESTAMP NULL DEFAULT NULL,
+  client_problem_resolved_at    TIMESTAMP NULL DEFAULT NULL,
   problem_description            TEXT DEFAULT NULL,
   INDEX idx_rides_user_status (user_id, status),
   INDEX idx_rides_driver_status (driver_id, status),
@@ -166,7 +167,8 @@ CREATE TABLE IF NOT EXISTS rides (
 ALTER TABLE rides
   ADD INDEX IF NOT EXISTS idx_rides_user_status (user_id, status),
   ADD INDEX IF NOT EXISTS idx_rides_driver_status (driver_id, status),
-  ADD INDEX IF NOT EXISTS idx_rides_status_created (status, created_at);
+  ADD INDEX IF NOT EXISTS idx_rides_status_created (status, created_at),
+  ADD COLUMN IF NOT EXISTS client_problem_resolved_at TIMESTAMP NULL DEFAULT NULL AFTER client_problem_at;
 
 
 -- ----------------------------------------------------------------

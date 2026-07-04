@@ -5,7 +5,14 @@ $driverId = require_driver_id();
 $conn = db_connect();
 
 $stmt = $conn->prepare("
-    SELECT *
+    SELECT
+        id, user_id, pickup, destination,
+        pickup_lat, pickup_lng, destination_lat, destination_lng,
+        distance_km, duration_min, price_fcfa, passengers, status,
+        driver_id, driver_name, driver_plate, driver_lat, driver_lng,
+        update_position_driver, created_at, updated_at,
+        accepted_at, arrived_at, started_at, completed_at, cancelled_at,
+        problem_description
     FROM rides
     WHERE (status = 'pending' AND id NOT IN (
               SELECT ride_id FROM ride_refusals WHERE driver_id = ?

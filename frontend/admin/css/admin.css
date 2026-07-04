@@ -506,3 +506,102 @@ tbody tr:hover td { background: var(--c-bg); }
   margin-top: 2px;
 }
 .text-mono { font-family: monospace; font-size: 12px; }
+
+/* ── Alerte plein écran : problème signalé par un client ──────
+   Chantier 4 (v3) — déplacée du chauffeur vers l'admin. Pas de
+   simple "fermer" : le seul bouton disponible appelle
+   resolve_client_problem.php (dédup côté serveur via
+   rides.client_problem_resolved_at, pas localStorage, pour rester
+   cohérent entre plusieurs postes admin). ────────────────────── */
+.client-problem-alert {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(17, 24, 39, .72);
+  backdrop-filter: blur(4px);
+}
+
+.client-problem-box {
+  width: min(100%, 420px);
+  border-radius: var(--radius);
+  padding: 24px;
+  background: var(--c-surface);
+  color: var(--c-text);
+  border: 1px solid var(--c-red);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .35);
+}
+
+.client-problem-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--c-red);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
+.client-problem-warning {
+  margin-top: 10px;
+  color: var(--c-text-2);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.client-problem-ride {
+  margin-top: 14px;
+  color: var(--c-text-3);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.client-problem-message {
+  margin-top: 8px;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--c-red-bg);
+  color: var(--c-text);
+  font-size: 13.5px;
+  line-height: 1.5;
+  border: 1px solid rgba(220, 38, 38, .25);
+}
+
+.client-problem-meta {
+  margin-top: 10px;
+  color: var(--c-text-4);
+  font-size: 11.5px;
+}
+
+.client-problem-action {
+  width: 100%;
+  margin-top: 18px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  background: var(--c-red);
+  color: #fff;
+  font-weight: 700;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.client-problem-action:disabled {
+  opacity: .6;
+  cursor: default;
+}
+
+/* ── Badge nav — compteur de signalements non traités ────────── */
+.nav-item-badge {
+  margin-left: auto;
+  background: var(--c-red);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 1px 7px;
+  line-height: 1.6;
+}

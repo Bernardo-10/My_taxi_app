@@ -18,7 +18,15 @@ const AdminState = {
     ridesFilter: { status: "", q: "", date_from: "", date_to: "" },
     chauffeursFilter: { q: "", status: "" },
     clientsFilter: { q: "", status: "" },
-    dashboardInterval: null
+    dashboardInterval: null,
+
+    // Chantier 4 (v3) — polling global des signalements client, indépendant
+    // de la section affichée (contrairement aux autres intervalles ci-dessus,
+    // qui sont chacun scopés à une section et coupés quand on la quitte).
+    problemsInterval: null,
+    shownProblemIds: new Set(),   // ids déjà mis en file/affichés cette session
+    problemAlertQueue: [],
+    problemAlertShowing: false
 };
 
 /* ── DOM ready ────────────────────────────────────────────── */
@@ -31,6 +39,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     initNavigation();
     initSidebarMobile();
     initLogout();
+    initGlobalProblemWatch();
     showSection("dashboard");
 });
 
@@ -155,6 +164,146 @@ function initLogout() {
         });
         if (ok) logoutAdmin();
     });
+}
+
+/* ══════════════════════════════════════════════════════════
+   SIGNALEMENTS CLIENT — alerte globale plein écran
+   Chantier 4 (v3) : anciennement affichée au chauffeur lui-même
+   ("cette course est surveillée"), contre-productif du point de
+   vue sécurité. Déplacée ici, côté admin.
+
+   Polling GLOBAL (pas scopé à une section, contrairement aux
+   autres intervalles de ce fichier) : un signalement doit pouvoir
+   déclencher l'alerte même si l'admin est sur "Chauffeurs" ou
+   "Clients", pas seulement sur "Courses".
+
+   Dédup : rides.client_problem_resolved_at (colonne serveur), PAS
+   localStorage — un admin peut se connecter depuis plusieurs
+   postes, un dédup local ne serait pas synchronisé entre eux.
+   AdminState.shownProblemIds n'est qu'un garde-fou en mémoire pour
+   ne pas ré-empiler le même ride à chaque cycle de poll tant qu'il
+   n'est pas traité ; il n'a pas vocation à persister.
+
+   Pas de bouton "fermer" simple : le seul bouton ("Marquer comme
+   traité") appelle resolve_client_problem.php. Tant que ce n'est
+   pas fait, le signalement reste actif et réapparaîtra (nouveau
+   chargement de page, autre poste admin, etc.).
+══════════════════════════════════════════════════════════ */
+function initGlobalProblemWatch() {
+    checkClientProblems();
+    if (AdminState.problemsInterval) clearInterval(AdminState.problemsInterval);
+    AdminState.problemsInterval = setInterval(checkClientProblems, 15000);
+}
+
+async function checkClientProblems() {
+    let problems;
+    try { problems = await fetchProblems(); }
+    catch (e) { return; }
+
+    const unresolved = (problems || []).filter(
+        p => p.client_problem_description && !p.client_problem_resolved_at
+    );
+
+    updateProblemsBadge(unresolved.length);
+
+    unresolved.forEach(ride => {
+        if (AdminState.shownProblemIds.has(ride.id)) return;
+        AdminState.shownProblemIds.add(ride.id);
+        enqueueProblemAlert(ride);
+    });
+}
+
+function updateProblemsBadge(count) {
+    const badge = document.getElementById("navProblemsBadge");
+    if (!badge) return;
+    badge.textContent = count;
+    badge.style.display = count > 0 ? "inline-block" : "none";
+}
+
+function enqueueProblemAlert(ride) {
+    AdminState.problemAlertQueue.push(ride);
+    processProblemAlertQueue();
+}
+
+function processProblemAlertQueue() {
+    if (AdminState.problemAlertShowing || AdminState.problemAlertQueue.length === 0) return;
+    const ride = AdminState.problemAlertQueue.shift();
+    AdminState.problemAlertShowing = true;
+    openAdminClientProblemAlert(ride);
+}
+
+function openAdminClientProblemAlert(ride) {
+    const existing = document.getElementById("clientProblemAlert");
+    if (existing) existing.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "clientProblemAlert";
+    overlay.className = "client-problem-alert";
+    overlay.setAttribute("role", "alertdialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-label", "Signalement client");
+
+    const box = document.createElement("div");
+    box.className = "client-problem-box";
+
+    const title = document.createElement("div");
+    title.className = "client-problem-title";
+    title.textContent = "⚠ Signalement client";
+
+    const warning = document.createElement("div");
+    warning.className = "client-problem-warning";
+    warning.textContent = "Un client a signalé un problème pendant une course. Vérifiez la situation avant de marquer ce signalement comme traité.";
+
+    const rideRef = document.createElement("div");
+    rideRef.className = "client-problem-ride";
+    rideRef.textContent = `Course #${ride.id}` +
+        (ride.client_name ? ` — ${ride.client_name}` : "") +
+        (ride.driver_name ? ` · Chauffeur : ${ride.driver_name}` : "");
+
+    const msg = document.createElement("div");
+    msg.className = "client-problem-message";
+    msg.textContent = ride.client_problem_description;
+
+    const meta = document.createElement("div");
+    meta.className = "client-problem-meta";
+    meta.textContent = `Signalé le ${formatDate(ride.client_problem_at)}`;
+
+    const action = document.createElement("button");
+    action.className = "client-problem-action";
+    action.type = "button";
+    action.textContent = "Marquer comme traité";
+    action.addEventListener("click", async () => {
+        action.disabled = true;
+        action.textContent = "…";
+        try {
+            const res = await resolveClientProblem(ride.id);
+            if (res.status !== "success") {
+                showToast(res.message || "Erreur", "error");
+                action.disabled = false;
+                action.textContent = "Marquer comme traité";
+                return;
+            }
+        } catch (e) {
+            showToast("Erreur réseau", "error");
+            action.disabled = false;
+            action.textContent = "Marquer comme traité";
+            return;
+        }
+        overlay.remove();
+        AdminState.problemAlertShowing = false;
+        processProblemAlertQueue();
+        checkClientProblems(); // rafraîchit le badge sans attendre le prochain cycle
+    });
+
+    box.appendChild(title);
+    box.appendChild(warning);
+    box.appendChild(rideRef);
+    box.appendChild(msg);
+    box.appendChild(meta);
+    box.appendChild(action);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    action.focus();
 }
 
 /* ══════════════════════════════════════════════════════════
