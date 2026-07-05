@@ -577,6 +577,32 @@ async function refreshRides() {
     }
 }
 
+// Deux colonnes distinctes dans le tableau des courses, deux sources
+// totalement indépendantes (un chauffeur et un client peuvent chacun
+// signaler un problème sur la même course, sans lien entre les deux) :
+// - Alerte chauffeur : problem_description (report_problem.php côté
+//   chauffeur) -- fait déjà passer le statut à "reported", visible aussi
+//   dans la colonne Statut, mais le détail du texte n'est visible qu'ici
+//   (via le title du badge).
+// - Alerte client : client_problem_description (report_problem.php côté
+//   client) -- ne change PAS le statut de la course (elle continue
+//   normalement), donc cette colonne est le SEUL endroit du tableau où ce
+//   signalement est visible. Distinction traité/non traité via
+//   client_problem_resolved_at (même source que l'alerte plein écran,
+//   voir initGlobalProblemWatch()).
+function renderDriverAlertCell(r) {
+    if (!r.problem_description) return "—";
+    return `<span class="topbar-badge badge-red" title="${r.problem_description}">⚠ Problème</span>`;
+}
+
+function renderClientAlertCell(r) {
+    if (!r.client_problem_description) return "—";
+    if (!r.client_problem_resolved_at) {
+        return `<span class="topbar-badge badge-red" title="${r.client_problem_description}">🚨 Signalement</span>`;
+    }
+    return `<span class="topbar-badge badge-gray" title="${r.client_problem_description}\n(traité)">✓ Traité</span>`;
+}
+
 function renderRidesTable(rides, compact) {
     if (!rides.length) return `<div class="empty-state"><div class="empty-state-icon">🚗</div><div class="empty-state-text">Aucune course trouvée</div></div>`;
 
@@ -606,7 +632,7 @@ function renderRidesTable(rides, compact) {
           <td>${r.distance_km ? parseFloat(r.distance_km).toFixed(1) + " km" : "—"}</td>` : ""}
           <td style="white-space:nowrap">${r.price_fcfa ? formatFcfa(r.price_fcfa) : "—"}</td>
           <td style="white-space:nowrap">${formatDate(r.created_at)}</td>
-          ${!compact && r.problem_description ? `<td><span class="topbar-badge badge-red" title="${r.problem_description}">⚠ Problème</span></td>` : (!compact ? `<td>—</td>` : "")}
+          ${!compact ? `<td>${renderDriverAlertCell(r)}</td><td>${renderClientAlertCell(r)}</td>` : ""}
         </tr>`).join("");
 
     return `<div class="table-wrap"><table>
@@ -614,7 +640,7 @@ function renderRidesTable(rides, compact) {
         <th>#</th><th>Statut</th><th>Client</th><th>Chauffeur</th><th>Départ</th>
         ${!compact ? "<th>Destination</th><th>Distance</th>" : ""}
         <th>Prix</th><th>Date</th>
-        ${!compact ? "<th>Alerte</th>" : ""}
+        ${!compact ? "<th>Alerte chauffeur</th><th>Alerte client</th>" : ""}
       </tr></thead>
       <tbody>${rows}</tbody>
     </table></div>`;
