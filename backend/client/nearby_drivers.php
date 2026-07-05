@@ -5,11 +5,10 @@ require_client_id();
 
 $conn = db_connect();
 
-// Chauffeurs reellement disponibles pour une reservation :
-// en ligne, statut actif, position recente (< 10 min, meme seuil que l'admin),
-// et sans course en cours (pending/accepted/arrived/started) -- un chauffeur
-// avec une course active n'est pas reservable, on ne l'affiche donc pas
-// (decision produit confirmee : pas de distinction visuelle "en course").
+// Tous les chauffeurs en ligne, en position recente (< 10 min, meme seuil
+// que l'admin) -- y compris ceux en course. Decision produit : donner une
+// image complete de l'activite dans la zone plutot que de se limiter aux
+// chauffeurs strictement reservables (cf. discussion plan v4, chantier 3).
 $stmt = $conn->prepare("
     SELECT c.id, c.driver_lat, c.driver_lng, c.car_brand, c.car_color
     FROM chauffeur c
@@ -18,11 +17,6 @@ $stmt = $conn->prepare("
       AND c.driver_lat IS NOT NULL
       AND c.driver_lng IS NOT NULL
       AND c.update_position_driver >= DATE_SUB(NOW(), INTERVAL 10 MINUTE)
-      AND NOT EXISTS (
-          SELECT 1 FROM rides r
-          WHERE r.driver_id = c.id
-            AND r.status IN ('accepted','arrived','started')
-      )
 ");
 $stmt->execute();
 $result = $stmt->get_result();
