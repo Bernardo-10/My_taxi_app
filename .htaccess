@@ -21,15 +21,23 @@ DirectoryIndex index.html
 RewriteRule ^client/register/?$  frontend/client/html/register.html  [L,END]
 RewriteRule ^client/login/?$     frontend/client/html/login.html     [L,END]
 RewriteRule ^client/?$           frontend/client/html/index.html     [L,END]
+# Assets PWA (manifest, service worker, icônes) servis sous /client/...
+# pour ne jamais révéler le chemin réel frontend/client/html/...
+RewriteRule ^client/(.+)$        frontend/client/html/$1             [L,END]
 
 # ── Espace chauffeur ────────────────────────────────────
 RewriteRule ^chauffeur/register/?$  frontend/chauffeur/html/register.html  [L,END]
 RewriteRule ^chauffeur/login/?$     frontend/chauffeur/html/login.html     [L,END]
 RewriteRule ^chauffeur/?$           frontend/chauffeur/html/index.html     [L,END]
+# Idem espace chauffeur
+RewriteRule ^chauffeur/(.+)$        frontend/chauffeur/html/$1             [L,END]
 
 # ── Espace admin ────────────────────────────────────────
 RewriteRule ^admin/login/?$  frontend/admin/html/login.html  [L,END]
 RewriteRule ^admin/?$        frontend/admin/html/index.html  [L,END]
+# Favicon admin servi sous /admin/... (pas de manifest/service worker ici,
+# l'espace admin n'est volontairement pas rendu installable — voir plan v4)
+RewriteRule ^admin/(.+)$     frontend/admin/html/$1          [L,END]
 
 # ── Gérer les 404 personnalisées (facultatif)
 # ErrorDocument 404 /404.html

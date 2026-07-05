@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
@@ -6,6 +6,14 @@
   <meta name="theme-color" content="#0D1B2A" />
   <meta name="mobile-web-app-capable" content="yes" />
   <title>TaxiGo Chauffeur</title>
+  <link rel="manifest" href="/chauffeur/manifest.webmanifest" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="TaxiGo Driver" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/chauffeur/icons/chauffeur-32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/chauffeur/icons/chauffeur-16.png" />
+  <link rel="shortcut icon" href="/chauffeur/icons/chauffeur-favicon.ico" />
+  <link rel="apple-touch-icon" href="/chauffeur/icons/chauffeur-180.png" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css" />
   <link rel="stylesheet" href="/frontend/css/chauffeur.css" />
@@ -218,5 +226,12 @@
 <script src="/frontend/js/confirm-modal.js" defer></script>
 <script src="/frontend/chauffeur/js/chauffeur-api.js" defer></script>
 <script src="/frontend/chauffeur/js/chauffeur-ui.js" defer></script>
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/chauffeur/sw.js").catch(() => {});
+    });
+  }
+</script>
 </body>
 </html>

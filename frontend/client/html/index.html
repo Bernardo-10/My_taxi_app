@@ -5,6 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>TaxiGo</title>
 
+  <link rel="manifest" href="/client/manifest.webmanifest" />
+  <meta name="theme-color" content="#1db954" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="TaxiGo" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/client/icons/client-32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/client/icons/client-16.png" />
+  <link rel="shortcut icon" href="/client/icons/client-favicon.ico" />
+  <link rel="apple-touch-icon" href="/client/icons/client-180.png" />
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/frontend/css/style.css" />
@@ -281,5 +292,12 @@
 <script src="/frontend/js/confirm-modal.js" defer></script>
 <script src="/frontend/client/js/client-api.js" defer></script>
 <script src="/frontend/client/js/client-ui.js" defer></script>
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/client/sw.js").catch(() => {});
+    });
+  }
+</script>
 </body>
 </html>
