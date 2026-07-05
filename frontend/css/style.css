@@ -24,7 +24,7 @@
   --sheet-radius: 24px;
   --nav-h:        68px;
   --sheet-gap:    12px;
-  --sheet-peek-h: 112px;
+  --sheet-peek-h: 100px;
   --font-head:    'Syne', sans-serif;
   --font-body:    'DM Sans', sans-serif;
   --safe-bottom:  env(safe-area-inset-bottom, 0px);
@@ -102,7 +102,7 @@ body {
   left: 0; right: 0;
   background: var(--white);
   border-radius: var(--sheet-radius) var(--sheet-radius) 0 0;
-  padding: var(--sheet-gap) var(--sheet-gap) 10px;
+  padding: var(--sheet-gap) var(--sheet-gap) 16px;
   z-index: 20;
   box-shadow: 0 -6px 40px rgba(0,0,0,.10);
 
