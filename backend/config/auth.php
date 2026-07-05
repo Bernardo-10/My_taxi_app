@@ -172,6 +172,35 @@ if (!$sessionExpired && session_status() === PHP_SESSION_ACTIVE) {
     refresh_session_cookie();
 }
 
+/**
+ * Corrige les chauffeurs marqués "en ligne" (is_online = 1) dont la dernière
+ * position GPS remonte à plus de 10 minutes -- même seuil que la carte admin
+ * et la liste "chauffeurs à proximité" côté client.
+ *
+ * is_online n'est mis à jour QUE par un appel explicite du chauffeur
+ * (toggle "En ligne"/"Hors ligne") ; rien ne le repasse à 0 quand l'app se
+ * ferme, perd le réseau, ou que le téléphone s'éteint. Sans ce correctif,
+ * un chauffeur déconnecté depuis des heures reste affiché "En ligne" dans
+ * le tableau admin, alors même que la carte et la liste client, elles,
+ * appliquent déjà un filtre de fraîcheur en lecture.
+ *
+ * Suit le même principe "lazy" que l'expiration de session ci-dessus :
+ * corrigé au moment de la lecture plutôt que par une tâche planifiée
+ * (absente sur InfinityFree). Appelée par tous les endpoints qui affichent
+ * ou comptent des chauffeurs en ligne (liste chauffeurs admin, carte admin,
+ * chauffeurs à proximité côté client, KPI dashboard) pour qu'ils restent
+ * tous d'accord entre eux à chaque rafraîchissement.
+ */
+function sync_stale_drivers_offline($conn) {
+    $conn->query("
+        UPDATE chauffeur
+        SET is_online = 0
+        WHERE is_online = 1
+          AND (update_position_driver IS NULL
+               OR update_position_driver < DATE_SUB(NOW(), INTERVAL 10 MINUTE))
+    ");
+}
+
 function json_response($payload, $statusCode = 200) {
     http_response_code($statusCode);
     header("Content-Type: application/json; charset=utf-8");

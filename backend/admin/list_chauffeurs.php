@@ -3,8 +3,7 @@ require_once __DIR__ . "/../config/auth.php";
 require_admin_id();
 
 $conn = db_connect();
-
-$search = isset($_GET["q"]) ? trim($_GET["q"]) : "";
+sync_stale_drivers_offline($conn);
 $status = isset($_GET["status"]) ? trim($_GET["status"]) : "";
 
 $where  = [];

@@ -3,6 +3,7 @@ require_once __DIR__ . "/../config/auth.php";
 require_admin_id();
 
 $conn = db_connect();
+sync_stale_drivers_offline($conn);
 
 // Totaux globaux
 $stats = [];
@@ -12,10 +13,14 @@ $row = $r->fetch_assoc();
 $stats["clients_total"]  = (int)$row["total"];
 $stats["clients_actifs"] = (int)$row["actifs"];
 
-$r = $conn->query("SELECT COUNT(*) AS total, SUM(is_online = 1) AS en_ligne FROM chauffeur");
+$r = $conn->query("SELECT COUNT(*) AS total, SUM(status = 'active') AS actifs, SUM(is_online = 1) AS en_ligne FROM chauffeur");
 $row = $r->fetch_assoc();
-$stats["chauffeurs_total"]  = (int)$row["total"];
-$stats["chauffeurs_actifs"] = (int)$row["en_ligne"];
+$stats["chauffeurs_total"]    = (int)$row["total"];
+// chauffeurs_actifs = comptes non désactivés (même sens que clients_actifs juste au-dessus).
+// chauffeurs_en_ligne = réellement en ligne à l'instant présent -- fiable car
+// sync_stale_drivers_offline() vient de corriger les faux positifs ci-dessus.
+$stats["chauffeurs_actifs"]   = (int)$row["actifs"];
+$stats["chauffeurs_en_ligne"] = (int)$row["en_ligne"];
 
 $r = $conn->query("SELECT COUNT(*) AS total FROM rides");
 $stats["courses_total"] = (int)$r->fetch_assoc()["total"];

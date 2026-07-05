@@ -323,7 +323,7 @@ async function loadDashboard() {
     el.innerHTML = `
     <div class="stats-grid">
       ${statCard("Clients", stats.clients_total, "blue", `${stats.clients_actifs} actifs`)}
-      ${statCard("Chauffeurs", stats.chauffeurs_total, "amber", `${stats.chauffeurs_actifs} en ligne`)}
+      ${statCard("Chauffeurs en ligne", stats.chauffeurs_en_ligne, "amber", `${stats.chauffeurs_actifs} actifs au total`)}
       ${statCard("Courses totales", stats.courses_total, "", `${stats.taux_completion}% complétées`)}
       ${statCard("En attente", stats.courses_pending, "red", "courses pending")}
       ${statCard("En cours", stats.courses_en_cours, "blue", "accepted / started")}
@@ -373,7 +373,7 @@ async function refreshDashboardStats() {
         const stats = await fetchStats();
         if (stats) {
             // Mettre à jour chaque carte stat individuellement
-            updateStatValue("Chauffeurs", stats.chauffeurs_total, `${stats.chauffeurs_actifs} en ligne`);
+            updateStatValue("Chauffeurs en ligne", stats.chauffeurs_en_ligne, `${stats.chauffeurs_actifs} actifs au total`);
             updateStatValue("Annulées", stats.courses_annulees,
                 `${stats.courses_annulees_clients || 0} par le client · ${(stats.courses_annulees - (stats.courses_annulees_clients || 0))} par le chauffeur`);
             updateStatValue("En attente", stats.courses_pending, "courses pending");
@@ -394,7 +394,7 @@ async function refreshDashboardStats() {
     }
 }
 
-function updateStatValue(label, value, value2, sub) {
+function updateStatValue(label, value, sub) {
     const cards = document.querySelectorAll(".stat-card");
     for (const card of cards) {
         const labelEl = card.querySelector(".stat-label");
@@ -683,18 +683,18 @@ function renderChauffeursTable(list) {
     if (!list.length) return `<div class="empty-state"><div class="empty-state-icon">🚕</div><div class="empty-state-text">Aucun chauffeur trouvé</div></div>`;
 
     const rows = list.map(c => {
-        // is_online = statut en ligne (toggle chauffeur)
-        // status    = activation du compte (admin)
-        const onlineLabel = c.is_online == 1 ? "En ligne" : "Inactif";
+        // status    = activation du compte (admin) -- même badge que la table clients
+        // is_online = statut en ligne (toggle chauffeur), déjà fiabilisé côté
+        // serveur par sync_stale_drivers_offline() : pas besoin de recalculer
+        // une fraîcheur ici, la valeur reçue est déjà correcte.
+        const onlineLabel = c.is_online == 1 ? "En ligne" : "Hors ligne";
         const onlineCls   = c.is_online == 1 ? "badge-green" : "badge-red";
         return `<tr>
           <td>${c.name}</td>
           <td>${c.email || "—"}<div class="ride-detail">${c.phone || ""}</div></td>
           <td><span class="text-mono">${c.plate}</span><div class="ride-detail">${c.car_brand || ""} ${c.car_color || ""}</div></td>
-          <td>
-            <span class="topbar-badge ${onlineCls}">${onlineLabel}</span>
-            ${c.status !== "active" ? '<span class="topbar-badge badge-gray" style="margin-left:4px">Désactivé</span>' : ""}
-          </td>
+          <td>${userStatusBadge(c.status)}</td>
+          <td><span class="topbar-badge ${onlineCls}">${onlineLabel}</span></td>
           <td>${c.total_completed_rides}</td>
           <td>${c.total_accepted_rides}</td>
           <td>${formatFcfa(c.total_accepted_amount_fcfa)}</td>
@@ -710,7 +710,7 @@ function renderChauffeursTable(list) {
 
     return `<div class="table-wrap"><table>
       <thead><tr>
-        <th>Nom</th><th>Contact</th><th>Plaque</th><th>Statut</th>
+        <th>Nom</th><th>Contact</th><th>Plaque</th><th>Statut</th><th>État</th>
         <th>Courses <br>terminées</th><th>Courses <br>acceptées</th>
         <th>C.A. accepté</th><th>Inscrit le</th><th>Action</th>
       </tr></thead>

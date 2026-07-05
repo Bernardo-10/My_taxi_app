@@ -4,6 +4,7 @@ require_once __DIR__ . "/../config/auth.php";
 require_client_id();
 
 $conn = db_connect();
+sync_stale_drivers_offline($conn);
 
 // Tous les chauffeurs en ligne, en position recente (< 10 min, meme seuil
 // que l'admin) -- y compris ceux en course. Decision produit : donner une

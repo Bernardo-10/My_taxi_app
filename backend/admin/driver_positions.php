@@ -3,8 +3,7 @@ require_once __DIR__ . "/../config/auth.php";
 require_admin_id();
 
 $conn = db_connect();
-
-// Retourne les chauffeurs avec la dernière position GPS enregistrée sur leur profil
+sync_stale_drivers_offline($conn);
 $stmt = $conn->prepare("
     SELECT c.id, c.name, c.plate, c.car_brand, c.car_color, c.phone,
            c.status, c.is_online,
