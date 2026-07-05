@@ -231,6 +231,24 @@ async function fetchActiveRide() {
     }
 }
 
+// ── CHAUFFEURS DISPONIBLES (chantier 3, v4) ────────────────────────
+// Appelée en boucle par startNearbyDriversPolling() (client-ui.js) tant que
+// AppState.rideState === "idle". Retourne uniquement les chauffeurs
+// réellement disponibles (filtré côté serveur, voir nearby_drivers.php) :
+// pas de téléphone, pas de chauffeurs en course.
+async function fetchNearbyDrivers() {
+    try {
+        const response = await fetch(`${CLIENT_API_BASE}/client/nearby_drivers.php`);
+        const result = await response.json();
+
+        if (result.status !== "success") return [];
+        return result.drivers || [];
+    } catch (error) {
+        console.error("Erreur récupération chauffeurs à proximité:", error);
+        return [];
+    }
+}
+
 function startRideTracking() {
     if (rideStatusCheckInterval) {
         clearInterval(rideStatusCheckInterval);

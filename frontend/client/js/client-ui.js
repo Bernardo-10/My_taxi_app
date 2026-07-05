@@ -191,7 +191,11 @@ function initMap() {
 
   L.control.zoom({ position: "topright" }).addTo(map);
   getUserLocation();
-  startNearbyDriversPolling();
+  // Chantier 3 (v4) : ne démarre plus ici. Démarré par initActiveRideRecovery()
+  // une fois qu'on sait s'il y a une course active à reprendre — évite le
+  // flash de marqueurs "chauffeurs disponibles" qui apparaissait puis
+  // disparaissait aussitôt au refresh pendant une course en cours (voir
+  // showWaitingMessage() / chantier 6, v2).
 }
 
 // ── CHAUFFEURS DISPONIBLES (chantier 3, v4) ─────────────────────────
@@ -235,11 +239,16 @@ async function refreshNearbyDrivers() {
     if (nearbyDriverMarkers[driver.id]) {
       nearbyDriverMarkers[driver.id].setLatLng([lat, lng]);
     } else {
+      // Même style que le marqueur du chauffeur assigné pendant une course
+      // (voir onDriverPositionUpdate, client-api.js) et que celui du
+      // chauffeur sur sa propre carte (chauffeur-ui.js, onGpsPosition) :
+      // simple emoji taxi avec ombre portée, pas de badge coloré autour.
       const icon = L.divIcon({
-        html: `<div class="driver-pin">🚕</div>`,
-        iconSize: [32, 32],
-        iconAnchor: [16, 16],
-        className: ""
+        html: '<div class="driver-marker-dot" aria-label="Chauffeur">🚕</div>',
+        className: "driver-marker-icon",
+        iconSize: [40, 40],
+        iconAnchor: [20, 40],
+        popupAnchor: [0, -40]
       });
       const label = [driver.car_brand, driver.car_color].filter(Boolean).join(" ") || "Chauffeur disponible";
       nearbyDriverMarkers[driver.id] = L.marker([lat, lng], { icon })
@@ -666,7 +675,14 @@ function showWaitingMessage() {
 // d'arriver par polling normal, puis on relance le suivi habituel.
 async function initActiveRideRecovery() {
   const active = await fetchActiveRide(); // client-api.js
-  if (!active) return; // pas de course en cours : rien à faire
+  if (!active) {
+    // Chantier 3 (v4) : pas de course en cours, la carte "idle" peut
+    // afficher les chauffeurs disponibles. Démarré ici plutôt que dans
+    // initMap() pour ne jamais tourner, même brièvement, en même temps
+    // qu'une reprise de course après rafraîchissement.
+    startNearbyDriversPolling();
+    return;
+  }
 
   const status = active.ride_status;
 
