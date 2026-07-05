@@ -175,6 +175,14 @@ if (!$sessionExpired && session_status() === PHP_SESSION_ACTIVE) {
 function json_response($payload, $statusCode = 200) {
     http_response_code($statusCode);
     header("Content-Type: application/json; charset=utf-8");
+    // Ces réponses reflètent un état de session à l'instant T (connecté / rôle /
+    // en ligne...). Sans ces en-têtes, un navigateur -- ou une couche proxy côté
+    // hébergeur -- peut légitimement réutiliser une ancienne réponse GET pour
+    // current_user.php au lieu de refaire l'aller-retour serveur : le client reste
+    // alors bloqué avec un statut "connecté" périmé et ne redirige jamais vers le
+    // login, même après une longue attente.
+    header("Cache-Control: no-store, no-cache, must-revalidate");
+    header("Pragma: no-cache");
     echo json_encode($payload);
     exit;
 }

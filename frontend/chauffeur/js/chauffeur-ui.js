@@ -132,8 +132,16 @@ let isDisabled           = false;
 /* ═══════════════════════════════════════════════
    INIT
 ═══════════════════════════════════════════════ */
-document.addEventListener("DOMContentLoaded", () => {
-    initUserHeader("/chauffeur/login");
+document.addEventListener("DOMContentLoaded", async () => {
+    // On attend la confirmation de session AVANT d'initialiser quoi que ce
+    // soit d'interactif (carte, toggle "en ligne", polling...). Auparavant
+    // ces initialisations démarraient en parallèle de la vérification de
+    // session : un chauffeur non connecté pouvait taper sur "Se mettre en
+    // ligne" pendant cette fenêtre et voir une erreur générique au lieu
+    // d'être simplement redirigé vers le login.
+    const authenticated = await initUserHeader("/chauffeur/login");
+    if (!authenticated) return; // redirection déjà lancée par initUserHeader()
+
     initMap();
     initNavigation();
     initSheetDrag();
@@ -204,7 +212,7 @@ async function schedulePositionUpdate() {
 
 async function refreshDriverStatus() {
     try {
-        const res = await fetch(`${DRIVER_API_BASE}/common/current_user.php`);
+        const res = await fetch(`${DRIVER_API_BASE}/common/current_user.php`, { cache: "no-store" });
         if (res.status === 401) {
             window.location.href = "/chauffeur/login";
             return;
@@ -461,13 +469,18 @@ function initStatusToggle() {
                 onGoOffline();
             }
         } catch (err) {
+            // Session expirée : la redirection est déjà en cours (voir
+            // setDriverStatus/chauffeur-api.js) -- inutile d'afficher un toast
+            // ou de rollback une UI que l'utilisateur ne verra plus.
+            if (err?.message?.includes("Session expirée")) return;
+
             // Échec → rollback de l'UI
             isOnline = !newOnline;
             btn.classList.toggle("online", isOnline);
             btn.setAttribute("aria-pressed", isOnline);
             if (label) label.textContent = isOnline ? "En ligne" : "Hors ligne";
             if (profileStatus) profileStatus.textContent = isOnline ? "En ligne" : "Hors ligne";
-            showToast("Erreur de connexion au serveur", "error");
+            showToast(err?.message || "Erreur de connexion au serveur", "error");
         }
     });
 }

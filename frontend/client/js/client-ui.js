@@ -22,6 +22,11 @@ let lastDriverLat     = null;
 let lastDriverLng     = null;
 let userRides         = [];
 let etaUpdateInterval = null;
+// Chantier 3 (v4) — chauffeurs disponibles affichés sur la carte tant que
+// rideState === "idle". nearbyDriverMarkers suit le pattern d'AdminState.driverMarkers
+// (admin-ui.js) : { id: marker }.
+let nearbyDriverMarkers  = {};
+let nearbyDriversInterval = null;
 // â”€â”€ AppState â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const AppState = {
   activeTab: "map",   // 'map' | 'ride' | 'profile'
@@ -45,12 +50,19 @@ let $navBtns     = {};
 let $rideStates  = {};
 
 // â”€â”€ INIT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   cacheDOM();
   syncAppMode();
   initMap();
+
+  // On attend la confirmation de session avant d'activer la réservation et le
+  // reste des interactions -- même correctif que côté chauffeur (voir
+  // chauffeur-ui.js) : évite qu'un client dont la session a expiré puisse
+  // interagir avec l'app avant d'être redirigé vers le login.
+  const authenticated = await initUserSession();
+  if (!authenticated) return; // redirection déjà lancée par initUserSession()
+
   initActiveRideRecovery();
-  initUserSession();
   initPassengerCounter();
   initSearchOverlay();
   initNavigation();
@@ -179,6 +191,70 @@ function initMap() {
 
   L.control.zoom({ position: "topright" }).addTo(map);
   getUserLocation();
+  startNearbyDriversPolling();
+}
+
+// ── CHAUFFEURS DISPONIBLES (chantier 3, v4) ─────────────────────────
+// Repris du pattern refreshDriversOnMap() de l'admin (admin-ui.js), avec
+// les mêmes principes : un marqueur par id, mise à jour de position si déjà
+// existant, suppression des marqueurs des chauffeurs disparus de la réponse.
+// Ne tourne que côté carte "idle" : coupé dans showWaitingMessage(), relancé
+// dans onRideCancelled() et onRideCompleted() — les 3 points de bascule
+// officiels de la machine à états (voir plan v4, chantier 3.2).
+function startNearbyDriversPolling() {
+  if (nearbyDriversInterval) return; // déjà actif, ne pas dupliquer
+  refreshNearbyDrivers();
+  nearbyDriversInterval = setInterval(refreshNearbyDrivers, 12000);
+}
+
+function stopNearbyDriversPolling() {
+  if (nearbyDriversInterval) {
+    clearInterval(nearbyDriversInterval);
+    nearbyDriversInterval = null;
+  }
+  Object.keys(nearbyDriverMarkers).forEach(id => {
+    map.removeLayer(nearbyDriverMarkers[id]);
+    delete nearbyDriverMarkers[id];
+  });
+}
+
+async function refreshNearbyDrivers() {
+  // Garde : si une course a démarré entre le déclenchement de l'intervalle
+  // et la réponse réseau, ne pas re-dessiner des marqueurs qu'on vient de nettoyer.
+  if (AppState.rideState !== "idle") return;
+
+  const drivers = await fetchNearbyDrivers(); // client-api.js
+  if (AppState.rideState !== "idle") return; // re-check après l'await
+
+  const seen = new Set();
+
+  drivers.forEach(driver => {
+    seen.add(driver.id);
+    const { driver_lat: lat, driver_lng: lng } = driver;
+
+    if (nearbyDriverMarkers[driver.id]) {
+      nearbyDriverMarkers[driver.id].setLatLng([lat, lng]);
+    } else {
+      const icon = L.divIcon({
+        html: `<div class="driver-pin">🚕</div>`,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+        className: ""
+      });
+      const label = [driver.car_brand, driver.car_color].filter(Boolean).join(" ") || "Chauffeur disponible";
+      nearbyDriverMarkers[driver.id] = L.marker([lat, lng], { icon })
+        .addTo(map)
+        .bindPopup(label);
+    }
+  });
+
+  // Retirer les marqueurs des chauffeurs qui ne sont plus disponibles
+  Object.keys(nearbyDriverMarkers).forEach(id => {
+    if (!seen.has(parseInt(id))) {
+      map.removeLayer(nearbyDriverMarkers[id]);
+      delete nearbyDriverMarkers[id];
+    }
+  });
 }
 
 function getUserLocation() {
@@ -565,6 +641,10 @@ function showWaitingMessage() {
     pickupMarker.bindPopup("Point de départ");
   }
 
+  // Chantier 3 (v4) : plus de sens d'afficher les chauffeurs "disponibles"
+  // une fois qu'une recherche est lancée.
+  stopNearbyDriversPolling();
+
   // S'assurer que le résumé est rempli avant d'afficher
   const pickupEl = document.getElementById("pickup");
   const destEl   = document.getElementById("destination");
@@ -744,6 +824,7 @@ function onRideCancelled() {
   syncAppMode();
   switchTab("map");
   resetMapPanel();
+  startNearbyDriversPolling(); // chantier 3 (v4)
 }
 
 function resetMapPanel() {
@@ -897,11 +978,22 @@ function initRefreshBtn() {
 
 // â”€â”€ SESSION UTILISATEUR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function initUserSession() {
+  let authenticated = true; // optimiste par défaut si le réseau échoue (voir catch)
   try {
-    const res    = await fetch(`${CLIENT_API_BASE}/common/current_user.php`);
-    const result = await res.json();
+    // cache: "no-store" : même raison que côté chauffeur (voir chauffeur-api.js) --
+    // on force un vrai aller-retour réseau pour la vérification de session, jamais
+    // une réponse mise en cache par le navigateur ou un proxy intermédiaire.
+    const res = await fetch(`${CLIENT_API_BASE}/common/current_user.php`, { cache: "no-store" });
 
-    if (res.status === 401) { window.location.href = "/client/login"; return; }
+    // Vérifié AVANT de parser le corps : sur un 401, on ne dépend pas de la forme
+    // de la réponse pour déclencher la redirection.
+    if (res.status === 401) {
+      authenticated = false;
+      window.location.href = "/client/login";
+      return authenticated;
+    }
+
+    const result = await res.json();
 
     if (result.status === "success") {
       const name = result.user?.name || "Utilisateur";
@@ -929,6 +1021,8 @@ async function initUserSession() {
       setText("profileInfoStatus", result.user?.status === "active" ? "Actif" : (result.user?.status || "-"));
     }
   } catch (e) {
+    // Échec réseau réel (hors ligne) : on reste optimiste, comme côté chauffeur --
+    // ne pas bloquer toute l'app pour une coupure réseau temporaire.
     console.error("Session:", e);
   }
 
@@ -936,6 +1030,8 @@ async function initUserSession() {
   document.getElementById("logoutBtn")?.addEventListener("click", confirmLogout);
   // Logout (profil)
   document.getElementById("logoutBtnProfile")?.addEventListener("click", confirmLogout);
+
+  return authenticated;
 }
 
 async function confirmLogout() {
@@ -1422,6 +1518,7 @@ function onRideCompleted() {
     // resetMapPanel supprime tous les calques et marqueurs SAUF pickup
     // (getUserLocation() le recrée proprement via watchPosition)
     resetMapPanel();
+    startNearbyDriversPolling(); // chantier 3 (v4)
 
     // Afficher le modal de fin de course
     showCompletionMessage();

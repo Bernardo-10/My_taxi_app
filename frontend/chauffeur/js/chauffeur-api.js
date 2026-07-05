@@ -73,13 +73,18 @@ function setButtonLoading(btn, label = "…") {
 
 async function initUserHeader(loginPage) {
     const logoutBtn = document.getElementById("logoutBtn");
+    let authenticated = true; // optimiste par défaut (voir catch réseau plus bas)
 
     try {
-        const response = await fetch(`${DRIVER_API_BASE}/common/current_user.php`);
+        // cache: "no-store" en défense supplémentaire : même si un jour un proxy
+        // ou une ancienne version mise en cache traîne, on force ici un vrai
+        // aller-retour réseau pour la vérification de session.
+        const response = await fetch(`${DRIVER_API_BASE}/common/current_user.php`, { cache: "no-store" });
 
         if (response.status === 401) {
+            authenticated = false;
             window.location.href = loginPage;
-            return;
+            return authenticated;
         }
 
         const result = await response.json();
@@ -113,6 +118,9 @@ async function initUserHeader(loginPage) {
             initToggleFromServer(user.is_online ? true : false, user.status);
         }
     } catch (error) {
+        // Échec réseau (vraiment hors ligne) : on reste optimiste plutôt que de
+        // bloquer tout le tableau de bord -- une vraie coupure réseau est déjà
+        // gérée par ailleurs (polling, service worker pour les assets statiques).
         console.error("Erreur chargement utilisateur:", error);
     }
 
@@ -136,6 +144,8 @@ async function initUserHeader(loginPage) {
             }
         });
     }
+
+    return authenticated;
 }
 
 /* ═══════════════════════════════════════════════
@@ -506,8 +516,18 @@ async function setDriverStatus(isOnline) {
         const res = await fetch(`${DRIVER_API_BASE}/chauffeur/set_driver_status.php`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ is_online: isOnline })
+            body: JSON.stringify({ is_online: isOnline }),
+            cache: "no-store"
         });
+
+        if (res.status === 401) {
+            window.location.href = "/chauffeur/login";
+            // Erreur dédiée (jamais affichée : la page a déjà commencé à naviguer)
+            // pour interrompre proprement le bloc appelant sans passer par le
+            // message générique "Erreur de connexion au serveur".
+            throw new Error("Session expirée, redirection vers la connexion.");
+        }
+
         const result = await res.json();
         if (result.status !== "success") {
             throw new Error(result.message || "Échec de la mise à jour du statut");
