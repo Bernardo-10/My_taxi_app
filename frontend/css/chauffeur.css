@@ -667,12 +667,15 @@ html, body {
   font-size: 13px; font-weight: 500;
   animation: toast-in .25s ease forwards;
   pointer-events: auto;
-  border: .5px solid transparent;
+  background: #111827;
+  color: #ffffff;
+  border: .5px solid rgba(255,255,255,.08);
+  box-shadow: 0 6px 16px rgba(0,0,0,.28);
 }
-.toast.success { background: var(--c-green-bg); color: var(--c-green); border-color: rgba(16,185,129,.25); }
-.toast.error   { background: var(--c-red-bg);   color: var(--c-red);   border-color: rgba(239,68,68,.25); }
-.toast.info    { background: var(--c-amber-bg); color: var(--c-amber); border-color: rgba(245,158,11,.25); }
-.toast.warning { background: var(--c-blue-bg);  color: var(--c-blue);  border-color: rgba(59,130,246,.25); }
+.toast.success i { color: var(--c-green); }
+.toast.error   i { color: var(--c-red); }
+.toast.info    i { color: var(--c-amber); }
+.toast.warning i { color: var(--c-blue); }
 .toast i { font-size: 16px; flex-shrink: 0; }
 .toast.out { animation: toast-out .2s ease forwards; }
 
