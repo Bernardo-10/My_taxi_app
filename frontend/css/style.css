@@ -306,7 +306,7 @@ body {
   background: var(--gray-100);
 }
 
-.input-divider { height: 4px; }
+.input-divider { height: 10px; }
 
 /* ── PAX ROW ─────────────────────────────────────── */
 .pax-row {
