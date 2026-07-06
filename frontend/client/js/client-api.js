@@ -1,5 +1,13 @@
 const CLIENT_API_BASE = "/backend";
 
+// Fusion (chantier polling optimisé) : dernière position chauffeur reçue via
+// checkRideStatus() (check_ride_status.php renvoie déjà driver_lat/driver_lng,
+// plus besoin d'un second endpoint get_driver_location.php pour l'obtenir).
+// Alimentée à chaque checkRideStatus() réussi, lue par updateDriverPosition()
+// (voir plus bas) pour les appels de "redraw forcé" déclenchés depuis
+// client-ui.js après une transition d'état.
+let lastKnownDriverPos = { lat: null, lng: null };
+
 async function initUserHeader(loginPage) {
     const currentUserName = document.getElementById("currentUserName");
     const logoutBtn = document.getElementById("logoutBtn");
@@ -265,12 +273,11 @@ function startRideTracking() {
     checkRideStatus();
     rideStatusCheckInterval = setInterval(checkRideStatus, 5000);
 
-    if (driverStatusInterval) {
-        clearInterval(driverStatusInterval);
-    }
-
-    // Premier appel immédiat, puis toutes les 10s (était 20s — trop long)
-    driverStatusInterval = setInterval(updateDriverPosition, 10000);
+    // Fusion (chantier polling optimisé) : plus de driverStatusInterval séparé.
+    // checkRideStatus() récupère déjà driver_lat/driver_lng à chaque appel
+    // (voir check_ride_status.php) — le rendu du marqueur/tracé chauffeur est
+    // désormais déclenché directement depuis checkRideStatus(), sans second
+    // fetch réseau vers get_driver_location.php.
 }
 
 async function checkRideStatus(forceRefresh = false) {
@@ -327,13 +334,21 @@ async function checkRideStatus(forceRefresh = false) {
         }
         else if (rideData.status === "completed") {
             clearInterval(rideStatusCheckInterval); rideStatusCheckInterval = null;
-            clearInterval(driverStatusInterval);    driverStatusInterval = null;
             if (typeof onRideCompleted === "function") onRideCompleted();
         }
         else if (rideData.status === "cancelled_client" || rideData.status === "cancelled") {
             clearInterval(rideStatusCheckInterval); rideStatusCheckInterval = null;
-            clearInterval(driverStatusInterval);    driverStatusInterval = null;
             if (typeof onRideCancelled === "function") onRideCancelled();
+        }
+
+        // Fusion (chantier polling optimisé) : mémoriser la position reçue et
+        // déclencher le rendu du marqueur/tracé chauffeur avec les mêmes
+        // données que ci-dessus — remplace l'ancien fetch séparé vers
+        // get_driver_location.php (updateDriverPosition() ci-dessous devient
+        // un simple wrapper qui réutilise ce cache).
+        lastKnownDriverPos = { lat: rideData.driver.lat, lng: rideData.driver.lng };
+        if (rideAccepted && rideStillActive()) {
+            renderDriverOnMap(rideData.driver.lat, rideData.driver.lng);
         }
 
         return rideData;
@@ -351,35 +366,30 @@ function rideStillActive() {
     return !!currentRideId && typeof AppState !== "undefined" && AppState.rideState !== "idle";
 }
 
+// Fusion (chantier polling optimisé) : wrapper léger, sans fetch. Utilisé par
+// client-ui.js (3 points d'appel) pour forcer un redraw immédiat après une
+// transition d'état (onRideAccepted/onRideArrived/onRideStarted resettent
+// lastDriverLat/lastDriverLng à null juste avant, pour forcer posChanged=true
+// dans renderDriverOnMap ci-dessous). Réutilise la dernière position connue —
+// déjà reçue par le checkRideStatus() qui vient de déclencher la transition,
+// donc aucune donnée manquante malgré l'absence de nouveau fetch ici.
 async function updateDriverPosition() {
-    if (!currentRideId || !rideAccepted) {
-        return;
-    }
+    if (!currentRideId || !rideAccepted) return;
+    if (!rideStillActive()) return;
+    if (lastKnownDriverPos.lat === null || lastKnownDriverPos.lng === null) return;
+    renderDriverOnMap(lastKnownDriverPos.lat, lastKnownDriverPos.lng);
+}
 
-    // Bail-out si la course est déjà terminée/annulée (appel async en vol après cleanup)
-    if (typeof AppState !== "undefined" && AppState.rideState === "idle") {
-        return;
-    }
-
+// Rendu du marqueur taxi + tracé de route, à partir d'une position déjà connue
+// (plus de fetch ici — voir checkRideStatus() qui appelle cette fonction avec
+// les données reçues du même cycle, et updateDriverPosition() ci-dessus qui
+// la rappelle avec la dernière position en cache pour les redraws forcés).
+async function renderDriverOnMap(driverLat, driverLng) {
     try {
-        const response = await fetch(`${CLIENT_API_BASE}/client/get_driver_location.php?ride_id=${currentRideId}`);
-        const data = await response.json();
-
-        // Re-vérifier après l'await : un onRideCompleted()/onRideCancelled() a pu
-        // nettoyer (resetMapPanel) pendant l'attente réseau. Sans ce re-check, on
-        // recrée le marqueur taxi + son popup juste après leur suppression.
         if (!rideStillActive()) return;
 
-        if (data.status !== "success") {
-            updateRideStatusMessage("Attente de la position du chauffeur...");
-            return;
-        }
-
-        const driverLat = parseFloat(data.driver_lat);
-        const driverLng = parseFloat(data.driver_lng);
-
         if (isNaN(driverLat) || isNaN(driverLng)) {
-            updateRideStatusMessage("Position chauffeur invalide");
+            updateRideStatusMessage("Attente de la position du chauffeur...");
             return;
         }
 
