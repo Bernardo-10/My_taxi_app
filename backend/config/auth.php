@@ -212,6 +212,32 @@ function json_response($payload, $statusCode = 200) {
     // login, même après une longue attente.
     header("Cache-Control: no-store, no-cache, must-revalidate");
     header("Pragma: no-cache");
+
+    // Compression gzip (chantier polling optimisé, section 5) : json_response()
+    // est le point de passage unique de toutes les réponses JSON de l'app (39
+    // endpoints à ce jour) — la compresser ici couvre tout le monde d'un coup,
+    // pas seulement les endpoints de polling.
+    //
+    // PHP-side (ob_gzhandler) plutôt que mod_deflate/.htaccess : InfinityFree
+    // ne garantit pas mod_deflate actif sur l'hébergement mutualisé (plusieurs
+    // retours d'utilisateurs de l'hébergeur signalent le module absent/inactif
+    // selon le compte), alors que zlib côté PHP est une extension standard,
+    // quasi toujours présente. Double garde pour éviter tout conflit :
+    // - zlib.output_compression : si déjà activé globalement côté php.ini,
+    //   ob_gzhandler ferait doublon (risque d'erreur "ob_gzhandler(): output
+    //   compression is enabled") -- dans ce cas on ne touche à rien, php.ini
+    //   s'en charge déjà.
+    // - ob_get_level() : si un buffer de sortie tourne déjà (aucun cas dans
+    //   l'app actuellement, mais coût nul à vérifier), on n'empile pas
+    //   ob_gzhandler par-dessus.
+    // ob_gzhandler() lui-même n'agit que si le client envoie
+    // "Accept-Encoding: gzip" (tous les navigateurs modernes) -- sinon il
+    // laisse passer la réponse telle quelle, donc aucun risque de casser un
+    // client qui ne supporterait pas gzip.
+    if (!ini_get("zlib.output_compression") && extension_loaded("zlib") && ob_get_level() === 0) {
+        ob_start("ob_gzhandler");
+    }
+
     echo json_encode($payload);
     exit;
 }
