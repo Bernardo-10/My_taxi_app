@@ -55,7 +55,7 @@ body {
 /* ── MAP PANEL ───────────────────────────────────── */
 #map-panel {
   position: absolute;
-  inset: 0 0 var(--nav-h) 0;
+  inset: 0 0 calc(var(--nav-h) + var(--safe-bottom)) 0;
   z-index: 0;
   border-radius : 20px
 }
@@ -98,7 +98,7 @@ body {
 /* ── BOTTOM SHEETS ───────────────────────────────── */
 .bottom-sheet {
   position: absolute;
-  bottom: var(--nav-h);
+  bottom: calc(var(--nav-h) + var(--safe-bottom));
   left: 0; right: 0;
   background: var(--white);
   border-radius: var(--sheet-radius) var(--sheet-radius) 0 0;
@@ -529,7 +529,7 @@ body {
 /* ── DRIVER CARD ─────────────────────────────────── */
 .driver-card {
   position: absolute;
-  bottom: var(--nav-h);
+  bottom: calc(var(--nav-h) + var(--safe-bottom));
   left: 0; right: 0;
   background: var(--white);
   border-radius: var(--sheet-radius) var(--sheet-radius) 0 0;
@@ -582,7 +582,7 @@ body {
 #app.ride-accepted.tab-ride #sheet-ride.active-sheet {
   padding: 20px 20px 24px;
   border-radius: 26px 26px 0 0;
-  max-height: calc(100dvh - var(--nav-h) - 24px);
+  max-height: calc(100dvh - var(--nav-h) - var(--safe-bottom) - 24px);
   overflow-y: auto;
 }
 
@@ -759,7 +759,7 @@ body {
 /* ── SEARCH OVERLAY ──────────────────────────────── */
 .search-overlay {
   position: absolute;
-  inset: 0 0 var(--nav-h) 0;
+  inset: 0 0 calc(var(--nav-h) + var(--safe-bottom)) 0;
   background: var(--white);
   z-index: 50;
   display: flex;
