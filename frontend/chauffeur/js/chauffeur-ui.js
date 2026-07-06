@@ -374,8 +374,15 @@ function switchTab(tab) {
 
 /* ═══════════════════════════════════════════════
    STATUS TOGGLE
-   BUG #1 FIX : pas de checkNewRides() manuel ici.
-                schedulePoll() reprend au prochain cycle si isOnline=true.
+   BUG #1 FIX (historique) : pas d'appel manuel séparé à checkNewRides() ici
+                — ça créait un second chemin d'appel concurrent au poll
+                récursif, d'où le double render qui cassait "Accepter".
+   ÉVOLUTION (latence au passage en ligne) : on ne laisse plus schedulePoll()
+                reprendre "au prochain cycle naturel" (jusqu'à 5s d'attente,
+                voir pollTimeout) — on annule ce timeout et on rappelle
+                schedulePoll() tout de suite. Ça reste un seul chemin d'appel
+                (schedulePoll(), avec sa propre garde isCheckingRides) : pas
+                de second call path, donc BUG #1 ne peut pas revenir.
    BUG #6 FIX : onGoOffline() purge allRides et les marqueurs.
    FIX is_online : le toggle envoie la demande au serveur via setDriverStatus().
 ═══════════════════════════════════════════════ */
@@ -464,6 +471,15 @@ function initStatusToggle() {
 
             if (newOnline) {
                 showToast("Vous êtes maintenant en ligne", "success");
+
+                // Ne pas attendre le prochain tick naturel de schedulePoll()
+                // (jusqu'à 5s, voir pollTimeout) : on l'annule et on relance
+                // la boucle tout de suite pour que les courses pending déjà
+                // en attente apparaissent le plus vite possible. Un seul
+                // chemin d'appel (schedulePoll() lui-même, avec sa garde
+                // isCheckingRides) — voir le commentaire au-dessus de ce bloc.
+                if (pollTimeout) clearTimeout(pollTimeout);
+                schedulePoll();
             } else {
                 showToast("Vous êtes hors ligne", "info");
                 onGoOffline();
@@ -686,6 +702,33 @@ function updateRideLists() {
     updateNavBadges();
     updateFilterCounts();
     showClientCancellationAlerts();
+}
+
+// Diffing (chantier polling optimisé, 4bis) : appelée depuis checkNewRides()
+// (chauffeur-api.js) juste avant que allRides ne soit remplacé par la réponse
+// fraîche — compare les ID pending des deux tableaux et ne notifie que sur un
+// ID absent de l'ancien. Ne modifie rien : allRides continue d'être peuplé
+// par remplacement complet ailleurs, cette fonction ne fait que décider s'il
+// faut notifier.
+function notifyIfNewPendingRides(previousRides, freshRides) {
+    const previousPendingIds = new Set(
+        (previousRides || [])
+            .filter(r => r.status === "pending")
+            .map(r => String(r.id))
+    );
+
+    const newPendingRides = (freshRides || [])
+        .filter(r => r.status === "pending" && !previousPendingIds.has(String(r.id)));
+
+    if (newPendingRides.length === 0) return;
+
+    const nb = newPendingRides.length;
+    showToast(
+        nb === 1 ? "Nouvelle course disponible !" : `${nb} nouvelles courses disponibles !`,
+        "success",
+        4000
+    );
+    if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
 }
 
 function renderPendingRides() {

@@ -162,7 +162,16 @@ async function checkNewRides() {
         }
 
         const rides = await res.json();
-        allRides = Array.isArray(rides) ? rides : [];
+        const freshRides = Array.isArray(rides) ? rides : [];
+
+        // Diffing (chantier polling optimisé, 4bis) : get_rides.php reste en
+        // full-refresh, structure inchangée. On compare juste les ID pending
+        // de l'ancien allRides à ceux de la réponse fraîche AVANT de l'écraser,
+        // pour ne notifier que sur un ID réellement jamais vu — pas à chaque
+        // poll simplement parce que la liste pending est non vide.
+        notifyIfNewPendingRides(allRides, freshRides);
+
+        allRides = freshRides;
 
         updateRideLists();
         updateNavBadges();
