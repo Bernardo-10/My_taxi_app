@@ -972,6 +972,12 @@ async function cancelCurrentRide() {
 
       onRideCancelled();
       showToast("Course annulée");
+      // Chantier son/vibration (06/07/2026) : toast déjà présent, on ajoute
+      // uniquement une vibration — c'est le client lui-même qui a annulé,
+      // pas besoin d'un son d'alerte comme pour une annulation par le chauffeur.
+      if (typeof window.notifyFeedback === "function") {
+        window.notifyFeedback({ vibrate: [60] });
+      }
       await loadUserRides(); // rafraÃ®chir historique
     } else {
       showToast(result.message || "Annulation impossible.");
@@ -1278,6 +1284,14 @@ function onRideStarted(rideData) {
     const rideSub = document.getElementById("rideStatusMessage");
     if (rideSub) rideSub.textContent = "Course en cours";
 
+    // Chantier son/vibration (06/07/2026) : aucun toast n'existait ici avant.
+    // Toast ajouté (même style que accepté/arrivé), vibration seule — pas de
+    // son dédié pour cet événement (décision actée).
+    showToast("Course commencée 🚗");
+    if (typeof window.notifyFeedback === "function") {
+        window.notifyFeedback({ vibrate: [80] });
+    }
+
     // Désactiver l'affichage du temps d'arrivée et distance du départ
     const etaElements = document.querySelectorAll(".driver-eta");
     etaElements.forEach(el => {
@@ -1375,6 +1389,15 @@ function onRideArrived(rideData) {
 
     updateRideStatusMessage("Votre chauffeur vous attend au point de départ.");
     showArrivedNotice();
+
+    // Chantier son/vibration (06/07/2026) : aucun toast n'existait ici avant
+    // (seul showArrivedNotice() ci-dessus, un bandeau permanent dans le
+    // panneau). Toast ajouté dans le même style que celui de onRideAccepted(),
+    // en plus du bandeau — les deux ne se remplacent pas.
+    showToast(`🚕 ${info.name} est arrivé !`);
+    if (typeof window.notifyFeedback === "function") {
+        window.notifyFeedback({ sound: "arrived", vibrate: [100, 50, 100] });
+    }
 
     document.querySelectorAll(".driver-eta").forEach(el => {
         el.style.display = "none";
@@ -1539,6 +1562,12 @@ function onRideCompleted() {
     // Afficher le modal de fin de course
     showCompletionMessage();
 
+    // Chantier son/vibration (06/07/2026) : l'overlay existant est conservé
+    // tel quel, on ajoute uniquement une vibration (pas de son dédié).
+    if (typeof window.notifyFeedback === "function") {
+        window.notifyFeedback({ vibrate: [80] });
+    }
+
     $navBtns.ride.disabled = true;
     syncAppMode();
 
@@ -1644,6 +1673,9 @@ function onRideAccepted(driverData) {
 
     switchTab("ride");
     showToast(`🚕 ${info.name} arrive !`);
+    if (typeof window.notifyFeedback === "function") {
+        window.notifyFeedback({ sound: "accepted", vibrate: [100, 50, 100] });
+    }
 
     // Fix 3 : forcer immédiatement le tracé bleu + marqueur taxi sans attendre l'intervalle
     if (typeof updateDriverPosition === "function") {

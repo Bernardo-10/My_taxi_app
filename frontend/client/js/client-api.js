@@ -373,9 +373,36 @@ async function checkRideStatus(forceRefresh = false) {
             clearTimeout(rideStatusCheckInterval); rideStatusCheckInterval = null;
             if (typeof onRideCompleted === "function") onRideCompleted();
         }
-        else if (rideData.status === "cancelled_client" || rideData.status === "cancelled") {
+        else if (rideData.status === "cancelled") {
+            // Chantier son/vibration (06/07/2026) : "cancelled" est mis par
+            // backend/chauffeur/cancel_ride.php — c'est le CHAUFFEUR qui a
+            // annulé. Avant ce chantier, ce cas ne montrait strictement rien
+            // au client (reset silencieux). Toast + son3 + vibration ajoutés,
+            // symétriques au toast "annulé client" déjà côté chauffeur (même
+            // son3 réutilisé des deux côtés).
             clearTimeout(rideStatusCheckInterval); rideStatusCheckInterval = null;
             if (typeof onRideCancelled === "function") onRideCancelled();
+            if (typeof showToast === "function") {
+                showToast("La course a été annulée par le chauffeur.");
+            }
+            if (typeof window.notifyFeedback === "function") {
+                window.notifyFeedback({ sound: "cancelled", vibrate: [100, 60, 100, 60, 100] });
+            }
+        }
+        else if (rideData.status === "cancelled_client") {
+            // "cancelled_client" est normalement déjà géré immédiatement par
+            // cancelCurrentRide() (toast + vibration) au moment du clic. Ce
+            // cas ne se déclenche ici que si un AUTRE onglet/appareil du même
+            // client a annulé entre-temps — cas limite, mais on évite quand
+            // même un reset totalement silencieux sur ce second appareil.
+            clearTimeout(rideStatusCheckInterval); rideStatusCheckInterval = null;
+            if (typeof onRideCancelled === "function") onRideCancelled();
+            if (typeof showToast === "function") {
+                showToast("Course annulée");
+            }
+            if (typeof window.notifyFeedback === "function") {
+                window.notifyFeedback({ vibrate: [60] });
+            }
         }
 
         // Fusion (chantier polling optimisé) : mémoriser la position reçue et

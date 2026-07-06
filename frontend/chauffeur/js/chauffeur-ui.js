@@ -440,7 +440,7 @@ function initStatusToggle() {
                     "warning",
                     4000
                 );
-                if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
+                // Vibration déjà déclenchée par showToast() ci-dessus (pattern générique).
                 btn.classList.add("shake");
                 setTimeout(() => btn.classList.remove("shake"), 500);
                 return;
@@ -449,7 +449,7 @@ function initStatusToggle() {
 
         if (isDisabled) {
             showToast("Votre compte a été désactivé par l'administrateur. Contactez l'admin.", "error", 5000);
-            if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+            // Vibration déjà déclenchée par showToast() ci-dessus (pattern générique).
             return;
         }
 
@@ -668,6 +668,14 @@ const TOAST_ICONS = {
     warning: "ti ti-alert-triangle",
 };
 
+// Vibration générique appliquée à tous les toasts (chantier son/vibration,
+// 06/07/2026) — pattern court unique, décision actée avec Bernardo. Les
+// événements qui ont un son/pattern dédié (nouvelle course, annulation)
+// appellent notifyFeedback() juste après leur propre showToast() : cet appel
+// plus spécifique remplace immédiatement la vibration générique ci-dessous
+// (les deux appels ne "s'additionnent" pas, le second écrase le premier).
+const GENERIC_TOAST_VIBRATE_PATTERN = [35];
+
 function showToast(message, type = "info", duration = 3000) {
     const stack = document.getElementById("toastStack");
     if (!stack) return;
@@ -685,6 +693,10 @@ function showToast(message, type = "info", duration = 3000) {
     toast.appendChild(icon);
     toast.appendChild(text);
     stack.appendChild(toast);
+
+    if (typeof window.notifyFeedback === "function") {
+        window.notifyFeedback({ vibrate: GENERIC_TOAST_VIBRATE_PATTERN });
+    }
 
     setTimeout(() => {
         toast.classList.add("out");
@@ -723,12 +735,31 @@ function notifyIfNewPendingRides(previousRides, freshRides) {
     if (newPendingRides.length === 0) return;
 
     const nb = newPendingRides.length;
-    showToast(
-        nb === 1 ? "Nouvelle course disponible !" : `${nb} nouvelles courses disponibles !`,
-        "success",
-        4000
-    );
-    if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
+
+    // Décision actée le 06/07/2026 : trajet affiché uniquement quand une
+    // seule course arrive à la fois (cas le plus fréquent en régime normal).
+    // Si plusieurs arrivent dans le même cycle de poll (typiquement à la
+    // connexion, plusieurs pending déjà en attente), on garde le message
+    // groupé — afficher N toasts avec trajet + son4 chacun serait plus
+    // fatigant qu'utile pour le chauffeur.
+    let message;
+    if (nb === 1) {
+        const ride = newPendingRides[0];
+        const pickup = ride.pickup || "?";
+        const destination = ride.destination || "?";
+        message = `Nouvelle course : ${pickup} → ${destination}`;
+    } else {
+        message = `${nb} nouvelles courses disponibles !`;
+    }
+
+    showToast(message, "success", 4000);
+
+    // Un seul appel notifyFeedback ici, que nb soit 1 ou > 1 — le son4 ne
+    // doit jouer qu'une fois par cycle de détection, jamais une fois par
+    // course individuelle (évite la cacophonie au moment de la connexion).
+    if (typeof window.notifyFeedback === "function") {
+        window.notifyFeedback({ sound: "new_ride", vibrate: [140, 70, 140] });
+    }
 }
 
 function renderPendingRides() {
@@ -1127,45 +1158,18 @@ function showClientCancellationAlerts() {
     });
 }
 
+// Chantier son/vibration (06/07/2026) : remplace l'ancienne alerte plein
+// écran bloquante par un toast — la déduplication (shownCancellations +
+// localStorage, gérée par showClientCancellationAlerts() ci-dessus) est
+// inchangée, seul l'affichage change. Le point de départ (ride.pickup) est
+// déjà renvoyé par get_rides.php, aucun changement backend nécessaire.
 function openClientCancellationAlert(ride) {
-    const existing = document.getElementById("clientCancelAlert");
-    if (existing) existing.remove();
+    const pickup = ride.pickup || `course #${ride.id}`;
+    showToast(`Course à ${pickup} annulée`, "warning", 5000);
 
-    const overlay = document.createElement("div");
-    overlay.id = "clientCancelAlert";
-    overlay.className = "ride-cancelled-alert";
-    overlay.setAttribute("role", "alertdialog");
-    overlay.setAttribute("aria-modal", "true");
-    overlay.setAttribute("aria-label", "Course annulee par le client");
-
-    const box = document.createElement("div");
-    box.className = "ride-cancelled-box";
-
-    const title = document.createElement("div");
-    title.className = "ride-cancelled-title";
-    title.textContent = "Course annulée";
-
-    const rideRef = document.createElement("div");
-    rideRef.className = "ride-cancelled-ride";
-    rideRef.textContent = `Course #${ride.id}`;
-
-    const msg = document.createElement("div");
-    msg.className = "ride-cancelled-message";
-    msg.textContent = "Le client a annulé cette course. Vous pouvez vous arrêter en sécurité et redevenir disponible pour une nouvelle demande.";
-
-    const action = document.createElement("button");
-    action.className = "ride-cancelled-action";
-    action.type = "button";
-    action.textContent = "J'ai compris";
-    action.addEventListener("click", () => overlay.remove());
-
-    box.appendChild(title);
-    box.appendChild(rideRef);
-    box.appendChild(msg);
-    box.appendChild(action);
-    overlay.appendChild(box);
-    document.body.appendChild(overlay);
-    action.focus();
+    if (typeof window.notifyFeedback === "function") {
+        window.notifyFeedback({ sound: "cancelled", vibrate: [100, 60, 100, 60, 100] });
+    }
 }
 
 /* ═══════════════════════════════════════════════
