@@ -8,6 +8,25 @@ const CLIENT_API_BASE = "/backend";
 // client-ui.js après une transition d'état.
 let lastKnownDriverPos = { lat: null, lng: null };
 
+// Intervalle adaptatif (chantier polling optimisé, étape "intervalle
+// adaptatif") : le délai avant le prochain checkRideStatus() dépend de la
+// phase de la course. Relu à chaque cycle dans getRidePollDelay() — un
+// changement d'état prend donc effet dès le prochain appel, sans attendre
+// la fin d'un cycle plus lent déjà entamé.
+const RIDE_POLL_INTERVALS_MS = {
+    searching: 2500,   // attente d'acceptation par un chauffeur
+    accepted: 4500,    // chauffeur en route vers le point de prise en charge
+    arrived: 4500,     // chauffeur arrivé, attend le client
+    started: 6500      // course en cours
+};
+const RIDE_POLL_DEFAULT_INTERVAL_MS = 4500; // repli si rideState absent/inconnu
+
+function getRidePollDelay() {
+    const state = (typeof AppState !== "undefined") ? AppState.rideState : null;
+    const delay = RIDE_POLL_INTERVALS_MS[state];
+    return delay !== undefined ? delay : RIDE_POLL_DEFAULT_INTERVAL_MS;
+}
+
 async function initUserHeader(loginPage) {
     const currentUserName = document.getElementById("currentUserName");
     const logoutBtn = document.getElementById("logoutBtn");
@@ -259,7 +278,8 @@ async function fetchNearbyDrivers() {
 
 function startRideTracking() {
     if (rideStatusCheckInterval) {
-        clearInterval(rideStatusCheckInterval);
+        clearTimeout(rideStatusCheckInterval);
+        rideStatusCheckInterval = null;
     }
 
     const cancelBtn = document.getElementById("cancelRideBtn");
@@ -270,14 +290,31 @@ function startRideTracking() {
 
     rideAccepted = false;
     updateRideStatusMessage("En attente d'acceptation du chauffeur...");
-    checkRideStatus();
-    rideStatusCheckInterval = setInterval(checkRideStatus, 5000);
+    runRideStatusPoll(); // premier appel immédiat, la boucle se replanifie elle-même
 
     // Fusion (chantier polling optimisé) : plus de driverStatusInterval séparé.
     // checkRideStatus() récupère déjà driver_lat/driver_lng à chaque appel
     // (voir check_ride_status.php) — le rendu du marqueur/tracé chauffeur est
     // désormais déclenché directement depuis checkRideStatus(), sans second
     // fetch réseau vers get_driver_location.php.
+}
+
+// Boucle de polling à intervalle adaptatif : remplace l'ancien
+// setInterval(checkRideStatus, 5000) fixe par un setTimeout récursif. Le
+// délai du prochain appel est recalculé après chaque réponse (getRidePollDelay
+// relit AppState.rideState à ce moment précis, voir plus haut).
+//
+// rideStillActive() (définie plus bas) sert de garde après l'await : c'est le
+// même mécanisme déjà utilisé dans checkRideStatus() pour renderDriverOnMap,
+// car clearTimeout()/clearInterval() n'annulent pas un appel déjà en vol —
+// sans cette garde, un cleanup (onRideCompleted/onRideCancelled) survenu
+// pendant l'await pourrait être suivi d'une replanification fantôme.
+async function runRideStatusPoll() {
+    await checkRideStatus();
+
+    if (!rideStillActive()) return;
+
+    rideStatusCheckInterval = setTimeout(runRideStatusPoll, getRidePollDelay());
 }
 
 async function checkRideStatus(forceRefresh = false) {
@@ -333,11 +370,11 @@ async function checkRideStatus(forceRefresh = false) {
             if (typeof onRideStarted === "function") onRideStarted(rideData);
         }
         else if (rideData.status === "completed") {
-            clearInterval(rideStatusCheckInterval); rideStatusCheckInterval = null;
+            clearTimeout(rideStatusCheckInterval); rideStatusCheckInterval = null;
             if (typeof onRideCompleted === "function") onRideCompleted();
         }
         else if (rideData.status === "cancelled_client" || rideData.status === "cancelled") {
-            clearInterval(rideStatusCheckInterval); rideStatusCheckInterval = null;
+            clearTimeout(rideStatusCheckInterval); rideStatusCheckInterval = null;
             if (typeof onRideCancelled === "function") onRideCancelled();
         }
 
