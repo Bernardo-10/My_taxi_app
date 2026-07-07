@@ -74,7 +74,46 @@ document.addEventListener("DOMContentLoaded", async () => {
   initProfileTabs();
   watchUserPosition();
     initSheetDrag();
+    initVisibilityRecovery();
 });
+// ── REPRISE APRÈS CHANGEMENT D'ONGLET (visibilitychange) ────────────
+// Chrome/Android throttlent puis gèlent les setTimeout/setInterval d'un
+// onglet caché (jusqu'à 1x/minute après ~5 min, voire gel complet sur
+// mobile) : la boucle de polling de checkRideStatus() (setTimeout récursif,
+// voir client-api.js) continue d'exister mais tourne au ralenti ou plus du
+// tout tant qu'on ne regarde pas l'onglet — d'où l'impression qu'elle
+// "s'arrête et ne redémarre pas". Comme les notifs système
+// (notify-feedback.js) sont déclenchées depuis cette même boucle JS (pas
+// depuis le service worker), on perd aussi les notifs pendant ce temps.
+//
+// On ne peut pas recevoir de notifs pendant que l'onglet est réellement
+// caché (ça demanderait du Web Push — chantier séparé, voir discussion), mais
+// on peut au moins forcer un rattrapage immédiat dès que l'utilisateur
+// revient sur l'onglet, au lieu d'attendre le prochain tick (potentiellement
+// décalé de plusieurs dizaines de secondes, voire minutes).
+function initVisibilityRecovery() {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return;
+
+    // Cas course en cours : on annule le tick replanifié (potentiellement
+    // très en retard à cause du throttling) et on relance immédiatement le
+    // cycle checkRideStatus() ; runRideStatusPoll() se replanifie lui-même.
+    if (typeof rideStillActive === "function" && rideStillActive()) {
+      if (rideStatusCheckInterval) {
+        clearTimeout(rideStatusCheckInterval);
+        rideStatusCheckInterval = null;
+      }
+      if (typeof runRideStatusPoll === "function") runRideStatusPoll();
+    }
+
+    // Cas carte "idle" (chauffeurs à proximité) : même rattrapage, moins
+    // critique (pas de notif dessus) mais évite une carte figée au retour.
+    if (AppState.rideState === "idle" && nearbyDriversInterval) {
+      refreshNearbyDrivers();
+    }
+  });
+}
+
 // ── SHEET DRAG ──────────────────────────────
 function initSheetDrag() {
     setupDraggableSheet("sheetDragArea", "sheet-map");
