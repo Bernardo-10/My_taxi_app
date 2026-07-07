@@ -622,6 +622,14 @@ function getRecentPlaces(field) {
 // ── TROUVER UNE COURSE ─────────────────────────────────────────
 function initFindRideBtn() {
   document.getElementById("findRideBtn").addEventListener("click", async () => {
+    // Chantier notifications natives (07/07/2026) : demande de permission
+    // faite ici plutôt qu'au chargement de la page, car il faut un vrai
+    // geste utilisateur (obligatoire sur iOS Safari). Sans effet si déjà
+    // accordée/refusée — ne redemande jamais deux fois.
+    if (typeof window.requestNotifyPermission === "function") {
+        window.requestNotifyPermission();
+    }
+
     AppState.pickupText      = document.getElementById("pickup").value.trim();
     AppState.destinationText = document.getElementById("destination").value.trim();
 
@@ -1396,7 +1404,11 @@ function onRideArrived(rideData) {
     // en plus du bandeau — les deux ne se remplacent pas.
     showToast(`🚕 ${info.name} est arrivé !`);
     if (typeof window.notifyFeedback === "function") {
-        window.notifyFeedback({ sound: "arrived", vibrate: [100, 50, 100] });
+        window.notifyFeedback({
+            sound: "arrived",
+            vibrate: [100, 50, 100],
+            notify: { title: "Votre chauffeur est arrivé", body: `${info.name} vous attend au point de départ`, tag: "taxigo-ride" }
+        });
     }
 
     document.querySelectorAll(".driver-eta").forEach(el => {
@@ -1674,7 +1686,11 @@ function onRideAccepted(driverData) {
     switchTab("ride");
     showToast(`🚕 ${info.name} arrive !`);
     if (typeof window.notifyFeedback === "function") {
-        window.notifyFeedback({ sound: "accepted", vibrate: [100, 50, 100] });
+        window.notifyFeedback({
+            sound: "accepted",
+            vibrate: [100, 50, 100],
+            notify: { title: "Chauffeur en route", body: `${info.name} arrive !`, tag: "taxigo-ride" }
+        });
     }
 
     // Fix 3 : forcer immédiatement le tracé bleu + marqueur taxi sans attendre l'intervalle

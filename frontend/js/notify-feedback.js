@@ -1,22 +1,43 @@
 /**
- * notify-feedback.js — Son + vibration pour les notifications, partagé
+ * notify-feedback.js — Son + vibration + notification système, partagé
  * entre les frontends chauffeur et client (même pattern que confirm-modal.js).
  *
- * Ce module ne gère AUCUNE permission navigateur — il n'en a pas besoin.
- * Le son est bloqué par défaut par la politique d'autoplay (pas par une
- * permission), donc ce module se "déverrouille" tout seul dès la première
- * interaction de l'utilisateur sur la page (clic, tap, touche), sans lui
- * demander quoi que ce soit. La vibration n'a besoin d'aucun déverrouillage.
+ * SON / VIBRATION — aucune permission navigateur requise. Le son est bloqué
+ * par défaut par la politique d'autoplay (pas par une permission), donc ce
+ * module se "déverrouille" tout seul dès la première interaction de
+ * l'utilisateur sur la page (clic, tap, touche), sans lui demander quoi que
+ * ce soit. La vibration n'a besoin d'aucun déverrouillage.
  *
  * Chaque son est préchargé une seule fois (pas re-téléchargé à chaque
  * notification) — important vu la cible mobile/données limitées du projet.
  * Un échec de lecture (fichier absent, autoplay encore bloqué) est toujours
  * silencieux : ça ne doit jamais empêcher l'affichage d'un toast.
  *
+ * NOTIFICATION SYSTÈME (chantier 07/07/2026, côté client uniquement pour le
+ * moment — chauffeur laissé de côté, prévu via FCM séparément) — celle-ci
+ * REQUIERT la permission `Notification.requestPermission()`, à demander
+ * uniquement suite à un vrai geste utilisateur (obligatoire sur iOS Safari,
+ * sinon silencieusement ignoré). Voir requestNotifyPermission() plus bas.
+ * Elle ne s'affiche que si l'onglet n'est PAS au premier plan
+ * (document.visibilityState !== "visible") — si l'utilisateur regarde déjà
+ * l'app, le toast déjà affiché suffit, pas besoin d'un doublon système.
+ * Rappel important (voir rapport FCM vs Pusher) : ceci ne fonctionne que
+ * tant que l'onglet/l'app reste ouvert quelque part (même en arrière-plan) —
+ * app totalement fermée = rien ne s'affiche, c'est le rôle réservé à FCM.
+ * Sur iPhone, ne fonctionne que si le site a été ajouté à l'écran d'accueil
+ * (PWA installée) ; dans un simple onglet Safari, la permission peut être
+ * accordée mais aucune notification n'apparaîtra jamais (limitation iOS,
+ * pas un bug de ce module).
+ *
  * Usage :
  *   window.notifyFeedback({ sound: "accepted", vibrate: [100, 50, 100] });
  *   window.notifyFeedback({ vibrate: [35] }); // vibration seule, pas de son
  *   window.notifyFeedback({ sound: "new_ride" }); // son seul, pas de vibration
+ *   window.notifyFeedback({
+ *     sound: "accepted", vibrate: [100, 50, 100],
+ *     notify: { title: "Chauffeur en route", body: "Bernardo arrive !" }
+ *   });
+ *   window.requestNotifyPermission(); // à appeler depuis un clic (une fois)
  */
 "use strict";
 
@@ -92,9 +113,54 @@
         try { navigator.vibrate(pattern); } catch (e) { /* échec silencieux */ }
     }
 
+    // ── Notification système native ─────────────────────────────────
+    // Icône déduite du dossier courant (/client/... ou /chauffeur/...) pour
+    // que ce module reste générique quand le chauffeur l'utilisera à son tour.
+    const NOTIFY_ICON = location.pathname.startsWith("/chauffeur")
+        ? "/chauffeur/icons/chauffeur-192.png"
+        : "/client/icons/client-192.png";
+
+    function canNotify() {
+        return typeof window.Notification === "function";
+    }
+
+    // À appeler UNIQUEMENT depuis un vrai geste utilisateur (clic/tap) —
+    // obligatoire sur iOS Safari, sinon la demande est silencieusement
+    // ignorée. Ne redemande jamais si l'utilisateur a déjà répondu
+    // (accordé ou refusé) : Notification.permission reste "default"
+    // uniquement tant qu'aucune décision n'a été prise.
+    window.requestNotifyPermission = function () {
+        if (!canNotify()) return;
+        if (Notification.permission === "default") {
+            try { Notification.requestPermission(); } catch (e) { /* échec silencieux */ }
+        }
+    };
+
+    function showNativeNotification(notify) {
+        if (!notify || !canNotify()) return;
+        if (Notification.permission !== "granted") return;
+        // Le toast déjà affiché à l'écran suffit si l'onglet est au premier
+        // plan — éviter une notification système redondante dans ce cas.
+        if (document.visibilityState === "visible") return;
+        try {
+            const n = new Notification(notify.title, {
+                body: notify.body || "",
+                icon: NOTIFY_ICON,
+                tag: notify.tag || "taxigo-ride",
+            });
+            n.onclick = () => {
+                window.focus();
+                n.close();
+            };
+        } catch (e) {
+            // échec silencieux — ex. permission révoquée entre-temps
+        }
+    }
+
     window.notifyFeedback = function (options) {
         const opts = options || {};
         if (opts.sound) playSound(opts.sound);
         if (opts.vibrate) doVibrate(opts.vibrate);
+        if (opts.notify) showNativeNotification(opts.notify);
     };
 })();

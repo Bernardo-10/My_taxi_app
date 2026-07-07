@@ -386,7 +386,11 @@ async function checkRideStatus(forceRefresh = false) {
                 showToast("La course a été annulée par le chauffeur.");
             }
             if (typeof window.notifyFeedback === "function") {
-                window.notifyFeedback({ sound: "cancelled", vibrate: [100, 60, 100, 60, 100] });
+                window.notifyFeedback({
+                    sound: "cancelled",
+                    vibrate: [100, 60, 100, 60, 100],
+                    notify: { title: "Course annulée", body: "La course a été annulée par le chauffeur.", tag: "taxigo-ride" }
+                });
             }
         }
         else if (rideData.status === "cancelled_client") {
