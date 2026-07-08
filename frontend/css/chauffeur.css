@@ -829,3 +829,186 @@ html, body {
     background: var(--c-bg);
   }
 }
+
+/* ── Bouton portefeuille dans l'en-tête ────── */
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.panel-title {
+  flex: 1;
+}
+.wallet-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--c-amber-bg);
+  color: var(--c-amber);
+  border: none;
+  padding: 6px 12px 6px 8px;
+  border-radius: 20px;
+  font-family: var(--font);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.wallet-btn:hover {
+  background: var(--c-amber);
+  color: #fff;
+}
+.wallet-btn svg {
+  stroke: currentColor;
+}
+
+/* ── Panneau Portefeuille (réutilise profile-panel) ── */
+#walletPanel .profile-scroll {
+  padding: 0 16px 16px;
+}
+.wallet-balance {
+  background: var(--c-surface2);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  text-align: center;
+  margin: 16px 0;
+  border: .5px solid var(--c-border);
+}
+.balance-label {
+  display: block;
+  font-size: 0.9rem;
+  color: var(--c-text-3);
+}
+.balance-amount {
+  display: block;
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: var(--c-text);
+  margin-top: 0.25rem;
+}
+.recharge-btn {
+  width: 100%;
+  padding: 0.8rem;
+  font-size: 1rem;
+  background: var(--c-amber);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.recharge-btn:hover {
+  background: var(--c-amber-d);
+}
+.wallet-history {
+  margin-top: 2rem;
+}
+.wallet-history h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  color: var(--c-text);
+}
+.transaction-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.transaction-item {
+  background: var(--c-surface);
+  border: .5px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 1rem;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.25rem 0.5rem;
+  align-items: center;
+}
+.tx-info {
+  display: flex;
+  flex-direction: column;
+}
+.tx-type {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.tx-date {
+  font-size: 0.75rem;
+  color: var(--c-text-3);
+}
+.tx-amount {
+  font-weight: 700;
+  font-size: 1rem;
+  white-space: nowrap;
+  justify-self: end;
+}
+.tx-amount.positive {
+  color: var(--c-green);
+}
+.tx-amount.negative {
+  color: var(--c-red);
+}
+.tx-status {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  padding: 0.15rem 0.6rem;
+  border-radius: 12px;
+  background: var(--c-surface2);
+  color: var(--c-text-3);
+  justify-self: end;
+  font-weight: 600;
+}
+.tx-status.completed {
+  background: var(--c-green-bg);
+  color: var(--c-green);
+}
+.tx-status.pending {
+  background: var(--c-amber-bg);
+  color: var(--c-amber);
+}
+.tx-status.rejected {
+  background: var(--c-red-bg);
+  color: var(--c-red);
+}
+.tx-desc {
+  grid-column: 1 / -1;
+  font-size: 0.8rem;
+  color: var(--c-text-3);
+  margin-top: 0.2rem;
+}
+
+/* ── Modal Recharge ──────────────────────────── */
+#rechargeModal .modal-sheet {
+  padding: 20px 16px calc(var(--safe-b) + 20px);
+}
+#rechargeModal form label {
+  display: block;
+  margin: 0.8rem 0 0.3rem;
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+#rechargeModal form input,
+#rechargeModal form select {
+  width: 100%;
+  padding: 0.6rem;
+  border: .5px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font);
+  font-size: 1rem;
+  background: var(--c-surface);
+  color: var(--c-text);
+}
+#rechargeModal form input:focus,
+#rechargeModal form select:focus {
+  outline: none;
+  border-color: var(--c-amber);
+}
+#rechargeModal .modal-actions {
+  margin-top: 1.2rem;
+}

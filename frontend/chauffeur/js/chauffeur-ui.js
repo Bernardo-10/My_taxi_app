@@ -150,6 +150,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     initProfileDrawer();
     initReportModal();
     initFilterPills();
+    initWallet();
 
     const dateEl = document.getElementById("dashboardDate");
     if (dateEl) {
@@ -586,6 +587,156 @@ function openProfile() {
 function closeProfile() {
     const panel = document.getElementById("profilePanel");
     if (panel) { panel.classList.remove("open"); panel.setAttribute("aria-hidden", "true"); }
+}
+
+// ═══════════════════════════════════════════════
+// PORTEFEUILLE
+// ═══════════════════════════════════════════════
+function openWallet() {
+  const panel = document.getElementById('walletPanel');
+  if (panel) {
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    loadWalletData();
+  }
+}
+
+function closeWallet() {
+  const panel = document.getElementById('walletPanel');
+  if (panel) {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+  }
+}
+
+async function loadWalletData() {
+  const balanceEl = document.getElementById('walletBalance');
+  const container = document.getElementById('walletTransactions');
+  if (!balanceEl || !container) return;
+
+  try {
+    const data = await fetchWallet();
+    if (data.status === 'success') {
+      balanceEl.textContent = data.balance.toLocaleString('fr-FR') + ' FCFA';
+      renderTransactions(data.transactions, container);
+    } else {
+      showToast('Erreur chargement du portefeuille', 'error');
+    }
+  } catch (e) {
+    showToast('Erreur réseau', 'error');
+  }
+}
+
+function formatDate(dt) {
+  if (!dt) return '—';
+  return new Date(dt).toLocaleString('fr-FR', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  });
+}
+
+function renderTransactions(transactions, container) {
+  if (!container) return;
+  if (!transactions || transactions.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon">💳</div><div class="empty-title">Aucune transaction</div></div>';
+    return;
+  }
+
+  container.innerHTML = transactions.map(tx => {
+    const sign = tx.amount_fcfa >= 0 ? '+' : '';
+    const typeLabel = tx.type === 'commission' ? 'Commission' :
+                      tx.type === 'recharge' ? 'Recharge' : 'Ajustement';
+    const statusClass = tx.status === 'completed' ? 'completed' :
+                        tx.status === 'pending' ? 'pending' : 'rejected';
+    const dateFormatted = formatDate(tx.created_at);
+    return `
+      <div class="transaction-item">
+        <div class="tx-info">
+          <span class="tx-type">${typeLabel}</span>
+          <span class="tx-date">${dateFormatted}</span>
+        </div>
+        <div class="tx-amount ${tx.amount_fcfa >= 0 ? 'positive' : 'negative'}">
+          ${sign}${Math.abs(tx.amount_fcfa)} FCFA
+        </div>
+        <span class="tx-status ${statusClass}">${tx.status}</span>
+        ${tx.description ? `<div class="tx-desc">${tx.description}</div>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+// ── Modale de recharge ────────────────────────
+function openRechargeModal() {
+  const modal = document.getElementById('rechargeModal');
+  if (modal) {
+    modal.classList.add('open');
+    modal.setAttribute('aria-hidden', 'false');
+    document.getElementById('rechargeAmount')?.focus();
+  }
+}
+
+function closeRechargeModal() {
+  const modal = document.getElementById('rechargeModal');
+  if (modal) {
+    modal.classList.remove('open');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+}
+
+async function submitRechargeRequest(event) {
+  event.preventDefault();
+  const amount = parseInt(document.getElementById('rechargeAmount')?.value || '0');
+  const operator = document.getElementById('rechargeOperator')?.value || '';
+  const reference = document.getElementById('rechargeReference')?.value.trim() || '';
+
+  if (amount <= 0) {
+    showToast('Montant invalide (doit être > 0)', 'error');
+    return;
+  }
+  if (!operator) {
+    showToast('Sélectionnez un opérateur', 'error');
+    return;
+  }
+
+  const submitBtn = event.target.querySelector('.modal-submit');
+  const restore = setButtonLoading ? setButtonLoading(submitBtn, 'Envoi…') : (() => {});
+  try {
+    const res = await requestRecharge({ amount, operator, reference });
+    if (res.status === 'success') {
+      showToast('Demande envoyée, en attente de validation', 'success');
+      closeRechargeModal();
+      // Rafraîchir le portefeuille si ouvert
+      if (document.getElementById('walletPanel')?.classList.contains('open')) {
+        loadWalletData();
+      }
+    } else {
+      showToast(res.message || 'Erreur lors de la demande', 'error');
+    }
+  } catch (e) {
+    showToast('Erreur réseau', 'error');
+  } finally {
+    restore();
+  }
+}
+
+// ── Initialisation des événements ─────────────
+function initWallet() {
+  const openBtn = document.getElementById('walletHeaderBtn');
+  const closeBtn = document.getElementById('walletCloseBtn');
+  const rechargeOpenBtn = document.getElementById('rechargeOpenBtn');
+  const rechargeCancelBtn = document.getElementById('rechargeCancelBtn');
+  const modalOverlay = document.getElementById('rechargeModal');
+
+  if (openBtn) openBtn.addEventListener('click', openWallet);
+  if (closeBtn) closeBtn.addEventListener('click', closeWallet);
+  if (rechargeOpenBtn) rechargeOpenBtn.addEventListener('click', openRechargeModal);
+  if (rechargeCancelBtn) rechargeCancelBtn.addEventListener('click', closeRechargeModal);
+  if (modalOverlay) modalOverlay.addEventListener('click', e => {
+    if (e.target === modalOverlay) closeRechargeModal();
+  });
+
+  // Fermer le tiroir wallet avec le bouton de navigation "Retour" (si présent)
+  // On peut aussi fermer via le clic en dehors du panneau (pas implémenté)
 }
 
 /* ═══════════════════════════════════════════════

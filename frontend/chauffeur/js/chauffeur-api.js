@@ -547,3 +547,28 @@ async function setDriverStatus(isOnline) {
         throw err;
     }
 }
+
+// ═══════════════════════════════════════════════
+// PORTEFEUILLE
+// ═══════════════════════════════════════════════
+async function fetchWallet(page = 1) {
+  const res = await fetch(`${DRIVER_API_BASE}/chauffeur/get_wallet.php?page=${page}&limit=20`, { cache: 'no-store' });
+  if (res.status === 401) {
+    window.location.href = '/chauffeur/login';
+    throw new Error('Session expirée');
+  }
+  return res.json();
+}
+
+async function requestRecharge(data) {
+  const res = await fetch(`${DRIVER_API_BASE}/chauffeur/request_recharge.php`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  if (res.status === 401) {
+    window.location.href = '/chauffeur/login';
+    throw new Error('Session expirée');
+  }
+  return res.json();
+}

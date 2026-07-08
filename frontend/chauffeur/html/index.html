@@ -89,9 +89,19 @@
   <!-- Panel : tableau de bord -->
   <section class="content-panel hidden" id="panelDashboard"
            role="region" aria-label="Tableau de bord">
-    <div class="panel-header">
-      <div class="panel-title">Tableau de bord</div>
-      <div class="panel-subtitle" id="dashboardDate"></div>
+    <div class="panel-header" style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+      <div style="flex: 1;">
+        <div class="panel-title">Tableau de bord</div>
+        <div class="panel-subtitle" id="dashboardDate"></div>
+      </div>
+      <!-- Bouton Portefeuille (à droite) -->
+      <button class="wallet-btn" id="walletHeaderBtn" aria-label="Portefeuille">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="1" y="4" width="22" height="16" rx="2" />
+          <path d="M18 12a2 2 0 1 0 0-4" />
+        </svg>
+        <span>Portefeuille</span>
+      </button>
     </div>
     <div class="panel-scroll">
       <div class="stats-grid">
@@ -182,20 +192,63 @@
     </div>
   </aside>
 
-  <!-- Report Problem Modal -->
-  <div class="modal-overlay" id="reportModal" role="dialog"
-       aria-label="Signaler un problème" aria-hidden="true">
+  <!-- ============ NOUVEAU : Panneau Portefeuille (tiroir) ============ -->
+  <aside class="profile-panel" id="walletPanel" role="dialog" aria-label="Portefeuille" aria-hidden="true">
+    <div class="profile-header">
+      <button class="profile-close-btn" id="walletCloseBtn" aria-label="Fermer">
+        <i class="ti ti-x" aria-hidden="true"></i>
+      </button>
+      <div class="profile-title">Mon portefeuille</div>
+    </div>
+    <div class="profile-scroll">
+      <!-- Solde -->
+      <div class="wallet-balance">
+        <span class="balance-label">Solde disponible</span>
+        <span class="balance-amount" id="walletBalance">0 FCFA</span>
+      </div>
+      <!-- Bouton Recharger -->
+      <button class="recharge-btn" id="rechargeOpenBtn">
+        <i class="ti ti-plus" aria-hidden="true"></i> Recharger via mobile money
+      </button>
+      <!-- Historique -->
+      <div class="wallet-history">
+        <h3>Historique récent</h3>
+        <div id="walletTransactions" class="transaction-list">
+          <div class="empty-state">
+            <div class="empty-icon">💳</div>
+            <div class="empty-title">Aucune transaction</div>
+          </div>
+        </div>
+        <div class="pagination" id="walletPagination"></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============ NOUVEAU : Modal de recharge ============ -->
+  <div class="modal-overlay" id="rechargeModal" role="dialog" aria-label="Recharger" aria-hidden="true">
     <div class="modal-sheet" role="document">
       <div class="modal-handle"></div>
-      <div class="modal-title">Signaler un problème</div>
-      <div class="modal-subtitle" id="reportModalSub">Course #—</div>
-      <textarea class="modal-textarea" id="reportTextarea"
-                placeholder="Décrivez le problème rencontré…"
-                maxlength="500"></textarea>
-      <div class="modal-actions">
-        <button class="modal-cancel" id="reportCancelBtn" type="button">Annuler</button>
-        <button class="modal-submit" id="reportSubmitBtn" type="button">Envoyer</button>
-      </div>
+      <div class="modal-title">Demande de recharge</div>
+      <form id="rechargeForm" onsubmit="submitRechargeRequest(event)">
+        <label for="rechargeAmount">Montant (FCFA)</label>
+        <input type="number" id="rechargeAmount" required min="1" placeholder="Ex: 5000" />
+
+        <label for="rechargeOperator">Opérateur</label>
+        <select id="rechargeOperator" required>
+          <option value="">-- Sélectionner --</option>
+          <option value="Orange Money">Orange Money</option>
+          <option value="MTN Mobile Money">MTN Mobile Money</option>
+          <option value="Express Union">Express Union</option>
+        </select>
+
+        <label for="rechargeReference">Référence de transaction</label>
+        <input type="text" id="rechargeReference" placeholder="Numéro de transaction (optionnel)" />
+
+        <div class="modal-actions">
+          <button class="modal-cancel" type="button" id="rechargeCancelBtn">Annuler</button>
+          <button class="modal-submit" type="submit">Envoyer la demande</button>
+        </div>
+      </form>
     </div>
   </div>
 
