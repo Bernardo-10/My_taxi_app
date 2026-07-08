@@ -175,3 +175,32 @@ function showToast(msg, type = "success") {
     document.getElementById("toast-container").appendChild(el);
     setTimeout(() => el.remove(), 3500);
 }
+
+/* ═══════════════════════════════════════════════
+   PORTEFEUILLE CHAUFFEURS
+═══════════════════════════════════════════════ */
+
+/**
+ * Récupère la liste des portefeuilles de tous les chauffeurs
+ * (solde, commissions, recharges, etc.)
+ */
+async function fetchWallets() {
+    const res  = await fetch(`${ADMIN_API}/list_wallets.php`);
+    const data = await res.json();
+    return data.wallets || [];
+}
+
+/**
+ * Récupère l'historique des transactions, avec filtres optionnels
+ * @param {Object} filters - { chauffeur_id, type, status, page, limit }
+ */
+async function fetchWalletTransactions({ chauffeur_id = 0, type = '', status = '', page = 1, limit = 50 } = {}) {
+    const params = new URLSearchParams({ page, limit });
+    if (chauffeur_id) params.set('chauffeur_id', chauffeur_id);
+    if (type)         params.set('type', type);
+    if (status)       params.set('status', status);
+
+    const res  = await fetch(`${ADMIN_API}/list_wallet_transactions.php?${params}`);
+    const data = await res.json();
+    return data;
+}

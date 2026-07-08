@@ -26,7 +26,9 @@ const AdminState = {
     problemsInterval: null,
     shownProblemIds: new Set(),   // ids déjà mis en file/affichés cette session
     problemAlertQueue: [],
-    problemAlertShowing: false
+    problemAlertShowing: false,
+    walletsFilter: { chauffeur_id: 0, type: '', status: '' },
+    walletsInterval: null
 };
 
 /* ── DOM ready ────────────────────────────────────────────── */
@@ -85,7 +87,8 @@ function showSection(name) {
         map:        "Carte en temps réel",
         rides:      "Courses",
         chauffeurs: "Chauffeurs",
-        clients:    "Clients"
+        clients:    "Clients",
+        wallets:    "Portefeuille chauffeurs"
     };
 
     // Mettre à jour le filtre dans la section courses si des statuts y sont affichés
@@ -124,6 +127,7 @@ function showSection(name) {
         case "rides":      loadRides();      break;
         case "chauffeurs": loadChauffeurs(); break;
         case "clients":    loadClients();    break;
+        case "wallets":    loadWallets();    break;
     }
 }
 
@@ -735,6 +739,110 @@ async function loadClients() {
         section.querySelector("#clients-table-wrap").innerHTML =
             `<p style="color:var(--c-red);padding:20px">Erreur de chargement.</p>`;
     }
+}
+
+/* ═══════════════════════════════════════════════
+   SECTION : PORTEFEUILLE CHAUFFEURS
+═══════════════════════════════════════════════ */
+
+async function loadWallets() {
+    const section = document.getElementById("section-wallets");
+    const wrap = section.querySelector("#wallets-table-wrap");
+    if (!wrap) return;
+
+    wrap.innerHTML = `<div class="empty-state"><div class="spinner"></div></div>`;
+
+    try {
+        const wallets = await fetchWallets();
+        wrap.innerHTML = renderWalletsTable(wallets);
+    } catch (e) {
+        wrap.innerHTML = `<p style="color:var(--c-red);padding:20px">Erreur de chargement.</p>`;
+    }
+
+    // Arrêter l'ancien intervalle et en recréer un
+    if (AdminState.walletsInterval) clearInterval(AdminState.walletsInterval);
+    AdminState.walletsInterval = setInterval(refreshWallets, 30000);
+}
+
+async function refreshWallets() {
+    const section = document.getElementById("section-wallets");
+    if (!section || !section.classList.contains("active")) return;
+
+    try {
+        const wallets = await fetchWallets();
+        const wrap = section.querySelector("#wallets-table-wrap");
+        if (wrap) wrap.innerHTML = renderWalletsTable(wallets);
+    } catch (e) {
+        // silencieux
+    }
+}
+
+function renderWalletsTable(wallets) {
+    if (!wallets || !wallets.length) {
+        return `<div class="empty-state"><div class="empty-state-icon">💰</div><div class="empty-state-text">Aucun portefeuille</div></div>`;
+    }
+
+    const rows = wallets.map(w => {
+        const balance = w.wallet_balance_fcfa;
+        const balanceClass = balance < 0 ? 'text-danger' : 'text-success';
+        return `<tr>
+            <td><strong>${w.name}</strong><div class="ride-detail">${w.phone || ''}</div></td>
+            <td class="${balanceClass}">${formatFcfa(balance)}</td>
+            <td>${formatFcfa(w.total_commissions_fcfa)}</td>
+            <td>${formatFcfa(w.total_recharges_fcfa)}</td>
+            <td>
+                ${w.recharges_en_attente > 0
+                    ? `<span class="topbar-badge badge-amber">${w.recharges_en_attente} en attente</span>`
+                    : '—'
+                }
+            </td>
+            <td>
+                ${w.derniere_transaction_at
+                    ? `<span title="${formatDate(w.derniere_transaction_at)}">${formatDateShort(w.derniere_transaction_at)}</span>
+                       <div class="ride-detail">${w.derniere_transaction_type || ''}</div>`
+                    : '—'
+                }
+            </td>
+            <td>
+                <button class="btn btn-sm btn-outline" onclick="showWalletHistory(${w.id})">Historique</button>
+            </td>
+        </tr>`;
+    }).join('');
+
+    return `<div class="table-wrap"><table>
+        <thead><tr>
+            <th>Chauffeur</th>
+            <th>Solde</th>
+            <th>Commissions (20%)</th>
+            <th>Recharges</th>
+            <th>Recharges en attente</th>
+            <th>Dernière activité</th>
+            <th>Action</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+    </table></div>`;
+}
+
+/**
+ * Affiche l'historique des transactions d'un chauffeur donné.
+ * Pour l'instant, cela ouvre une modale ou redirige vers un filtre.
+ * On peut simplement recharger la section avec un filtre chauffeur_id.
+ * Ici, on va basculer sur la section wallets en ajoutant un paramètre d'URL ?
+ * Ou bien ouvrir une modale. Je propose une approche simple : on filtre
+ * la section wallets par chauffeur_id (stocké dans AdminState.walletsFilter).
+ */
+function showWalletHistory(chauffeurId) {
+    AdminState.walletsFilter.chauffeur_id = chauffeurId;
+    // Recharger la section avec ce filtre
+    loadWallets();
+    // Mettre à jour le sous-titre ou un champ de filtre pour indiquer le filtre actif
+    const section = document.getElementById("section-wallets");
+    const subtitle = section.querySelector('.section-subtitle') || document.createElement('div');
+    subtitle.className = 'section-subtitle';
+    subtitle.textContent = `Historique des transactions du chauffeur #${chauffeurId}`;
+    // On peut aussi afficher une liste des transactions en dessous du tableau principal.
+    // Je vais ajouter un deuxième tableau pour les transactions.
+    // Voir plus bas pour la gestion.
 }
 
 function renderClientsTable(list) {

@@ -605,3 +605,26 @@ tbody tr:hover td { background: var(--c-bg); }
   padding: 1px 7px;
   line-height: 1.6;
 }
+
+/* Section portefeuille */
+#section-wallets .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+#section-wallets .section-header h2 {
+    margin: 0;
+}
+.badge-amber {
+    background: var(--c-amber-bg);
+    color: var(--c-amber);
+}
+.text-danger {
+    color: var(--c-red);
+}
+.text-success {
+    color: var(--c-green);
+}
