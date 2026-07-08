@@ -9,6 +9,8 @@
   <link rel="shortcut icon" href="/admin/icons/admin-favicon.ico" />
   <link rel="stylesheet" href="/frontend/admin/css/admin.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <!-- Tabler Icons pour les icônes -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
 </head>
 <body>
 
@@ -62,7 +64,7 @@
         <i class="ti ti-wallet"></i>
         <span>Portefeuille chauffeurs</span>
         <span class="nav-badge" id="navWalletsBadge"></span>
-    </button>
+      </button>
     </nav>
 
     <div class="sidebar-footer">
@@ -225,23 +227,25 @@
         </div>
       </section>
 
-      <!-- SECTION : PORTEFEUILLE CHAUFFEURS -->
+      <!-- ════════════════════════════════════
+           SECTION : PORTEFEUILLE CHAUFFEURS
+      ════════════════════════════════════ -->
       <section id="section-wallets" class="page-section">
-          <div class="section-header">
-              <h2>Portefeuille des chauffeurs</h2>
-              <div class="section-actions">
-                  <button class="btn btn-sm btn-outline" onclick="loadWallets()">
-                      <i class="ti ti-refresh"></i> Rafraîchir
-                  </button>
-              </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Portefeuille des chauffeurs</span>
+            <div class="section-actions">
+              <button class="btn btn-sm btn-outline" onclick="loadWallets()">
+                <i class="ti ti-refresh"></i> Rafraîchir
+              </button>
+            </div>
           </div>
-          <div class="section-filters">
-              <!-- éventuels filtres supplémentaires -->
-          </div>
+
           <div id="wallets-table-wrap">
-              <div class="empty-state"><div class="spinner"></div></div>
+            <div class="empty-state"><div class="spinner"></div></div>
           </div>
           <div id="wallets-history-wrap" style="display:none;"></div>
+        </div>
       </section>
 
     </div><!-- /page-content -->

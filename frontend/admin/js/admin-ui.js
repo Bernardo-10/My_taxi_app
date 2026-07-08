@@ -20,13 +20,13 @@ const AdminState = {
     clientsFilter: { q: "", status: "" },
     dashboardInterval: null,
 
-    // Chantier 4 (v3) — polling global des signalements client, indépendant
-    // de la section affichée (contrairement aux autres intervalles ci-dessus,
-    // qui sont chacun scopés à une section et coupés quand on la quitte).
+    // Chantier 4 (v3) — polling global des signalements client
     problemsInterval: null,
-    shownProblemIds: new Set(),   // ids déjà mis en file/affichés cette session
+    shownProblemIds: new Set(),
     problemAlertQueue: [],
     problemAlertShowing: false,
+
+    // Portefeuille
     walletsFilter: { chauffeur_id: 0, type: '', status: '' },
     walletsInterval: null
 };
@@ -71,17 +71,14 @@ function initNavigation() {
 function showSection(name) {
     AdminState.currentSection = name;
 
-    // Mise à jour nav active
     document.querySelectorAll(".nav-item[data-section]").forEach(btn => {
         btn.classList.toggle("active", btn.dataset.section === name);
     });
 
-    // Affichage des pages
     document.querySelectorAll(".page-section").forEach(el => {
         el.classList.toggle("active", el.id === `section-${name}`);
     });
 
-    // Titre topbar
     const titles = {
         dashboard:  "Tableau de bord",
         map:        "Carte en temps réel",
@@ -91,36 +88,32 @@ function showSection(name) {
         wallets:    "Portefeuille chauffeurs"
     };
 
-    // Mettre à jour le filtre dans la section courses si des statuts y sont affichés
     updateRidesFilterOptions();
     const el = document.getElementById("topbarTitle");
     if (el) el.textContent = titles[name] || name;
 
-    // Arrêter le refresh de la carte si on quitte
+    // Arrêter les intervalles des autres sections
     if (name !== "map" && AdminState.refreshInterval) {
         clearInterval(AdminState.refreshInterval);
         AdminState.refreshInterval = null;
     }
-
-    // Arrêter le refresh du dashboard si on quitte
     if (name !== "dashboard" && AdminState.dashboardInterval) {
         clearInterval(AdminState.dashboardInterval);
         AdminState.dashboardInterval = null;
     }
-
-    // Arrêter le refresh des courses si on quitte
     if (name !== "rides" && AdminState.ridesInterval) {
         clearInterval(AdminState.ridesInterval);
         AdminState.ridesInterval = null;
     }
-
-    // Arrêter le refresh des chauffeurs si on quitte
     if (name !== "chauffeurs" && AdminState.chauffeursInterval) {
         clearInterval(AdminState.chauffeursInterval);
         AdminState.chauffeursInterval = null;
     }
+    if (name !== "wallets" && AdminState.walletsInterval) {
+        clearInterval(AdminState.walletsInterval);
+        AdminState.walletsInterval = null;
+    }
 
-    // Charger la section
     switch (name) {
         case "dashboard":  loadDashboard();  break;
         case "map":        loadMapSection(); break;
@@ -149,13 +142,9 @@ function initSidebarMobile() {
     });
 }
 
-// Filet de sécurité : si la carte temps réel est visible, force Leaflet à
-// recalculer sa taille/son rendu une fois la transition de la sidebar
-// terminée, pour éviter tout artefact visuel résiduel après ouverture/
-// fermeture du menu burger sur mobile.
 function refreshMapAfterSidebarToggle() {
     if (AdminState.currentSection !== "map" || !AdminState.driversMap) return;
-    setTimeout(() => AdminState.driversMap.invalidateSize(), 260); // après la transition CSS (.25s)
+    setTimeout(() => AdminState.driversMap.invalidateSize(), 260);
 }
 
 function initLogout() {
@@ -172,26 +161,6 @@ function initLogout() {
 
 /* ══════════════════════════════════════════════════════════
    SIGNALEMENTS CLIENT — alerte globale plein écran
-   Chantier 4 (v3) : anciennement affichée au chauffeur lui-même
-   ("cette course est surveillée"), contre-productif du point de
-   vue sécurité. Déplacée ici, côté admin.
-
-   Polling GLOBAL (pas scopé à une section, contrairement aux
-   autres intervalles de ce fichier) : un signalement doit pouvoir
-   déclencher l'alerte même si l'admin est sur "Chauffeurs" ou
-   "Clients", pas seulement sur "Courses".
-
-   Dédup : rides.client_problem_resolved_at (colonne serveur), PAS
-   localStorage — un admin peut se connecter depuis plusieurs
-   postes, un dédup local ne serait pas synchronisé entre eux.
-   AdminState.shownProblemIds n'est qu'un garde-fou en mémoire pour
-   ne pas ré-empiler le même ride à chaque cycle de poll tant qu'il
-   n'est pas traité ; il n'a pas vocation à persister.
-
-   Pas de bouton "fermer" simple : le seul bouton ("Marquer comme
-   traité") appelle resolve_client_problem.php. Tant que ce n'est
-   pas fait, le signalement reste actif et réapparaîtra (nouveau
-   chargement de page, autre poste admin, etc.).
 ══════════════════════════════════════════════════════════ */
 function initGlobalProblemWatch() {
     checkClientProblems();
@@ -296,7 +265,7 @@ function openAdminClientProblemAlert(ride) {
         overlay.remove();
         AdminState.problemAlertShowing = false;
         processProblemAlertQueue();
-        checkClientProblems(); // rafraîchit le badge sans attendre le prochain cycle
+        checkClientProblems();
     });
 
     box.appendChild(title);
@@ -356,20 +325,15 @@ async function loadDashboard() {
     </div>
     `;
 
-    // Charger les 10 dernières courses
     try {
         const rides = await fetchRides({ limit: 10 });
         document.getElementById("dash-recent-rides").innerHTML = renderRidesTable(rides, true);
     } catch(e) {}
 
-    // Auto-refresh toutes les 20 secondes
     if (AdminState.dashboardInterval) clearInterval(AdminState.dashboardInterval);
     AdminState.dashboardInterval = setInterval(refreshDashboardStats, 20000);
 }
 
-/**
- * Rafraîchit uniquement les stats du dashboard sans spinner ni réinitialisation.
- */
 async function refreshDashboardStats() {
     const el = document.getElementById("section-dashboard");
     if (!el || !document.getElementById("section-dashboard")?.classList.contains("active")) return;
@@ -377,7 +341,6 @@ async function refreshDashboardStats() {
     try {
         const stats = await fetchStats();
         if (stats) {
-            // Mettre à jour chaque carte stat individuellement
             updateStatValue("Chauffeurs en ligne", stats.chauffeurs_en_ligne, `${stats.chauffeurs_actifs} actifs au total`);
             updateStatValue("Annulées", stats.courses_annulees,
                 `${stats.courses_annulees_clients || 0} par le client · ${(stats.courses_annulees - (stats.courses_annulees_clients || 0))} par le chauffeur`);
@@ -386,7 +349,8 @@ async function refreshDashboardStats() {
             updateStatValue("Terminées", stats.courses_completees, "courses complétées");
             updateStatValue("Courses totales", stats.courses_total, `${stats.taux_completion}% complétées`);
             updateStatValue("Clients", stats.clients_total, `${stats.clients_actifs} actifs`);
-            updateStatValue("Chiffre d'affaires", formatFcfa(stats.chiffre_affaires_fcfa), "courses terminées");
+            updateStatValue("Volume total des courses", formatFcfa(stats.chiffre_affaires_fcfa), "courses terminées");
+            updateStatValue("Commissions collectées (20%)", formatFcfa(stats.commission_total_fcfa), "portefeuille chauffeurs");
         }
 
         const rideWrap = document.getElementById("dash-recent-rides");
@@ -394,9 +358,7 @@ async function refreshDashboardStats() {
             const rides = await fetchRides({ limit: 10 });
             rideWrap.innerHTML = renderRidesTable(rides, true);
         }
-    } catch(e) {
-        // Silencieux — on ne casse pas l'affichage existant
-    }
+    } catch(e) {}
 }
 
 function updateStatValue(label, value, sub) {
@@ -428,7 +390,7 @@ function renderSparkChart(data) {
     const max = Math.max(...data.map(d => d.nb)) || 1;
     const bars = data.map(d => {
         const h = Math.max(8, Math.round((d.nb / max) * 80));
-        const label = d.jour.slice(5); // MM-DD
+        const label = d.jour.slice(5);
         return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1">
           <div style="font-size:11px;color:var(--c-text-3)">${d.nb}</div>
           <div style="height:${h}px;width:100%;background:var(--c-amber);border-radius:4px 4px 0 0;opacity:.85"></div>
@@ -444,9 +406,7 @@ function renderSparkChart(data) {
 async function loadMapSection() {
     const el = document.getElementById("section-map");
 
-    // Initialiser la carte si pas encore fait
     if (!AdminState.driversMap) {
-        // Attendre que le DOM de la section soit visible
         await new Promise(r => setTimeout(r, 80));
         initDriversMap();
     } else {
@@ -455,11 +415,9 @@ async function loadMapSection() {
 
     await refreshDriversOnMap();
 
-    // Auto-refresh toutes les 15 secondes
     if (AdminState.refreshInterval) clearInterval(AdminState.refreshInterval);
     AdminState.refreshInterval = setInterval(refreshDriversOnMap, 15000);
 
-    // Badge "dernière MAJ"
     updateMapRefreshBadge();
 }
 
@@ -488,7 +446,6 @@ async function refreshDriversOnMap() {
         const lat = driver.driver_lat;
         const lng = driver.driver_lng;
         const isActive   = driver.course_active > 0;
-        const bgColor    = isActive ? "#f97316" : "#16a34a";
         const iconHtml   = `<div class="driver-pin ${isActive ? 'active' : 'available'}">🚕</div>`;
 
         const popupHtml = `
@@ -525,7 +482,6 @@ async function refreshDriversOnMap() {
         }
     });
 
-    // Supprimer les marqueurs des chauffeurs absents
     Object.keys(AdminState.driverMarkers).forEach(id => {
         if (!seen.has(parseInt(id))) {
             AdminState.driversMap.removeLayer(AdminState.driverMarkers[id]);
@@ -533,7 +489,6 @@ async function refreshDriversOnMap() {
         }
     });
 
-    // Mettre à jour le compteur
     const countEl = document.getElementById("map-driver-count");
     if (countEl) countEl.textContent = `${drivers.length} chauffeur${drivers.length > 1 ? "s" : ""} en ligne`;
 
@@ -577,24 +532,9 @@ async function refreshRides() {
     try {
         const rides = await fetchRides(AdminState.ridesFilter);
         section.querySelector("#rides-table-wrap").innerHTML = renderRidesTable(rides, false);
-    } catch (e) {
-        // Ne pas interrompre l'affichage existant
-    }
+    } catch (e) {}
 }
 
-// Deux colonnes distinctes dans le tableau des courses, deux sources
-// totalement indépendantes (un chauffeur et un client peuvent chacun
-// signaler un problème sur la même course, sans lien entre les deux) :
-// - Alerte chauffeur : problem_description (report_problem.php côté
-//   chauffeur) -- fait déjà passer le statut à "reported", visible aussi
-//   dans la colonne Statut, mais le détail du texte n'est visible qu'ici
-//   (via le title du badge).
-// - Alerte client : client_problem_description (report_problem.php côté
-//   client) -- ne change PAS le statut de la course (elle continue
-//   normalement), donc cette colonne est le SEUL endroit du tableau où ce
-//   signalement est visible. Distinction traité/non traité via
-//   client_problem_resolved_at (même source que l'alerte plein écran,
-//   voir initGlobalProblemWatch()).
 function renderDriverAlertCell(r) {
     if (!r.problem_description) return "—";
     return `<span class="topbar-badge badge-red" title="${r.problem_description}">⚠ Problème</span>`;
@@ -679,19 +619,13 @@ async function refreshChauffeurs() {
     try {
         const list = await fetchChauffeurs(AdminState.chauffeursFilter.q, AdminState.chauffeursFilter.status);
         section.querySelector("#chauffeurs-table-wrap").innerHTML = renderChauffeursTable(list);
-    } catch (e) {
-        // Ne pas interrompre l'affichage actuel
-    }
+    } catch (e) {}
 }
 
 function renderChauffeursTable(list) {
     if (!list.length) return `<div class="empty-state"><div class="empty-state-icon">🚕</div><div class="empty-state-text">Aucun chauffeur trouvé</div></div>`;
 
     const rows = list.map(c => {
-        // status    = activation du compte (admin) -- même badge que la table clients
-        // is_online = statut en ligne (toggle chauffeur), déjà fiabilisé côté
-        // serveur par sync_stale_drivers_offline() : pas besoin de recalculer
-        // une fraîcheur ici, la valeur reçue est déjà correcte.
         const onlineLabel = c.is_online == 1 ? "En ligne" : "Hors ligne";
         const onlineCls   = c.is_online == 1 ? "badge-green" : "badge-red";
         return `<tr>
@@ -741,25 +675,72 @@ async function loadClients() {
     }
 }
 
+function renderClientsTable(list) {
+    if (!list.length) return `<div class="empty-state"><div class="empty-state-icon">👤</div><div class="empty-state-text">Aucun client trouvé</div></div>`;
+
+    const rows = list.map(c => `
+        <tr>
+          <td>${c.full_name}</td>
+          <td>${c.email || "—"}</td>
+          <td>${c.phone || "—"}</td>
+          <td>${userStatusBadge(c.status)}</td>
+          <td>${c.nb_courses}</td>
+          <td>${formatFcfa(c.total_depense_fcfa)}</td>
+          <td>${formatDateShort(c.created_at)}</td>
+          <td>
+            ${c.status === "active"
+                ? `<button class="btn btn-danger btn-sm" onclick="toggleUser('client', ${c.id}, 'disabled', this)">Désactiver</button>`
+                : `<button class="btn btn-success btn-sm" onclick="toggleUser('client', ${c.id}, 'active', this)">Activer</button>`
+            }
+          </td>
+        </tr>`).join("");
+
+    return `<div class="table-wrap"><table>
+      <thead><tr>
+        <th>Nom</th><th>Email</th><th>Téléphone</th><th>Statut</th>
+        <th>Courses</th><th>Total dépensé</th><th>Inscrit le</th><th>Action</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+}
+
 /* ═══════════════════════════════════════════════
-   SECTION : PORTEFEUILLE CHAUFFEURS
+   SECTION : PORTEFEUILLE CHAUFFEURS (CORRIGÉ)
 ═══════════════════════════════════════════════ */
 
 async function loadWallets() {
     const section = document.getElementById("section-wallets");
     const wrap = section.querySelector("#wallets-table-wrap");
+    const historyWrap = section.querySelector("#wallets-history-wrap");
     if (!wrap) return;
 
     wrap.innerHTML = `<div class="empty-state"><div class="spinner"></div></div>`;
+    if (historyWrap) {
+        historyWrap.innerHTML = '';
+        historyWrap.style.display = 'none';
+    }
 
     try {
+        // 1. Charger la liste des portefeuilles
         const wallets = await fetchWallets();
         wrap.innerHTML = renderWalletsTable(wallets);
+
+        // 2. Si un filtre chauffeur_id est actif, charger l'historique
+        const chauffeurId = AdminState.walletsFilter.chauffeur_id;
+        if (chauffeurId > 0 && historyWrap) {
+            try {
+                const data = await fetchWalletTransactions({ chauffeur_id: chauffeurId, limit: 20 });
+                historyWrap.innerHTML = renderTransactionHistory(data.transactions, chauffeurId);
+                historyWrap.style.display = 'block';
+            } catch (e) {
+                historyWrap.innerHTML = '<p class="text-danger">Erreur chargement historique</p>';
+                historyWrap.style.display = 'block';
+            }
+        }
     } catch (e) {
         wrap.innerHTML = `<p style="color:var(--c-red);padding:20px">Erreur de chargement.</p>`;
     }
 
-    // Arrêter l'ancien intervalle et en recréer un
     if (AdminState.walletsInterval) clearInterval(AdminState.walletsInterval);
     AdminState.walletsInterval = setInterval(refreshWallets, 30000);
 }
@@ -772,9 +753,7 @@ async function refreshWallets() {
         const wallets = await fetchWallets();
         const wrap = section.querySelector("#wallets-table-wrap");
         if (wrap) wrap.innerHTML = renderWalletsTable(wallets);
-    } catch (e) {
-        // silencieux
-    }
+    } catch (e) {}
 }
 
 function renderWalletsTable(wallets) {
@@ -823,55 +802,57 @@ function renderWalletsTable(wallets) {
     </table></div>`;
 }
 
-/**
- * Affiche l'historique des transactions d'un chauffeur donné.
- * Pour l'instant, cela ouvre une modale ou redirige vers un filtre.
- * On peut simplement recharger la section avec un filtre chauffeur_id.
- * Ici, on va basculer sur la section wallets en ajoutant un paramètre d'URL ?
- * Ou bien ouvrir une modale. Je propose une approche simple : on filtre
- * la section wallets par chauffeur_id (stocké dans AdminState.walletsFilter).
- */
 function showWalletHistory(chauffeurId) {
+    if (!chauffeurId) return;
     AdminState.walletsFilter.chauffeur_id = chauffeurId;
-    // Recharger la section avec ce filtre
     loadWallets();
-    // Mettre à jour le sous-titre ou un champ de filtre pour indiquer le filtre actif
-    const section = document.getElementById("section-wallets");
-    const subtitle = section.querySelector('.section-subtitle') || document.createElement('div');
-    subtitle.className = 'section-subtitle';
-    subtitle.textContent = `Historique des transactions du chauffeur #${chauffeurId}`;
-    // On peut aussi afficher une liste des transactions en dessous du tableau principal.
-    // Je vais ajouter un deuxième tableau pour les transactions.
-    // Voir plus bas pour la gestion.
 }
 
-function renderClientsTable(list) {
-    if (!list.length) return `<div class="empty-state"><div class="empty-state-icon">👤</div><div class="empty-state-text">Aucun client trouvé</div></div>`;
+function clearWalletFilter() {
+    AdminState.walletsFilter.chauffeur_id = 0;
+    loadWallets();
+}
 
-    const rows = list.map(c => `
-        <tr>
-          <td>${c.full_name}</td>
-          <td>${c.email || "—"}</td>
-          <td>${c.phone || "—"}</td>
-          <td>${userStatusBadge(c.status)}</td>
-          <td>${c.nb_courses}</td>
-          <td>${formatFcfa(c.total_depense_fcfa)}</td>
-          <td>${formatDateShort(c.created_at)}</td>
-          <td>
-            ${c.status === "active"
-                ? `<button class="btn btn-danger btn-sm" onclick="toggleUser('client', ${c.id}, 'disabled', this)">Désactiver</button>`
-                : `<button class="btn btn-success btn-sm" onclick="toggleUser('client', ${c.id}, 'active', this)">Activer</button>`
-            }
-          </td>
-        </tr>`).join("");
+function renderTransactionHistory(transactions, chauffeurId) {
+    if (!transactions || !transactions.length) {
+        return `<div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">Aucune transaction pour ce chauffeur</div></div>`;
+    }
 
-    return `<div class="table-wrap"><table>
-      <thead><tr>
-        <th>Nom</th><th>Email</th><th>Téléphone</th><th>Statut</th>
-        <th>Courses</th><th>Total dépensé</th><th>Inscrit le</th><th>Action</th>
-      </tr></thead>
-      <tbody>${rows}</tbody>
-    </table></div>`;
+    const rows = transactions.map(t => {
+        const amount = t.amount_fcfa;
+        const sign = amount >= 0 ? '+' : '';
+        const amountClass = amount >= 0 ? 'text-success' : 'text-danger';
+        const statusBadge = {
+            'pending': 'badge-amber',
+            'completed': 'badge-green',
+            'rejected': 'badge-red'
+        }[t.status] || 'badge-gray';
+
+        return `<tr>
+            <td>${t.type}</td>
+            <td class="${amountClass}">${sign}${formatFcfa(Math.abs(amount))}</td>
+            <td><span class="topbar-badge ${statusBadge}">${t.status}</span></td>
+            <td>${t.operator || '—'}</td>
+            <td>${t.reference || '—'}</td>
+            <td>${t.description || '—'}</td>
+            <td>${formatDate(t.created_at)}</td>
+        </tr>`;
+    }).join('');
+
+    return `
+        <div style="margin-top:20px;border-top:1px solid var(--c-border);padding-top:16px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                <h4 style="margin:0">Historique des transactions</h4>
+                <button class="btn btn-sm btn-outline" onclick="clearWalletFilter()">Fermer</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Type</th><th>Montant</th><th>Statut</th><th>Opérateur</th><th>Référence</th><th>Description</th><th>Date</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        </div>
+    `;
 }
 
 /* ──────────────────────────────────────────────
@@ -886,7 +867,6 @@ async function toggleUser(type, id, newStatus, btn) {
         const res = await setUserStatus(type, id, newStatus);
         if (res.status === "success") {
             showToast(`Statut mis à jour : ${newStatus === "active" ? "activé" : "désactivé"}`);
-            // Rafraîchir la section courante
             if (AdminState.currentSection === "chauffeurs") loadChauffeurs();
             else if (AdminState.currentSection === "clients") loadClients();
         } else {
@@ -905,21 +885,17 @@ async function toggleUser(type, id, newStatus, btn) {
    Filtres — événements
 ────────────────────────────────────────────── */
 document.addEventListener("DOMContentLoaded", () => {
-    // Filtres courses
     bindFilter("rides-search",       val => { AdminState.ridesFilter.q      = val; loadRides(); }, 500);
     bindFilter("rides-status-filter",val => { AdminState.ridesFilter.status = val; loadRides(); }, 0);
     bindFilter("rides-date-from",    val => { AdminState.ridesFilter.date_from = val; loadRides(); }, 0);
     bindFilter("rides-date-to",      val => { AdminState.ridesFilter.date_to   = val; loadRides(); }, 0);
 
-    // Filtres chauffeurs
     bindFilter("chauffeurs-search",       val => { AdminState.chauffeursFilter.q      = val; loadChauffeurs(); }, 500);
     bindFilter("chauffeurs-status-filter",val => { AdminState.chauffeursFilter.status = val; loadChauffeurs(); }, 0);
 
-    // Filtres clients
     bindFilter("clients-search",       val => { AdminState.clientsFilter.q      = val; loadClients(); }, 500);
     bindFilter("clients-status-filter",val => { AdminState.clientsFilter.status = val; loadClients(); }, 0);
 
-    // Bouton refresh carte
     document.getElementById("map-refresh-btn")?.addEventListener("click", refreshDriversOnMap);
 });
 
@@ -940,9 +916,7 @@ function bindFilter(id, cb, debounce) {
 function updateRidesFilterOptions() {
     const sel = document.getElementById("rides-status-filter");
     if (!sel) return;
-    // Vérifier si l'option cancelled_client existe déjà
     if (sel.querySelector('option[value="cancelled_client"]')) return;
-    // Insérer après l'option cancelled (chauffeur)
     const ref = sel.querySelector('option[value="cancelled"]');
     const opt = document.createElement("option");
     opt.value = "cancelled_client";
