@@ -1261,7 +1261,11 @@ function createSafePopup(title, body) {
 function updateDashboard() {
     const completed = allRides.filter(r => r.status === "completed");
     const active    = allRides.filter(r => r.status === "accepted" || r.status === "arrived" || r.status === "started");
-    const total     = completed.reduce((s, r) => s + parseInt(r.price_fcfa || 0), 0);
+    const total     = completed.reduce((s, r) => {
+        const price      = parseInt(r.price_fcfa || 0);
+        const commission = Math.round(price * 0.20);
+        return s + (price - commission);
+    }, 0);
     const avg       = completed.length ? Math.round(total / completed.length) : 0;
     const dist      = completed.reduce((s, r) => s + parseFloat(r.distance_km || 0), 0);
 
