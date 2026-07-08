@@ -2,14 +2,7 @@
 require_once __DIR__ . "/../config/auth.php";
 require_once __DIR__ . "/../common/geo.php";
 
-// Distance à partir de laquelle une confirmation est demandée avant de
-// terminer la course. Ce n'est PAS un blocage (contrairement à arrive_ride.php,
-// 500m strict) : le chauffeur peut confirmer malgré l'alerte — cas légitime
-// où le client descend avant la destination prévue.
-//
-// Valeur mise à 2000 m (2 km) au lieu des 200 m prévus au départ, pour
-// garder l'application facilement testable (GPS de test peu précis,
-// trajets de démo courts). À resserrer à 200 m avant mise en production réelle.
+// Distance à partir de laquelle une confirmation est demandée avant de terminer
 const COMPLETE_CONFIRM_DISTANCE_METERS = 200;
 
 $driverId = require_driver_id();
@@ -25,7 +18,8 @@ if (!$id) {
 
 $conn = db_connect();
 
-$stmt = $conn->prepare("SELECT destination_lat, destination_lng FROM rides WHERE id = ? AND driver_id = ? AND status = 'started'");
+// Récupération des infos de la course (incluant price_fcfa)
+$stmt = $conn->prepare("SELECT destination_lat, destination_lng, price_fcfa FROM rides WHERE id = ? AND driver_id = ? AND status = 'started'");
 $stmt->bind_param("ii", $id, $driverId);
 $stmt->execute();
 $ride = $stmt->get_result()->fetch_assoc();
@@ -36,11 +30,7 @@ if (!$ride) {
     json_response(["status" => "error", "message" => "Impossible de terminer (course non démarrée)"]);
 }
 
-// Vérification de proximité — uniquement si on a le GPS chauffeur ET les
-// coordonnées de destination, et que le chauffeur n'a pas déjà confirmé
-// (force=true). Donnée absente ou GPS indisponible : on ne bloque jamais,
-// on complète directement (à la différence du blocage strict d'arrive_ride.php,
-// ici on ne fait qu'avertir).
+// Vérification de proximité (si GPS et destination dispo, et non forcé)
 if (!$force && $lat !== null && $lng !== null
     && $ride["destination_lat"] !== null && $ride["destination_lng"] !== null) {
 
@@ -61,6 +51,7 @@ if (!$force && $lat !== null && $lng !== null
     }
 }
 
+// Passage en 'completed'
 $stmt = $conn->prepare("UPDATE rides SET status = 'completed', completed_at = NOW() WHERE id = ? AND driver_id = ? AND status = 'started'");
 $stmt->bind_param("ii", $id, $driverId);
 $stmt->execute();
@@ -68,7 +59,7 @@ $updated = $stmt->affected_rows > 0;
 $stmt->close();
 
 if ($updated) {
-    // Remplacement du TRIGGER : mise à jour des stats chauffeur
+    // Mise à jour des statistiques du chauffeur (distance + nb courses)
     $rideStmt = $conn->prepare("SELECT distance_km FROM rides WHERE id = ?");
     $rideStmt->bind_param("i", $id);
     $rideStmt->execute();
@@ -87,8 +78,36 @@ if ($updated) {
     $statStmt->bind_param("di", $distanceKm, $driverId);
     $statStmt->execute();
     $statStmt->close();
-    $conn->close();
 
+    // --- Gestion de la commission 20% ---
+    $price = (int) ($ride['price_fcfa'] ?? 0);
+    $commission = (int) round($price * 0.20); // montant positif
+
+    if ($commission > 0) {
+        // Insérer la transaction (débit)
+        $negAmount = -$commission;
+        $desc = "Commission 20% sur course #$id";
+        $txStmt = $conn->prepare("
+            INSERT INTO wallet_transactions
+                (chauffeur_id, type, amount_fcfa, ride_id, status, description)
+            VALUES (?, 'commission', ?, ?, 'completed', ?)
+        ");
+        $txStmt->bind_param("iiis", $driverId, $negAmount, $id, $desc);
+        $txStmt->execute();
+        $txStmt->close();
+
+        // Mettre à jour le solde du chauffeur
+        $balStmt = $conn->prepare("
+            UPDATE chauffeur
+            SET wallet_balance_fcfa = wallet_balance_fcfa - ?
+            WHERE id = ?
+        ");
+        $balStmt->bind_param("ii", $commission, $driverId);
+        $balStmt->execute();
+        $balStmt->close();
+    }
+
+    $conn->close();
     json_response(["status" => "success", "message" => "Course terminée"]);
 }
 
