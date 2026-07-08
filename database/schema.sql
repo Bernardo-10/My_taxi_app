@@ -263,3 +263,45 @@ ON DUPLICATE KEY UPDATE username = VALUES(username);
 -- (vérifié dans l'export). Le reste du fichier (CREATE TABLE) sera
 -- ignoré puisque les tables existent déjà.
 -- ================================================================
+
+-- ================================================================
+-- TaxiGo — Migration Portefeuille chauffeur & commission 20%
+-- Ajoute :
+--   - wallet_balance_fcfa sur chauffeur
+--   - table wallet_transactions
+--
+-- Réexécutable : toutes les instructions sont protégées par
+-- IF NOT EXISTS / ADD COLUMN IF NOT EXISTS.
+-- ================================================================
+
+-- 1. Ajout du solde dénormalisé dans chauffeur
+ALTER TABLE chauffeur
+  ADD COLUMN IF NOT EXISTS wallet_balance_fcfa BIGINT NOT NULL DEFAULT 0
+  COMMENT 'Solde actuel du portefeuille (dénormalisé)';
+
+-- 2. Table des transactions du portefeuille
+CREATE TABLE IF NOT EXISTS wallet_transactions (
+  id            INT AUTO_INCREMENT PRIMARY KEY,
+  chauffeur_id  INT NOT NULL,
+  type          VARCHAR(20) NOT NULL,          -- commission, recharge, ajustement
+  amount_fcfa   BIGINT SIGNED NOT NULL,        -- positif = crédit, négatif = débit
+  ride_id       INT NULL,                      -- lié à une course pour les commissions
+  status        VARCHAR(20) NOT NULL DEFAULT 'pending',  -- pending, completed, rejected
+  operator      VARCHAR(50) NULL,              -- opérateur mobile money (ex: Orange, MTN)
+  reference     VARCHAR(100) NULL,             -- référence de la transaction externe
+  description   TEXT NULL,                     -- commentaire libre
+  created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  validated_at  TIMESTAMP NULL,                -- date de validation (admin)
+  INDEX idx_wallet_chauffeur (chauffeur_id),
+  INDEX idx_wallet_status (status),
+  INDEX idx_wallet_created (created_at),
+  INDEX idx_wallet_chauffeur_created (chauffeur_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- 3. (Optionnel) On peut ajouter des clés étrangères si souhaité,
+--    mais elles ne sont pas obligatoires pour le fonctionnement.
+--    Je les laisse en commentaire pour éviter des contraintes
+--    bloquantes sur des bases existantes.
+-- ALTER TABLE wallet_transactions
+--   ADD CONSTRAINT fk_wallet_chauffeur FOREIGN KEY (chauffeur_id) REFERENCES chauffeur(id),
+--   ADD CONSTRAINT fk_wallet_ride FOREIGN KEY (ride_id) REFERENCES rides(id);
