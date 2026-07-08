@@ -322,15 +322,16 @@ async function loadDashboard() {
 
     el.innerHTML = `
     <div class="stats-grid">
-      ${statCard("Clients", stats.clients_total, "blue", `${stats.clients_actifs} actifs`)}
-      ${statCard("Chauffeurs en ligne", stats.chauffeurs_en_ligne, "amber", `${stats.chauffeurs_actifs} actifs au total`)}
-      ${statCard("Courses totales", stats.courses_total, "", `${stats.taux_completion}% complétées`)}
-      ${statCard("En attente", stats.courses_pending, "red", "courses pending")}
-      ${statCard("En cours", stats.courses_en_cours, "blue", "accepted / started")}
-      ${statCard("Terminées", stats.courses_completees, "green", "courses complétées")}
-      ${statCard("Annulées", stats.courses_annulees, "red",
-          `${stats.courses_annulees_clients || 0} par le client · ${(stats.courses_annulees - (stats.courses_annulees_clients || 0))} par le chauffeur`)}
-      ${statCard("Chiffre d'affaires", formatFcfa(stats.chiffre_affaires_fcfa), "green", "courses terminées")}
+        ${statCard("Clients", stats.clients_total, "blue", `${stats.clients_actifs} actifs`)}
+        ${statCard("Chauffeurs en ligne", stats.chauffeurs_en_ligne, "amber", `${stats.chauffeurs_actifs} actifs au total`)}
+        ${statCard("Courses totales", stats.courses_total, "", `${stats.taux_completion}% complétées`)}
+        ${statCard("En attente", stats.courses_pending, "red", "courses pending")}
+        ${statCard("En cours", stats.courses_en_cours, "blue", "accepted / started")}
+        ${statCard("Terminées", stats.courses_completees, "green", "courses complétées")}
+        ${statCard("Annulées", stats.courses_annulees, "red",
+            `${stats.courses_annulees_clients || 0} par le client · ${(stats.courses_annulees - (stats.courses_annulees_clients || 0))} par le chauffeur`)}
+        ${statCard("Volume total des courses", formatFcfa(stats.chiffre_affaires_fcfa), "green", "courses terminées")}
+        ${statCard("Commissions collectées (20%)", formatFcfa(stats.commission_total_fcfa), "amber", "portefeuille chauffeurs")}
     </div>
 
     <div class="card">

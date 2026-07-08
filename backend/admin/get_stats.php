@@ -46,6 +46,9 @@ $stats["courses_annulees"] += $stats["courses_annulees_clients"];
 $r = $conn->query("SELECT IFNULL(SUM(price_fcfa),0) AS total FROM rides WHERE status='completed'");
 $stats["chiffre_affaires_fcfa"] = (int)$r->fetch_assoc()["total"];
 
+$r = $conn->query("SELECT IFNULL(SUM(ABS(amount_fcfa)),0) AS total FROM wallet_transactions WHERE type='commission' AND status='completed'");
+$stats["commission_total_fcfa"] = (int)$r->fetch_assoc()["total"];
+
 // Taux de complétion
 $stats["taux_completion"] = $stats["courses_total"] > 0
     ? round($stats["courses_completees"] / $stats["courses_total"] * 100, 1)
