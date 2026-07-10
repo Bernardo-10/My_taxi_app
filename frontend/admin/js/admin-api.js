@@ -204,3 +204,12 @@ async function fetchWalletTransactions({ chauffeur_id = 0, type = '', status = '
     const data = await res.json();
     return data;
 }
+
+async function validateRecharge(transactionId, action) {
+    const res = await fetch(`${ADMIN_API}/validate_wallet_recharge.php`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transaction_id: transactionId, action })
+    });
+    return await res.json();
+}

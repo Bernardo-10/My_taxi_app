@@ -828,6 +828,15 @@ function renderTransactionHistory(transactions, chauffeurId) {
             'rejected': 'badge-red'
         }[t.status] || 'badge-gray';
 
+        // Actions pour les recharges en attente
+        let actions = '—';
+        if (t.type === 'recharge' && t.status === 'pending') {
+            actions = `
+                <button class="btn btn-success btn-sm" onclick="handleRecharge(${t.id}, 'approve')">Valider</button>
+                <button class="btn btn-danger btn-sm" onclick="handleRecharge(${t.id}, 'reject')">Rejeter</button>
+            `;
+        }
+
         return `<tr>
             <td>${t.type}</td>
             <td class="${amountClass}">${sign}${formatFcfa(Math.abs(amount))}</td>
@@ -836,6 +845,7 @@ function renderTransactionHistory(transactions, chauffeurId) {
             <td>${t.reference || '—'}</td>
             <td>${t.description || '—'}</td>
             <td>${formatDate(t.created_at)}</td>
+            <td>${actions}</td>
         </tr>`;
     }).join('');
 
@@ -847,12 +857,51 @@ function renderTransactionHistory(transactions, chauffeurId) {
             </div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Type</th><th>Montant</th><th>Statut</th><th>Opérateur</th><th>Référence</th><th>Description</th><th>Date</th></tr></thead>
+                    <thead><tr><th>Type</th><th>Montant</th><th>Statut</th><th>Opérateur</th><th>Référence</th><th>Description</th><th>Date</th><th>Actions</th></tr></thead>
                     <tbody>${rows}</tbody>
                 </table>
             </div>
         </div>
     `;
+}
+
+// Nouvelle fonction pour gérer la validation/rejet
+async function handleRecharge(transactionId, action) {
+    const actionLabel = action === 'approve' ? 'valider' : 'rejeter';
+    const ok = await confirmAction({
+        title: `${actionLabel.charAt(0).toUpperCase() + actionLabel.slice(1)} la recharge ?`,
+        message: `Êtes-vous sûr de vouloir ${actionLabel} cette recharge ?`,
+        confirmLabel: `Oui, ${actionLabel}`,
+        cancelLabel: 'Annuler',
+        danger: action === 'reject'
+    });
+    if (!ok) return;
+
+    // Désactiver les boutons de cette ligne (optionnel)
+    // On peut simplement appeler l'API et recharger
+
+    try {
+        const result = await validateRecharge(transactionId, action);
+        if (result.status === 'success') {
+            showToast(result.message, 'success');
+            // Recharger l'historique actuel
+            const chauffeurId = AdminState.walletsFilter.chauffeur_id;
+            if (chauffeurId > 0) {
+                const data = await fetchWalletTransactions({ chauffeur_id: chauffeurId, limit: 20 });
+                const historyWrap = document.getElementById("wallets-history-wrap");
+                if (historyWrap) {
+                    historyWrap.innerHTML = renderTransactionHistory(data.transactions, chauffeurId);
+                    historyWrap.style.display = 'block';
+                }
+                // Rafraîchir aussi le tableau des portefeuilles pour mettre à jour le solde
+                loadWallets();
+            }
+        } else {
+            showToast(result.message || 'Erreur', 'error');
+        }
+    } catch (e) {
+        showToast('Erreur réseau', 'error');
+    }
 }
 
 /* ──────────────────────────────────────────────
