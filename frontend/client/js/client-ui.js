@@ -62,6 +62,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   const authenticated = await initUserSession();
   if (!authenticated) return; // redirection déjà lancée par initUserSession()
 
+  // Notifications push (FCM) — ne bloque jamais le reste de l'app si ça
+  // échoue (permission refusée, SDK absent...), voir push-notifications.js.
+  initPushNotifications("client");
+
   initActiveRideRecovery();
   initPassengerCounter();
   initSearchOverlay();

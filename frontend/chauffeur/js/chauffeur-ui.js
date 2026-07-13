@@ -142,6 +142,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     const authenticated = await initUserHeader("/chauffeur/login");
     if (!authenticated) return; // redirection déjà lancée par initUserHeader()
 
+    // Notifications push (FCM) — ne bloque jamais le reste de l'app si ça
+    // échoue (permission refusée, SDK absent...), voir push-notifications.js.
+    initPushNotifications("chauffeur");
+
     initMap();
     initNavigation();
     initSheetDrag();

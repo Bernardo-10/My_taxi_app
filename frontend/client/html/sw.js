@@ -60,3 +60,53 @@ self.addEventListener("fetch", (event) => {
       .catch(() => caches.match(event.request))
   );
 });
+
+// ---------------------------------------------------------------
+// Notifications push (FCM) — chantier "notifications", étape 2.
+// C'est ce bloc, et lui seul, qui permet de recevoir une notification
+// même app fermée / écran verrouillé : le navigateur réveille CE service
+// worker (pas la page) quand un push arrive, indépendamment de l'état de
+// l'onglet.
+// ---------------------------------------------------------------
+importScripts("https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js");
+importScripts("https://www.gstatic.com/firebasejs/10.13.2/firebase-messaging-compat.js");
+importScripts("/frontend/js/firebase-config.js");
+
+firebase.initializeApp(FIREBASE_CONFIG);
+const messaging = firebase.messaging();
+
+// Déclenché uniquement quand la page n'a pas le focus (app fermée, autre
+// onglet actif, écran verrouillé) — c'est le cas qui nous intéresse ici.
+// Quand la page EST au premier plan, c'est onMessage() côté client-ui.js
+// qui prend le relais (pas ce fichier) pour éviter une notification
+// système redondante avec ce qui est déjà visible à l'écran.
+messaging.onBackgroundMessage((payload) => {
+  const title = payload.notification?.title || "TaxiGo";
+  const options = {
+    body: payload.notification?.body || "",
+    icon: "/client/icons/client-192.png",
+    badge: "/client/icons/client-192.png",
+    data: payload.data || {},
+  };
+  self.registration.showNotification(title, options);
+});
+
+// Au clic sur la notification : ramène l'app au premier plan si un onglet
+// est déjà ouvert, sinon en ouvre un nouveau sur la page pertinente.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = event.notification.data?.link || "/client/";
+
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url.includes("/client/") && "focus" in client) {
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow(targetUrl);
+      }
+    })
+  );
+});

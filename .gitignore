@@ -10,3 +10,4 @@ scripts
 *.zip
 tel
 *.txt
+backend/config/firebase-service-account.json
