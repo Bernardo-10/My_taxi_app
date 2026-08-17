@@ -433,6 +433,14 @@ function initStatusToggle() {
     if (!btn) return;
 
     btn.addEventListener("click", async () => {
+        // Chantier notifications natives côté chauffeur (13/07/2026) : demande
+        // de permission faite ici, sur un vrai geste utilisateur (obligatoire
+        // sur iOS Safari), même pattern que initFindRideBtn() côté client.
+        // Sans effet si déjà accordée/refusée — ne redemande jamais deux fois.
+        if (typeof window.requestNotifyPermission === "function") {
+            window.requestNotifyPermission();
+        }
+
         // Tentative de passage hors ligne → vérifier les courses actives
         if (isOnline) {
             const activeRides = allRides.filter(
@@ -912,8 +920,19 @@ function notifyIfNewPendingRides(previousRides, freshRides) {
     // Un seul appel notifyFeedback ici, que nb soit 1 ou > 1 — le son4 ne
     // doit jouer qu'une fois par cycle de détection, jamais une fois par
     // course individuelle (évite la cacophonie au moment de la connexion).
+    // notify: {...} ajouté le 13/07/2026 — jusqu'ici réservé au client
+    // (voir commentaire en tête de notify-feedback.js), le chauffeur en
+    // profite maintenant pour les nouvelles courses : seul événement qui
+    // justifie vraiment de réveiller l'attention si l'onglet n'est pas au
+    // premier plan (même limite que côté client : ne fonctionne que tant
+    // que l'onglet reste ouvert quelque part, pas app totalement fermée —
+    // ça, c'est le rôle du FCM ci-dessous).
     if (typeof window.notifyFeedback === "function") {
-        window.notifyFeedback({ sound: "new_ride", vibrate: [140, 70, 140] });
+        window.notifyFeedback({
+            sound: "new_ride",
+            vibrate: [140, 70, 140],
+            notify: { title: "Nouvelle course disponible", body: message, tag: "taxigo-ride" }
+        });
     }
 }
 
@@ -1324,10 +1343,15 @@ function showClientCancellationAlerts() {
 // déjà renvoyé par get_rides.php, aucun changement backend nécessaire.
 function openClientCancellationAlert(ride) {
     const pickup = ride.pickup || `course #${ride.id}`;
-    showToast(`Course à ${pickup} annulée`, "warning", 5000);
+    const body = `Course à ${pickup} annulée`;
+    showToast(body, "warning", 5000);
 
     if (typeof window.notifyFeedback === "function") {
-        window.notifyFeedback({ sound: "cancelled", vibrate: [100, 60, 100, 60, 100] });
+        window.notifyFeedback({
+            sound: "cancelled",
+            vibrate: [100, 60, 100, 60, 100],
+            notify: { title: "Course annulée", body, tag: "taxigo-ride" }
+        });
     }
 }
 

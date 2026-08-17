@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . "/../config/auth.php";
+require_once __DIR__ . "/../common/send_push.php";
 
 $driverId = require_driver_id();
 $data = json_decode(file_get_contents("php://input"), true);
@@ -78,7 +79,7 @@ $stmt->close();
 
 if ($accepted) {
     // Remplacement du TRIGGER : mise à jour des stats chauffeur
-    $priceStmt = $conn->prepare("SELECT price_fcfa FROM rides WHERE id = ?");
+    $priceStmt = $conn->prepare("SELECT price_fcfa, user_id FROM rides WHERE id = ?");
     $priceStmt->bind_param("i", $id);
     $priceStmt->execute();
     $ride = $priceStmt->get_result()->fetch_assoc();
@@ -96,6 +97,19 @@ if ($accepted) {
     $statStmt->bind_param("di", $price, $driverId);
     $statStmt->execute();
     $statStmt->close();
+
+    // FCM — le client peut avoir verrouille son ecran en attendant.
+    if (!empty($ride["user_id"])) {
+        send_push_to_user(
+            $conn,
+            'client',
+            (int) $ride["user_id"],
+            'Chauffeur en route',
+            trim($driver["name"] ?? "") !== "" ? "{$driver['name']} a accepté votre course." : "Votre course a été acceptée.",
+            ['link' => '/client/', 'ride_id' => (string) $id]
+        );
+    }
+
     $conn->close();
 
     json_response([

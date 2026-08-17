@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . "/../config/auth.php";
 require_once __DIR__ . "/../common/geo.php";
+require_once __DIR__ . "/../common/send_push.php";
 
 // Rayon de tolérance autour du point de départ pour valider "arrivé".
 // Blocage strict : au-delà, la requête est rejetée, pas de confirmation.
@@ -23,7 +24,7 @@ if ($lat === null || $lng === null) {
 $conn = db_connect();
 
 // Point de depart de la course (pickup), pour verifier la proximite.
-$stmt = $conn->prepare("SELECT pickup_lat, pickup_lng FROM rides WHERE id = ? AND driver_id = ? AND status = 'accepted'");
+$stmt = $conn->prepare("SELECT pickup_lat, pickup_lng, user_id FROM rides WHERE id = ? AND driver_id = ? AND status = 'accepted'");
 $stmt->bind_param("ii", $id, $driverId);
 $stmt->execute();
 $ride = $stmt->get_result()->fetch_assoc();
@@ -60,6 +61,18 @@ $stmt->bind_param("ii", $id, $driverId);
 $stmt->execute();
 $updated = $stmt->affected_rows > 0;
 $stmt->close();
+
+if ($updated && !empty($ride["user_id"])) {
+    send_push_to_user(
+        $conn,
+        'client',
+        (int) $ride["user_id"],
+        'Chauffeur arrivé',
+        'Votre chauffeur est arrivé au point de départ.',
+        ['link' => '/client/', 'ride_id' => (string) $id]
+    );
+}
+
 $conn->close();
 
 json_response([

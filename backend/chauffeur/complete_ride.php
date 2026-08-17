@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . "/../config/auth.php";
 require_once __DIR__ . "/../common/geo.php";
+require_once __DIR__ . "/../common/send_push.php";
 
 // Distance à partir de laquelle une confirmation est demandée avant de terminer
 const COMPLETE_CONFIRM_DISTANCE_METERS = 200;
@@ -19,7 +20,7 @@ if (!$id) {
 $conn = db_connect();
 
 // Récupération des infos de la course (incluant price_fcfa)
-$stmt = $conn->prepare("SELECT destination_lat, destination_lng, price_fcfa FROM rides WHERE id = ? AND driver_id = ? AND status = 'started'");
+$stmt = $conn->prepare("SELECT destination_lat, destination_lng, price_fcfa, user_id FROM rides WHERE id = ? AND driver_id = ? AND status = 'started'");
 $stmt->bind_param("ii", $id, $driverId);
 $stmt->execute();
 $ride = $stmt->get_result()->fetch_assoc();
@@ -105,6 +106,17 @@ if ($updated) {
         $balStmt->bind_param("ii", $commission, $driverId);
         $balStmt->execute();
         $balStmt->close();
+    }
+
+    if (!empty($ride["user_id"])) {
+        send_push_to_user(
+            $conn,
+            'client',
+            (int) $ride["user_id"],
+            'Course terminée',
+            'Merci d\'avoir voyagé avec TaxiGo !',
+            ['link' => '/client/', 'ride_id' => (string) $id]
+        );
     }
 
     $conn->close();

@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . "/../config/auth.php";
+require_once __DIR__ . "/../common/send_push.php";
 
 $data = json_decode(file_get_contents("php://input"), true);
 
@@ -81,6 +82,32 @@ $stmt->bind_param(
 if ($stmt->execute()) {
     $rideId = $conn->insert_id;
     $stmt->close();
+
+    // FCM — reveille les chauffeurs en ligne meme app fermee/ecran verrouille.
+    // Modele covoiturage (voir memoire projet) : pas de filtre sur les
+    // chauffeurs deja en course, ils peuvent accepter une course
+    // supplementaire — meme WHERE que nearby_drivers.php, sans le filtre
+    // de fraicheur de position (pas necessaire pour notifier, juste pour
+    // les afficher sur une carte).
+    sync_stale_drivers_offline($conn);
+    $driversRes = $conn->query("SELECT id FROM chauffeur WHERE is_online = 1 AND status = 'active'");
+    $driverIds = [];
+    if ($driversRes) {
+        while ($row = $driversRes->fetch_assoc()) {
+            $driverIds[] = (int) $row["id"];
+        }
+    }
+    if (!empty($driverIds)) {
+        send_push_to_users(
+            $conn,
+            'chauffeur',
+            $driverIds,
+            'Nouvelle course disponible',
+            trim($pickup) !== "" && trim($destination) !== "" ? "$pickup → $destination" : "Une nouvelle course vous attend.",
+            ['link' => '/chauffeur/', 'ride_id' => (string) $rideId]
+        );
+    }
+
     $conn->close();
 
     json_response([

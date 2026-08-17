@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . "/../config/auth.php";
+require_once __DIR__ . "/../common/send_push.php";
 
 $userId = require_client_id();
 
@@ -11,6 +12,15 @@ if (!$rideId) {
 }
 
 $conn = db_connect();
+
+// driver_id récupéré avant la mise à jour pour pouvoir notifier le chauffeur
+// une fois l'annulation confirmée — null si la course était encore 'pending'
+// (aucun chauffeur assigné, rien à notifier côté chauffeur dans ce cas).
+$rideStmt = $conn->prepare("SELECT driver_id, pickup FROM rides WHERE id = ? AND user_id = ?");
+$rideStmt->bind_param("ii", $rideId, $userId);
+$rideStmt->execute();
+$rideRow = $rideStmt->get_result()->fetch_assoc();
+$rideStmt->close();
 
 // On annule seulement si la course appartient au client et n'est pas déjà finie/annulée
 $stmt = $conn->prepare("
@@ -30,6 +40,19 @@ if (!$stmt->execute()) {
 
 $updated = $stmt->affected_rows > 0;
 $stmt->close();
+
+if ($updated && !empty($rideRow["driver_id"])) {
+    $pickup = $rideRow["pickup"] ?? "";
+    send_push_to_user(
+        $conn,
+        'chauffeur',
+        (int) $rideRow["driver_id"],
+        'Course annulée',
+        trim($pickup) !== "" ? "Le client a annulé la course à $pickup." : "Le client a annulé la course.",
+        ['link' => '/chauffeur/', 'ride_id' => (string) $rideId]
+    );
+}
+
 $conn->close();
 
 if (!$updated) {
