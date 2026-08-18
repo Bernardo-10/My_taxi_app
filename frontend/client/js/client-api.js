@@ -205,6 +205,16 @@ async function sendToBackend(data) {
 
         if (result.status === "success" && result.ride_id) {
             currentRideId = result.ride_id;
+
+            // Réaffiche avec les valeurs recalculées par le serveur (peuvent différer
+            // légèrement de l'estimation locale) avant de lancer le suivi.
+            const routeDistance = document.getElementById("routeDistance");
+            const routeDuration = document.getElementById("routeDuration");
+            const routePrice    = document.getElementById("routePrice");
+            if (routeDistance) routeDistance.textContent = `${result.distance_km.toFixed(2)} km`;
+            if (routeDuration) routeDuration.textContent = `${result.duration_min} min`;
+            if (routePrice)    routePrice.textContent    = `${result.price_fcfa} FCFA (${data.passengers} passagers)`;
+
             showWaitingMessage();
             startRideTracking();
 

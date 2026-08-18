@@ -129,7 +129,10 @@ if ($stmt->execute()) {
     json_response([
         "status" => "success",
         "message" => "Trajet sauvegarde",
-        "ride_id" => $rideId
+        "ride_id" => $rideId,
+        "distance_km" => $distance_km,
+        "duration_min" => $duration_min,
+        "price_fcfa" => $price_fcfa
     ]);
 }
 
