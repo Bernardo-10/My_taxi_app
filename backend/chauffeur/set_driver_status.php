@@ -29,7 +29,7 @@ if ($isOnline === null) {
 try {
     $conn = db_connect();
 
-    $checkStmt = $conn->prepare("SELECT status FROM chauffeur WHERE id = ? LIMIT 1");
+    $checkStmt = $conn->prepare("SELECT status, kyc_status FROM chauffeur WHERE id = ? LIMIT 1");
     if (!$checkStmt) {
         throw new Exception('Erreur de préparation : ' . $conn->error);
     }
@@ -49,6 +49,22 @@ try {
         json_response([
             'status' => 'error',
             'message' => 'Votre compte a été désactivé par l\'administrateur. Contactez l\'admin.'
+        ], 403);
+    }
+
+    // Documents non encore validés par un admin : impossible de passer
+    // en ligne. Le compte reste utilisable pour consulter l'espace
+    // chauffeur (compléter des documents, etc.), mais ne peut pas
+    // recevoir de courses tant que kyc_status n'est pas 'approved'.
+    if ($isOnline && $driver['kyc_status'] !== 'approved') {
+        $conn->close();
+        $message = $driver['kyc_status'] === 'rejected'
+            ? 'Vos documents ont été rejetés. Contactez l\'administrateur pour plus de détails.'
+            : 'Vos documents sont en cours de vérification. Vous pourrez vous mettre en ligne une fois validés.';
+        json_response([
+            'status' => 'error',
+            'message' => $message,
+            'kyc_status' => $driver['kyc_status']
         ], 403);
     }
 

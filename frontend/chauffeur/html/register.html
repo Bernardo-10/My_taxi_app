@@ -946,11 +946,76 @@ label.req::after {
     });
   });
 
-  // ── Soumission (visuelle uniquement pour l'instant) ──
-  document.getElementById("registerForm").addEventListener("submit", (event) => {
+  // ── Soumission réelle ──────────────────────────────────
+  // Détermine à quelle étape renvoyer l'utilisateur si l'erreur serveur
+  // concerne un champ d'une étape déjà passée (ex: email en double,
+  // détecté à l'étape 1, mais l'utilisateur est arrivé à l'étape 6).
+  function findStepForError(msg) {
+    const m = msg.toLowerCase();
+    if (m.includes("existe deja") || m.includes("existe déjà")) {
+      // Message ambigu : peut viser l'email/téléphone (étape 1) ou la
+      // plaque (étape 2) — on ramène à l'étape 1 avec un indice clair.
+      return { step: 0, hint: " Vérifiez l'email/téléphone (étape 1) ou la plaque (étape 2)." };
+    }
+    const rules = [
+      { step: 4, test: /licence/ },
+      { step: 3, test: /capacit/ },
+      { step: 2, test: /permis/ },
+      { step: 1, test: /carte grise|plaque|immatriculation/ },
+      { step: 5, test: /mot de passe/ },
+      { step: 0, test: /\bcni\b|email|t[ée]l[ée]phone|\bnom\b/ }
+    ];
+    for (const r of rules) {
+      if (r.test.test(m)) return { step: r.step, hint: "" };
+    }
+    return null;
+  }
+
+  document.getElementById("registerForm").addEventListener("submit", async (event) => {
     event.preventDefault();
-    message.style.color = "var(--green)";
-    message.textContent = "Interface visuelle uniquement — l'envoi réel sera branché à l'étape suivante.";
+    message.style.color = "";
+    message.textContent = "";
+    btnNext.disabled = true;
+    btnBack.style.pointerEvents = "none";
+    btnNext.innerHTML = "Création du compte…";
+
+    try {
+      const formData = new FormData(document.getElementById("registerForm"));
+      const response = await fetch("/backend/chauffeur/register_chauffeur.php", {
+        method: "POST",
+        body: formData
+      });
+
+      let result;
+      try {
+        result = await response.json();
+      } catch {
+        throw new Error("network");
+      }
+
+      if (result.status === "success") {
+        window.location.href = "/chauffeur";
+        return;
+      }
+
+      const errMsg = result.message || "Inscription impossible.";
+      const target = findStepForError(errMsg);
+      message.style.color = "var(--red)";
+      if (target && target.step !== currentStep) {
+        goToStep(target.step);
+        message.textContent = errMsg + target.hint;
+      } else {
+        message.textContent = errMsg;
+      }
+      message.scrollIntoView({ behavior: "smooth", block: "center" });
+    } catch (err) {
+      message.style.color = "var(--red)";
+      message.textContent = "Erreur réseau — vérifiez votre connexion et réessayez.";
+    } finally {
+      btnNext.disabled = false;
+      btnBack.style.pointerEvents = "";
+      updateNav();
+    }
   });
 
   goToStep(0);

@@ -113,6 +113,10 @@ function showSection(name) {
         clearInterval(AdminState.walletsInterval);
         AdminState.walletsInterval = null;
     }
+    if (name !== "kyc" && KycState.interval) {
+        clearInterval(KycState.interval);
+        KycState.interval = null;
+    }
 
     switch (name) {
         case "dashboard":  loadDashboard();  break;
@@ -121,6 +125,7 @@ function showSection(name) {
         case "chauffeurs": loadChauffeurs(); break;
         case "clients":    loadClients();    break;
         case "wallets":    loadWallets();    break;
+        case "kyc":        loadKyc();        break;
     }
 }
 

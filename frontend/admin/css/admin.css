@@ -628,3 +628,287 @@ tbody tr:hover td { background: var(--c-bg); }
 .text-success {
     color: var(--c-green);
 }
+
+/* ═══════════════════════════════════════════════
+   TaxiGo Admin — Vérification chauffeurs (KYC)
+   À ajouter en fin de admin.css, ou à lier comme
+   fichier séparé : frontend/admin/css/admin-kyc.css
+   ═══════════════════════════════════════════════ */
+
+/* ── Barre de filtres ─────────────────────────────────── */
+.kyc-toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.kyc-filter-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border: 1px solid var(--c-border);
+  border-radius: 999px;
+  background: var(--c-surface2);
+  color: var(--c-text-3);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.kyc-filter-btn:hover { background: var(--c-border); color: var(--c-text); }
+.kyc-filter-btn.active {
+  background: var(--c-amber);
+  border-color: var(--c-amber);
+  color: #fff;
+}
+.kyc-filter-btn.active .kyc-filter-count {
+  background: rgba(255,255,255,.25);
+  color: #fff;
+}
+
+.kyc-filter-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--c-gray-bg);
+  color: var(--c-text-3);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+/* ── Liste de cartes ──────────────────────────────────── */
+.kyc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px;
+}
+
+.kyc-card {
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  background: var(--c-surface);
+  overflow: hidden;
+}
+
+.kyc-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  background: var(--c-surface2);
+  border-bottom: 1px solid var(--c-border);
+  flex-wrap: wrap;
+}
+
+.kyc-driver-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.kyc-avatar {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--c-amber-bg);
+  color: var(--c-amber-d);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.kyc-driver-name {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--c-text);
+}
+
+.kyc-driver-meta {
+  font-size: 12px;
+  color: var(--c-text-3);
+  margin-top: 2px;
+}
+
+.kyc-status-pill {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+.kyc-status-pill.kyc-pending  { background: var(--c-amber-bg); color: var(--c-amber-text); }
+.kyc-status-pill.kyc-approved { background: var(--c-green-bg); color: var(--c-green); }
+.kyc-status-pill.kyc-rejected { background: var(--c-red-bg);   color: var(--c-red); }
+
+/* ── Grille de documents dans la carte ───────────────── */
+.kyc-docs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  padding: 16px 18px;
+}
+
+.kyc-doc-block {
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  background: var(--c-surface2);
+}
+
+.kyc-doc-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--c-text);
+  margin-bottom: 6px;
+}
+
+.kyc-doc-meta {
+  font-size: 11.5px;
+  color: var(--c-text-3);
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+.kyc-doc-meta .kyc-expired {
+  color: var(--c-red);
+  font-weight: 700;
+}
+
+.kyc-thumb-row {
+  display: flex;
+  gap: 8px;
+}
+
+.kyc-thumb {
+  flex: 1;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--c-border2);
+  cursor: zoom-in;
+  display: block;
+  position: relative;
+  background: var(--c-bg);
+}
+.kyc-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform .18s ease;
+}
+.kyc-thumb:hover img { transform: scale(1.05); }
+
+.kyc-thumb-label {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  padding: 3px 6px;
+  background: rgba(17,24,39,.65);
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.kyc-thumb-missing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-text-4);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-align: center;
+  padding: 8px;
+}
+
+/* ── Pied de carte : actions ─────────────────────────── */
+.kyc-card-footer {
+  padding: 14px 18px;
+  border-top: 1px solid var(--c-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.kyc-review-note {
+  font-size: 12px;
+  color: var(--c-text-3);
+}
+.kyc-review-note strong { color: var(--c-text-2); }
+.kyc-review-note.kyc-reject-reason { color: var(--c-red); }
+
+.kyc-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.kyc-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.kyc-btn-approve { background: var(--c-green); color: #fff; }
+.kyc-btn-approve:hover { background: #15803d; }
+.kyc-btn-reject { background: var(--c-red-bg); color: var(--c-red); }
+.kyc-btn-reject:hover { background: rgba(220,38,38,.18); }
+
+/* ── Formulaire de rejet (inline) ────────────────────── */
+.kyc-reject-form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.kyc-reject-form textarea {
+  width: 100%;
+  min-height: 64px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--c-border2);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--c-text);
+  resize: vertical;
+  outline: none;
+}
+.kyc-reject-form textarea:focus {
+  border-color: var(--c-red);
+  box-shadow: 0 0 0 3px rgba(220,38,38,.12);
+}
+
+.kyc-reject-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
