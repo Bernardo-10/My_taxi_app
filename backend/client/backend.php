@@ -16,10 +16,26 @@ $pickup_lat = $data["pickup_lat"] ?? null;
 $pickup_lng = $data["pickup_lng"] ?? null;
 $destination_lat = $data["destination_lat"] ?? null;
 $destination_lng = $data["destination_lng"] ?? null;
-$distance_km = $data["distance_km"] ?? 0;
-$duration_min = $data["duration_min"] ?? 0;
-$price_fcfa = $data["price_fcfa"] ?? 0;
-$passengers = $data["passengers"] ?? 1;
+
+require_once __DIR__ . "/../common/pricing.php";
+$pickup_lat = (float) ($data["pickup_lat"] ?? 0);
+$pickup_lng = (float) ($data["pickup_lng"] ?? 0);
+$destination_lat = (float) ($data["destination_lat"] ?? 0);
+$destination_lng = (float) ($data["destination_lng"] ?? 0);
+$passengers = max(1, min(5, (int) ($data["passengers"] ?? 1))); // borné à la capacité du véhicule
+
+if (!$pickup_lat || !$pickup_lng || !$destination_lat || !$destination_lng) {
+    json_response(["status" => "error", "message" => "Coordonnées manquantes"], 400);
+}
+
+$route = compute_route($pickup_lat, $pickup_lng, $destination_lat, $destination_lng);
+if (!$route) {
+    json_response(["status" => "error", "message" => "Itinéraire introuvable, réessayez"], 400);
+}
+
+$distance_km  = $route["distance_km"];
+$duration_min = $route["duration_min"];
+$price_fcfa   = compute_price($distance_km, $passengers);
 
 $conn = db_connect();
 
