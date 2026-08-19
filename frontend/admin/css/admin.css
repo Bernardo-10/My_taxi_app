@@ -912,3 +912,112 @@ tbody tr:hover td { background: var(--c-bg); }
   justify-content: flex-end;
   gap: 8px;
 }
+/* ═══════════════════════════════════════════════
+   TaxiGo Admin — KYC : liste compacte + vue détail
+   Addition à admin-kyc.css (les règles .kyc-card,
+   .kyc-docs-grid, .kyc-doc-block, etc. restent
+   utilisées telles quelles pour la vue détail).
+   ═══════════════════════════════════════════════ */
+
+/* ── Liste compacte cliquable ─────────────────────────── */
+.kyc-list-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px 20px;
+}
+
+.kyc-list-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  background: var(--c-surface);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: var(--transition);
+}
+.kyc-list-item:hover {
+  border-color: var(--c-amber);
+  background: #fffaf4;
+}
+
+.kyc-avatar-sm {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--c-amber-bg);
+  color: var(--c-amber-d);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 12.5px;
+}
+
+.kyc-list-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.kyc-list-item-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--c-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kyc-list-item-meta {
+  font-size: 11.5px;
+  color: var(--c-text-3);
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kyc-chevron {
+  flex-shrink: 0;
+  color: var(--c-text-4);
+}
+.kyc-list-item:hover .kyc-chevron { color: var(--c-amber-d); }
+
+/* ── Vue détail plein espace ──────────────────────────── */
+.kyc-detail-wrap {
+  padding: 18px 20px;
+}
+
+.kyc-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 8px 14px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  background: var(--c-surface2);
+  color: var(--c-text-2);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.kyc-back-btn:hover {
+  background: var(--c-border);
+  color: var(--c-text);
+}
+
+/* La carte de détail réutilise .kyc-card telle quelle, mais on
+   retire la marge/padding externe du conteneur liste puisqu'elle
+   est maintenant seule dans .kyc-detail-wrap. */
+.kyc-detail-wrap .kyc-card {
+  margin: 0;
+}

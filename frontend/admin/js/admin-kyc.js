@@ -1,10 +1,17 @@
 /* ============================================================
    TaxiGo Admin — admin-kyc.js
    Vérification des documents chauffeur (CNI, carte grise,
-   permis, capacité, licence). Fichier autonome : à charger
-   après admin-api.js et admin-ui.js (utilise ADMIN_API et
-   showToast déjà définis là-bas, et confirmAction déjà chargé
-   via confirm-modal.js).
+   permis, capacité, licence).
+
+   Navigation en 2 temps :
+   - Liste compacte cliquable (résumé par chauffeur)
+   - Clic → vue détail plein espace (documents + actions),
+     avec bouton "Retour à la liste" (la liste ne reste pas
+     visible à côté).
+
+   Fichier autonome : à charger après admin-api.js et
+   admin-ui.js (utilise ADMIN_API et showToast déjà définis
+   là-bas, et confirmAction déjà chargé via confirm-modal.js).
    ============================================================ */
 
 "use strict";
@@ -12,7 +19,9 @@
 const KycState = {
     filter: "pending",
     chauffeurs: [],
-    interval: null
+    interval: null,
+    view: "list",        // "list" | "detail"
+    selectedId: null
 };
 
 /* ──────────────────────────────────────────────
@@ -52,7 +61,7 @@ async function loadKyc() {
         const all = await fetchKycChauffeurs("");
         KycState.chauffeurs = all;
         updateKycCounts(all);
-        renderKycList();
+        renderKycView();
     } catch (e) {
         wrap.innerHTML = `<p style="color:var(--c-red);padding:20px">Erreur de chargement.</p>`;
     }
@@ -68,7 +77,7 @@ async function refreshKyc() {
         const all = await fetchKycChauffeurs("");
         KycState.chauffeurs = all;
         updateKycCounts(all);
-        renderKycList();
+        renderKycView();
     } catch (e) {
         // silencieux — prochain cycle réessaiera
     }
@@ -102,7 +111,7 @@ function setText(id, value) {
 }
 
 /* ──────────────────────────────────────────────
-   FILTRES
+   FILTRES (liste uniquement)
 ────────────────────────────────────────────── */
 
 function initKycFilters() {
@@ -111,16 +120,41 @@ function initKycFilters() {
             document.querySelectorAll(".kyc-filter-btn").forEach(b => b.classList.remove("active"));
             btn.classList.add("active");
             KycState.filter = btn.dataset.kycFilter || "";
-            renderKycList();
+            renderKycView();
         });
     });
 }
 
 /* ──────────────────────────────────────────────
-   RENDU — liste de cartes
+   RENDU — aiguillage liste / détail
 ────────────────────────────────────────────── */
 
-function renderKycList() {
+function renderKycView() {
+    const toolbar = document.querySelector("#section-kyc .kyc-toolbar");
+
+    if (KycState.view === "detail" && KycState.selectedId) {
+        const driver = KycState.chauffeurs.find(c => Number(c.id) === Number(KycState.selectedId));
+        if (!driver) {
+            // Le chauffeur sélectionné n'existe plus dans les données
+            // fraîches (cas rare) : on retombe proprement sur la liste.
+            KycState.view = "list";
+            KycState.selectedId = null;
+        } else {
+            if (toolbar) toolbar.style.display = "none";
+            renderKycDetail(driver);
+            return;
+        }
+    }
+
+    if (toolbar) toolbar.style.display = "flex";
+    renderKycListCompact();
+}
+
+/* ──────────────────────────────────────────────
+   RENDU — liste compacte cliquable
+────────────────────────────────────────────── */
+
+function renderKycListCompact() {
     const wrap = document.getElementById("kyc-list-wrap");
     if (!wrap) return;
 
@@ -133,21 +167,65 @@ function renderKycList() {
         return;
     }
 
-    wrap.innerHTML = `<div class="kyc-list">${filtered.map(renderKycCard).join("")}</div>`;
+    wrap.innerHTML = `
+        <div class="kyc-list-compact">
+            ${filtered.map(renderKycListItem).join("")}
+        </div>
+    `;
 
-    // Actions (approuver / afficher le formulaire de rejet / confirmer rejet)
-    wrap.querySelectorAll("[data-kyc-approve]").forEach(btn => {
-        btn.addEventListener("click", () => handleKycApprove(Number(btn.dataset.kycApprove), btn));
+    wrap.querySelectorAll("[data-kyc-open]").forEach(item => {
+        item.addEventListener("click", () => {
+            KycState.selectedId = Number(item.dataset.kycOpen);
+            KycState.view = "detail";
+            renderKycView();
+            wrap.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
     });
-    wrap.querySelectorAll("[data-kyc-show-reject]").forEach(btn => {
-        btn.addEventListener("click", () => toggleRejectForm(Number(btn.dataset.kycShowReject)));
+}
+
+function renderKycListItem(c) {
+    const initials = (c.name || "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
+    const statusLabels = { pending: "En attente", approved: "Approuvé", rejected: "Rejeté" };
+    const statusPill = `<span class="kyc-status-pill kyc-${c.kyc_status}">${statusLabels[c.kyc_status] || c.kyc_status}</span>`;
+
+    return `
+        <button type="button" class="kyc-list-item" data-kyc-open="${c.id}">
+            <div class="kyc-avatar-sm">${initials}</div>
+            <div class="kyc-list-item-info">
+                <div class="kyc-list-item-name">${escapeHtml(c.name)}</div>
+                <div class="kyc-list-item-meta">${escapeHtml(c.phone)} · Plaque ${escapeHtml(c.plate)}</div>
+            </div>
+            ${statusPill}
+            <svg class="kyc-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+    `;
+}
+
+/* ──────────────────────────────────────────────
+   RENDU — vue détail (plein espace, avec retour)
+────────────────────────────────────────────── */
+
+function renderKycDetail(c) {
+    const wrap = document.getElementById("kyc-list-wrap");
+    if (!wrap) return;
+
+    wrap.innerHTML = `
+        <div class="kyc-detail-wrap">
+            <button type="button" class="kyc-back-btn" id="kycBackBtn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                Retour à la liste
+            </button>
+            ${renderKycCard(c)}
+        </div>
+    `;
+
+    document.getElementById("kycBackBtn")?.addEventListener("click", () => {
+        KycState.view = "list";
+        KycState.selectedId = null;
+        renderKycView();
     });
-    wrap.querySelectorAll("[data-kyc-cancel-reject]").forEach(btn => {
-        btn.addEventListener("click", () => toggleRejectForm(Number(btn.dataset.kycCancelReject), true));
-    });
-    wrap.querySelectorAll("[data-kyc-confirm-reject]").forEach(btn => {
-        btn.addEventListener("click", () => handleKycReject(Number(btn.dataset.kycConfirmReject), btn));
-    });
+
+    wireKycCardActions(wrap);
 }
 
 function renderKycCard(c) {
@@ -259,8 +337,23 @@ function renderKycDocBlock(doc) {
 }
 
 /* ──────────────────────────────────────────────
-   ACTIONS
+   ACTIONS (vue détail)
 ────────────────────────────────────────────── */
+
+function wireKycCardActions(scope) {
+    scope.querySelectorAll("[data-kyc-approve]").forEach(btn => {
+        btn.addEventListener("click", () => handleKycApprove(Number(btn.dataset.kycApprove), btn));
+    });
+    scope.querySelectorAll("[data-kyc-show-reject]").forEach(btn => {
+        btn.addEventListener("click", () => toggleRejectForm(Number(btn.dataset.kycShowReject)));
+    });
+    scope.querySelectorAll("[data-kyc-cancel-reject]").forEach(btn => {
+        btn.addEventListener("click", () => toggleRejectForm(Number(btn.dataset.kycCancelReject), true));
+    });
+    scope.querySelectorAll("[data-kyc-confirm-reject]").forEach(btn => {
+        btn.addEventListener("click", () => handleKycReject(Number(btn.dataset.kycConfirmReject), btn));
+    });
+}
 
 async function handleKycApprove(driverId, btn) {
     const ok = await confirmAction({
@@ -277,7 +370,9 @@ async function handleKycApprove(driverId, btn) {
         const result = await submitKycReview(driverId, "approve");
         if (result.status === "success") {
             showToast("Dossier approuvé", "success");
-            loadKyc();
+            // On reste sur la fiche détail (mise à jour), pas de retour forcé
+            // à la liste — l'admin voit immédiatement le nouveau statut.
+            await loadKyc();
         } else {
             showToast(result.message || "Erreur", "error");
             btn.disabled = false;
@@ -322,7 +417,7 @@ async function handleKycReject(driverId, btn) {
         const result = await submitKycReview(driverId, "reject", reason);
         if (result.status === "success") {
             showToast("Dossier rejeté", "success");
-            loadKyc();
+            await loadKyc();
         } else {
             showToast(result.message || "Erreur", "error");
             btn.disabled = false;
