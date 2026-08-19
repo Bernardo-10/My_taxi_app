@@ -4,6 +4,7 @@ require_admin_id();
 
 $conn = db_connect();
 sync_stale_drivers_offline($conn);
+$search = trim($_GET["q"] ?? "");
 $status = isset($_GET["status"]) ? trim($_GET["status"]) : "";
 
 $where  = [];

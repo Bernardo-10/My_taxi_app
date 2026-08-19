@@ -98,6 +98,56 @@ $allowedMimes = [
 ];
 $maxFileSize = 8 * 1024 * 1024; // 8 Mo
 
+function compress_uploaded_image(string $sourcePath, string $mimeType, string $destinationPath): bool {
+    if (!function_exists("imagecreatefromstring")) {
+        return move_uploaded_file($sourcePath, $destinationPath);
+    }
+
+    $sourceData = @file_get_contents($sourcePath);
+    if ($sourceData === false) {
+        return move_uploaded_file($sourcePath, $destinationPath);
+    }
+
+    $image = @imagecreatefromstring($sourceData);
+    if ($image === false) {
+        return move_uploaded_file($sourcePath, $destinationPath);
+    }
+
+    $width = imagesx($image);
+    $height = imagesy($image);
+    $maxSide = 1400;
+
+    if ($width > $maxSide || $height > $maxSide) {
+        $ratio = min($maxSide / $width, $maxSide / $height);
+        $newWidth = max(1, (int) round($width * $ratio));
+        $newHeight = max(1, (int) round($height * $ratio));
+
+        $resized = imagecreatetruecolor($newWidth, $newHeight);
+        imagecopyresampled($resized, $image, 0, 0, 0, 0, $newWidth, $newHeight, $width, $height);
+        imagedestroy($image);
+        $image = $resized;
+    }
+
+    $result = false;
+
+    if ($mimeType === "image/jpeg") {
+        $result = imagejpeg($image, $destinationPath, 75);
+    } elseif ($mimeType === "image/webp" && function_exists("imagewebp")) {
+        $result = imagewebp($image, $destinationPath, 75);
+    } elseif ($mimeType === "image/png" && function_exists("imagepng")) {
+        $result = imagepng($image, $destinationPath, 7);
+    }
+
+    imagedestroy($image);
+
+    if ($result === true) {
+        @unlink($sourcePath);
+        return true;
+    }
+
+    return move_uploaded_file($sourcePath, $destinationPath);
+}
+
 foreach ($documentFields as $field => $label) {
     if (empty($_FILES[$field]) || $_FILES[$field]["error"] === UPLOAD_ERR_NO_FILE) {
         json_response(["status" => "error", "message" => "Photo requise manquante : $label"], 400);
@@ -195,7 +245,7 @@ foreach ($documentFields as $field => $label) {
     $filename = $field . "_" . bin2hex(random_bytes(6)) . "." . $ext;
     $destination = $uploadRoot . "/" . $filename;
 
-    if (!move_uploaded_file($_FILES[$field]["tmp_name"], $destination)) {
+    if (!compress_uploaded_image($_FILES[$field]["tmp_name"], $mime, $destination)) {
         // Nettoyage en cas d'echec partiel : on retire le chauffeur et
         // les fichiers deja deplaces pour ne rien laisser d'incoherent.
         foreach ($storedPaths as $path) {
