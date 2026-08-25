@@ -172,6 +172,8 @@ async function checkNewRides() {
         notifyIfNewPendingRides(allRides, freshRides);
 
         allRides = freshRides;
+        dashboardHistory = Array.isArray(freshRides) ? freshRides : [];
+        persistDashboardCache(dashboardHistory);
 
         updateRideLists();
         updateNavBadges();

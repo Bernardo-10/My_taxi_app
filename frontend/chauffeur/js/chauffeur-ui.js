@@ -55,9 +55,38 @@
 /* ═══════════════════════════════════════════════
    ÉTAT GLOBAL
 ═══════════════════════════════════════════════ */
+const DASHBOARD_CACHE_KEY = "taxigo_driver_dashboard_history";
+
+function loadDashboardCache() {
+    try {
+        const raw = localStorage.getItem(DASHBOARD_CACHE_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function persistDashboardCache(rides) {
+    try {
+        localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(Array.isArray(rides) ? rides : []));
+    } catch (e) {
+        // stockage local indisponible : l’état live reste en mémoire, le cache
+        // n'est alors qu'un meilleur-effort pour la reprise hors ligne.
+    }
+}
+
+function hydrateDashboardFromCache() {
+    if (Array.isArray(dashboardHistory) && dashboardHistory.length > 0) return;
+    const cached = loadDashboardCache();
+    if (cached.length > 0) dashboardHistory = cached;
+}
+
 let map;
 let driverMarker        = null;
 let allRides            = [];
+let dashboardHistory    = loadDashboardCache();
 let rideMarkers         = [];
 let destinationMarkers  = [];
 let destinationMap      = new Map();
@@ -374,6 +403,7 @@ function switchTab(tab) {
         fabEl.classList.add("hidden");
         panelCourses.classList.add("hidden");
         panelDashboard.classList.remove("hidden");
+        hydrateDashboardFromCache();
         updateDashboard();
     }
 }
@@ -521,13 +551,18 @@ function initStatusToggle() {
  * qui ne vient jamais (poll bloqué par !isOnline).
  */
 function onGoOffline() {
-    // Vider la liste des courses
-    allRides = [];
+    // Ne pas vider l'historique du dashboard : le chauffeur doit pouvoir
+    // consulter ses stats et son historique même lorsqu'il est hors ligne.
+    // On bloque uniquement la réception de nouvelles courses, pas les données
+    // déjà chargées du dashboard.
+    hydrateDashboardFromCache();
     renderPendingRides();
     if (activeTab === "courses") renderActiveCourses();
     updateNavBadges();
+    if (activeTab === "dashboard") updateDashboard();
 
-    // Purger les marqueurs et routes de la carte
+    // Purger seulement le flux live pour ne plus afficher de nouvelles demandes
+    // ni de routes en attente de course ; conserver l'historique du dashboard.
     rideMarkers.forEach(m => map.removeLayer(m));
     rideMarkers = [];
     destinationMarkers.forEach(m => map.removeLayer(m));
@@ -1556,8 +1591,9 @@ function createSafePopup(title, body) {
    DASHBOARD
 ═══════════════════════════════════════════════ */
 function updateDashboard() {
-    const completed = allRides.filter(r => r.status === "completed");
-    const active    = allRides.filter(r => r.status === "accepted" || r.status === "arrived" || r.status === "started");
+    const sourceRides = Array.isArray(dashboardHistory) && dashboardHistory.length > 0 ? dashboardHistory : allRides;
+    const completed = sourceRides.filter(r => r.status === "completed");
+    const active    = sourceRides.filter(r => r.status === "accepted" || r.status === "arrived" || r.status === "started");
     const total     = completed.reduce((s, r) => {
         const price      = parseInt(r.price_fcfa || 0);
         const commission = Math.round(price * 0.20);
