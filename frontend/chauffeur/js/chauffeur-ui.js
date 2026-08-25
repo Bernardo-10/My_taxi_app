@@ -796,10 +796,14 @@ async function loadMyDocuments() {
 function updateDocumentsAlertDot(documents) {
   const dot = document.getElementById("documentsAlertDot");
   if (!dot) return;
-  const needsAttention = Object.values(documents).some(doc =>
-    (typeof doc.days_until_expiration === "number" && doc.days_until_expiration <= DOC_ALERT_WARN_DAYS) ||
-    (doc.pending && doc.pending.status === "rejected")
-  );
+  const needsAttention = Object.values(documents).some(doc => {
+    const missingData = !doc.number || !doc.expiration || !doc.photo_recto || (doc.photo_verso === undefined && true);
+    return (
+      (typeof doc.days_until_expiration === "number" && doc.days_until_expiration <= DOC_ALERT_WARN_DAYS) ||
+      (doc.pending && doc.pending.status === "rejected") ||
+      (missingData && (!doc.pending || doc.pending.status !== "approved"))
+    );
+  });
   dot.hidden = !needsAttention;
 }
 
@@ -819,14 +823,16 @@ function renderDocumentsList(documents, container) {
 function renderDocumentCard(key, meta, doc) {
   const hasPending = doc.pending && doc.pending.status === "pending";
   const isRejected = doc.pending && doc.pending.status === "rejected";
+  const missingData = !doc.number || !doc.expiration || !doc.photo_recto || (meta.hasVerso && !doc.photo_verso);
 
   let statusPill = '<span class="doc-status-pill approved">À jour</span>';
   if (hasPending) statusPill = '<span class="doc-status-pill pending">En vérification</span>';
   else if (isRejected) statusPill = '<span class="doc-status-pill rejected">Rejeté</span>';
+  else if (missingData) statusPill = '<span class="doc-status-pill pending">En attente</span>';
 
   const daysLeft = doc.days_until_expiration;
   let expiryWarning = "";
-  if (typeof daysLeft === "number" && daysLeft <= DOC_ALERT_WARN_DAYS && !hasPending) {
+  if (typeof daysLeft === "number" && daysLeft <= DOC_ALERT_WARN_DAYS && !hasPending && !missingData) {
     const urgent = daysLeft <= DOC_ALERT_URGENT_DAYS;
     const text = daysLeft <= 0
       ? "Ce document est expiré"
@@ -848,6 +854,8 @@ function renderDocumentCard(key, meta, doc) {
     pendingBanner = `<div class="doc-rejected-banner">Renouvellement rejeté.
       <span class="doc-reject-reason">${escapeHtml(doc.pending.rejection_reason || "Motif non précisé")}</span>
     </div>`;
+  } else if (missingData) {
+    pendingBanner = `<div class="doc-pending-banner"><i class="ti ti-clock" aria-hidden="true"></i> Document manquant : veuillez compléter ce document pour finaliser votre KYC.</div>`;
   }
 
   // Bouton "Modifier" masqué tant qu'un renouvellement est déjà en
