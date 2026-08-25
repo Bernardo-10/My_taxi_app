@@ -1021,3 +1021,46 @@ tbody tr:hover td { background: var(--c-bg); }
 .kyc-detail-wrap .kyc-card {
   margin: 0;
 }
+/* ═══════════════════════════════════════════════
+   RENOUVELLEMENT DE DOCUMENT (onglet KYC)
+═══════════════════════════════════════════════ */
+.kyc-renewal-pill {
+  background: var(--c-blue-bg);
+  color: var(--c-blue);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+/* Sous-bloc affiché à l'intérieur d'un .kyc-doc-block quand ce document
+   précis a un renouvellement en attente — cf. table
+   chauffeur_document_renewals, un renouvellement ne concerne jamais
+   qu'un seul document, pas tout le dossier. */
+.kyc-renewal-block {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--c-border2);
+}
+.kyc-renewal-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--c-blue);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.kyc-renewal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.kyc-renewal-reject-form {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}

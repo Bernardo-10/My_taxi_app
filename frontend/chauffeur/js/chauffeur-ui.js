@@ -155,6 +155,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     initReportModal();
     initFilterPills();
     initWallet();
+    initDocuments();
 
     const dateEl = document.getElementById("dashboardDate");
     if (dateEl) {
@@ -728,6 +729,271 @@ async function submitRechargeRequest(event) {
     showToast('Erreur réseau', 'error');
   } finally {
     restore();
+  }
+}
+
+// ═══════════════════════════════════════════════
+// MES DOCUMENTS (KYC — renouvellement)
+// ═══════════════════════════════════════════════
+
+// Métadonnées d'affichage par groupe de document. `hasVerso: false` pour
+// la carte grise (photo unique), cohérent avec le schéma backend
+// (carte_grise_photo, une seule colonne, contrairement aux 4 autres
+// groupes qui ont *_photo_recto et *_photo_verso).
+const DOCUMENT_GROUPS = {
+  cni:          { label: "CNI",                  numberLabel: "Numéro de CNI",             hasVerso: true  },
+  carte_grise:  { label: "Carte grise",           numberLabel: "N° d'immatriculation",      hasVerso: false },
+  permit:       { label: "Permis de conduire",    numberLabel: "Numéro de permis",          hasVerso: true  },
+  capacity:     { label: "Carte de capacité",     numberLabel: "Numéro de carte",           hasVerso: true  },
+  license:      { label: "Licence professionnelle", numberLabel: "Numéro de licence",       hasVerso: true  }
+};
+
+// Seuils d'alerte proactive (en jours avant expiration) — cf. rapport KYC,
+// §3.2 : rien au-delà de 15j, alerte discrète 15-3j, alerte insistante <3j.
+const DOC_ALERT_WARN_DAYS  = 15;
+const DOC_ALERT_URGENT_DAYS = 3;
+
+function openDocuments() {
+  const panel = document.getElementById("documentsPanel");
+  if (panel) {
+    panel.classList.add("open");
+    panel.setAttribute("aria-hidden", "false");
+    loadMyDocuments();
+  }
+}
+
+function closeDocuments() {
+  const panel = document.getElementById("documentsPanel");
+  if (panel) {
+    panel.classList.remove("open");
+    panel.setAttribute("aria-hidden", "true");
+  }
+}
+
+async function loadMyDocuments() {
+  const container = document.getElementById("documentsList");
+  const banner = document.getElementById("documentsBanner");
+  if (!container) return;
+
+  try {
+    const data = await fetchMyDocuments();
+    if (data.status !== "success" || !data.documents) {
+      container.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-title">Erreur de chargement</div></div>';
+      return;
+    }
+    renderDocumentsList(data.documents, container);
+    updateDocumentsAlertDot(data.documents);
+    if (banner) banner.innerHTML = "";
+  } catch (e) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-title">Erreur réseau</div></div>';
+  }
+}
+
+// Le petit point rouge sur le bouton "Mes documents" du profil — visible
+// sans avoir à ouvrir le tiroir, dès qu'un document est sous le seuil
+// d'alerte ou déjà rejeté. Volontairement discret (pas de popup), voir
+// rapport KYC §3.2.
+function updateDocumentsAlertDot(documents) {
+  const dot = document.getElementById("documentsAlertDot");
+  if (!dot) return;
+  const needsAttention = Object.values(documents).some(doc =>
+    (typeof doc.days_until_expiration === "number" && doc.days_until_expiration <= DOC_ALERT_WARN_DAYS) ||
+    (doc.pending && doc.pending.status === "rejected")
+  );
+  dot.hidden = !needsAttention;
+}
+
+function renderDocumentsList(documents, container) {
+  container.innerHTML = Object.entries(DOCUMENT_GROUPS).map(([key, meta]) => {
+    const doc = documents[key] || {};
+    return renderDocumentCard(key, meta, doc);
+  }).join("");
+
+  // Boutons "Modifier" — un listener par carte plutôt qu'un onclick inline,
+  // pour rester cohérent avec le reste du fichier (voir initReportModal()).
+  container.querySelectorAll("[data-doc-edit]").forEach(btn => {
+    btn.addEventListener("click", () => openRenewalModal(btn.dataset.docEdit, documents[btn.dataset.docEdit]));
+  });
+}
+
+function renderDocumentCard(key, meta, doc) {
+  const hasPending = doc.pending && doc.pending.status === "pending";
+  const isRejected = doc.pending && doc.pending.status === "rejected";
+
+  let statusPill = '<span class="doc-status-pill approved">À jour</span>';
+  if (hasPending) statusPill = '<span class="doc-status-pill pending">En vérification</span>';
+  else if (isRejected) statusPill = '<span class="doc-status-pill rejected">Rejeté</span>';
+
+  const daysLeft = doc.days_until_expiration;
+  let expiryWarning = "";
+  if (typeof daysLeft === "number" && daysLeft <= DOC_ALERT_WARN_DAYS && !hasPending) {
+    const urgent = daysLeft <= DOC_ALERT_URGENT_DAYS;
+    const text = daysLeft <= 0
+      ? "Ce document est expiré"
+      : `Expire dans ${daysLeft} jour${daysLeft > 1 ? "s" : ""}`;
+    expiryWarning = `<div class="doc-expiry-warning" style="${urgent ? "" : "color:var(--c-amber-d)"}">
+      <i class="ti ti-alert-triangle" aria-hidden="true"></i> ${text}
+    </div>`;
+  }
+
+  const thumbs = [doc.photo_recto, meta.hasVerso ? doc.photo_verso : null]
+    .filter(Boolean)
+    .map(url => `<img class="doc-thumb" src="${url}" alt="${meta.label}" loading="lazy" />`)
+    .join("");
+
+  let pendingBanner = "";
+  if (hasPending) {
+    pendingBanner = `<div class="doc-pending-banner"><i class="ti ti-clock" aria-hidden="true"></i> Renouvellement envoyé, en attente de vérification par l'admin.</div>`;
+  } else if (isRejected) {
+    pendingBanner = `<div class="doc-rejected-banner">Renouvellement rejeté.
+      <span class="doc-reject-reason">${escapeHtml(doc.pending.rejection_reason || "Motif non précisé")}</span>
+    </div>`;
+  }
+
+  // Bouton "Modifier" masqué tant qu'un renouvellement est déjà en
+  // attente, pour éviter les doublons de soumission (cf. rapport KYC §2.4).
+  const editBtn = hasPending
+    ? ""
+    : `<button class="doc-btn-edit" type="button" data-doc-edit="${key}">
+         <i class="ti ti-edit" aria-hidden="true"></i> ${isRejected ? "Resoumettre" : "Modifier"}
+       </button>`;
+
+  return `
+    <div class="doc-card">
+      <div class="doc-card-header">
+        <span class="doc-card-title">${meta.label}</span>
+        ${statusPill}
+      </div>
+      <div class="profile-row">
+        <span class="profile-row-label">${meta.numberLabel}</span>
+        <span class="profile-row-val">${escapeHtml(doc.number || "—")}</span>
+      </div>
+      <div class="profile-row">
+        <span class="profile-row-label">Expiration</span>
+        <span class="profile-row-val">${doc.expiration ? formatDateOnly(doc.expiration) : "—"}</span>
+      </div>
+      ${thumbs ? `<div class="doc-thumbs">${thumbs}</div>` : ""}
+      ${expiryWarning}
+      ${pendingBanner}
+      ${editBtn}
+    </div>
+  `;
+}
+
+function formatDateOnly(dt) {
+  if (!dt) return "—";
+  return new Date(dt).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+// escapeHtml() existe déjà côté client (client-ui.js) — absente ici tant
+// que le fichier commun frontend/js/escape-html.js (chantier XSS, cf.
+// audit sécurité) n'est pas extrait. Définie localement en attendant,
+// pour ne pas insérer client_problem_description-like data brute.
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str ?? "";
+  return div.innerHTML;
+}
+
+// ── Modale de renouvellement ──────────────────
+function openRenewalModal(docKey, doc) {
+  const meta = DOCUMENT_GROUPS[docKey];
+  if (!meta) return;
+
+  document.getElementById("renewalModalTitle").textContent = `Renouveler — ${meta.label}`;
+  document.getElementById("renewalDocumentGroup").value = docKey;
+  document.getElementById("renewalNumberLabel").textContent = meta.numberLabel;
+  document.getElementById("renewalNumber").value = doc?.number || "";
+  document.getElementById("renewalExpiration").value = doc?.expiration ? doc.expiration.slice(0, 10) : "";
+  document.getElementById("renewalPhotoRecto").value = "";
+  document.getElementById("renewalPhotoVerso").value = "";
+
+  const versoLabel = document.getElementById("renewalPhotoVersoLabel");
+  const versoInput = document.getElementById("renewalPhotoVerso");
+  versoLabel.hidden = !meta.hasVerso;
+  versoInput.hidden = !meta.hasVerso;
+  versoInput.required = false; // jamais obligatoire (carte grise n'en a pas, et resoumission tolère de garder l'ancienne verso)
+
+  const modal = document.getElementById("documentRenewalModal");
+  if (modal) {
+    modal.classList.add("open");
+    modal.setAttribute("aria-hidden", "false");
+  }
+}
+
+function closeRenewalModal() {
+  const modal = document.getElementById("documentRenewalModal");
+  if (modal) {
+    modal.classList.remove("open");
+    modal.setAttribute("aria-hidden", "true");
+  }
+  document.getElementById("documentRenewalForm")?.reset();
+}
+
+async function submitDocumentRenewalForm(event) {
+  event.preventDefault();
+  const form = document.getElementById("documentRenewalForm");
+  const submitBtn = document.getElementById("renewalSubmitBtn");
+  const restore = typeof setButtonLoading === "function" ? setButtonLoading(submitBtn, "Envoi…") : (() => {});
+
+  try {
+    const formData = new FormData(form);
+    const res = await submitDocumentRenewal(formData);
+    if (res.status === "success") {
+      showToast("Document envoyé, en attente de vérification.", "success");
+      closeRenewalModal();
+      loadMyDocuments();
+    } else {
+      showToast(res.message || "Erreur lors de l'envoi.", "error");
+    }
+  } catch (e) {
+    showToast("Erreur réseau — vérifiez votre connexion et réessayez.", "error");
+  } finally {
+    restore();
+  }
+}
+
+// ── Initialisation des événements ─────────────
+function initDocuments() {
+  const openBtn = document.getElementById("documentsOpenBtn");
+  const closeBtn = document.getElementById("documentsCloseBtn");
+  const cancelBtn = document.getElementById("renewalCancelBtn");
+  const form = document.getElementById("documentRenewalForm");
+  const modalOverlay = document.getElementById("documentRenewalModal");
+
+  if (openBtn) openBtn.addEventListener("click", openDocuments);
+  if (closeBtn) closeBtn.addEventListener("click", closeDocuments);
+  if (cancelBtn) cancelBtn.addEventListener("click", closeRenewalModal);
+  if (form) form.addEventListener("submit", submitDocumentRenewalForm);
+  if (modalOverlay) modalOverlay.addEventListener("click", e => {
+    if (e.target === modalOverlay) closeRenewalModal();
+  });
+
+  // Vérification silencieuse au chargement (badge discret uniquement,
+  // pas d'alerte plein écran) — cf. rapport KYC §3.3, point 1.
+  loadDocumentsAlertOnly();
+
+  // Re-vérification au retour au premier plan — cf. rapport KYC §3.3,
+  // point 2. Une date d'expiration ne change qu'une fois par jour, donc
+  // un simple check à chaque retour d'arrière-plan suffit ; pas besoin
+  // d'un intervalle dédié qui tournerait en continu pour rien.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      loadDocumentsAlertOnly();
+    }
+  });
+}
+
+// Charge uniquement de quoi renseigner le badge (pas d'ouverture du
+// tiroir) — appelé au chargement de page et au retour au premier plan.
+async function loadDocumentsAlertOnly() {
+  try {
+    const data = await fetchMyDocuments();
+    if (data.status === "success" && data.documents) {
+      updateDocumentsAlertDot(data.documents);
+    }
+  } catch (e) {
+    // silencieux — le badge reste dans son dernier état connu
   }
 }
 

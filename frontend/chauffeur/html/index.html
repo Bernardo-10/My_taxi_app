@@ -184,6 +184,13 @@
         </div>
       </div>
       <div class="profile-section">
+        <button id="documentsOpenBtn" class="btn-documents" type="button">
+          <i class="ti ti-file-certificate" aria-hidden="true"></i>
+          Mes documents
+          <span class="doc-alert-dot" id="documentsAlertDot" hidden></span>
+        </button>
+      </div>
+      <div class="profile-section">
         <button id="logoutBtn" class="btn-logout" type="button">
           <i class="ti ti-logout" aria-hidden="true"></i>
           Se déconnecter
@@ -191,6 +198,54 @@
       </div>
     </div>
   </aside>
+
+  <!-- ============ NOUVEAU : Panneau Mes documents (tiroir) ============ -->
+  <aside class="profile-panel" id="documentsPanel" role="dialog" aria-label="Mes documents" aria-hidden="true">
+    <div class="profile-header">
+      <button class="profile-close-btn" id="documentsCloseBtn" aria-label="Fermer">
+        <i class="ti ti-x" aria-hidden="true"></i>
+      </button>
+      <div class="profile-title">Mes documents</div>
+    </div>
+    <div class="profile-scroll">
+      <div id="documentsBanner"></div>
+      <div id="documentsList" class="doc-list">
+        <div class="empty-state">
+          <div class="empty-icon">📄</div>
+          <div class="empty-title">Chargement…</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============ NOUVEAU : Modal de renouvellement de document ============ -->
+  <div class="modal-overlay" id="documentRenewalModal" role="dialog" aria-label="Renouveler un document" aria-hidden="true">
+    <div class="modal-sheet" role="document">
+      <div class="modal-handle"></div>
+      <div class="modal-title" id="renewalModalTitle">Renouveler un document</div>
+      <div class="modal-subtitle" id="renewalModalSubtitle">Les champs remplacent uniquement ce document — vos autres documents ne sont pas concernés.</div>
+      <form id="documentRenewalForm">
+        <input type="hidden" id="renewalDocumentGroup" name="document_group" value="">
+
+        <label for="renewalNumber" id="renewalNumberLabel">Numéro</label>
+        <input type="text" id="renewalNumber" name="number" required />
+
+        <label for="renewalExpiration">Date d'expiration</label>
+        <input type="date" id="renewalExpiration" name="expiration" required />
+
+        <label for="renewalPhotoRecto" id="renewalPhotoRectoLabel">Photo recto</label>
+        <input type="file" id="renewalPhotoRecto" name="photo_recto" accept="image/*" capture="environment" required />
+
+        <label for="renewalPhotoVerso" id="renewalPhotoVersoLabel">Photo verso</label>
+        <input type="file" id="renewalPhotoVerso" name="photo_verso" accept="image/*" capture="environment" />
+
+        <div class="modal-actions">
+          <button class="modal-cancel" type="button" id="renewalCancelBtn">Annuler</button>
+          <button class="modal-submit" type="submit" id="renewalSubmitBtn">Envoyer</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <!-- ============ NOUVEAU : Panneau Portefeuille (tiroir) ============ -->
   <aside class="profile-panel" id="walletPanel" role="dialog" aria-label="Portefeuille" aria-hidden="true">

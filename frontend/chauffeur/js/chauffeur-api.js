@@ -572,3 +572,30 @@ async function requestRecharge(data) {
   }
   return res.json();
 }
+
+// ═══════════════════════════════════════════════
+// MES DOCUMENTS (KYC — renouvellement)
+// ═══════════════════════════════════════════════
+async function fetchMyDocuments() {
+  const res = await fetch(`${DRIVER_API_BASE}/chauffeur/get_my_documents.php`, { cache: 'no-store' });
+  if (res.status === 401) {
+    window.location.href = '/chauffeur/login';
+    throw new Error('Session expirée');
+  }
+  return res.json();
+}
+
+// formData contient déjà document_group, number, expiration, photo_recto,
+// et éventuellement photo_verso — construit par submitDocumentRenewalForm()
+// dans chauffeur-ui.js via new FormData(form).
+async function submitDocumentRenewal(formData) {
+  const res = await fetch(`${DRIVER_API_BASE}/chauffeur/submit_document_renewal.php`, {
+    method: 'POST',
+    body: formData
+  });
+  if (res.status === 401) {
+    window.location.href = '/chauffeur/login';
+    throw new Error('Session expirée');
+  }
+  return res.json();
+}

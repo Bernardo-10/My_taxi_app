@@ -87,17 +87,28 @@ function updateKycCounts(all) {
     const counts = { pending: 0, approved: 0, rejected: 0 };
     all.forEach(c => { if (counts[c.kyc_status] !== undefined) counts[c.kyc_status]++; });
 
+    // Compte les chauffeurs ayant au moins un document en attente de
+    // renouvellement — indépendant de kyc_status (un chauffeur déjà
+    // 'approved' peut très bien avoir un renouvellement 'pending' en
+    // parallèle, cf. rapport KYC §2 : la table chauffeur_document_renewals
+    // ne touche jamais kyc_status global).
+    const renewalCount = all.filter(c => (c.pending_renewals || []).length > 0).length;
+
     setText("kycCountPending", counts.pending);
     setText("kycCountApproved", counts.approved);
     setText("kycCountRejected", counts.rejected);
+    setText("kycCountRenewal", renewalCount);
     setText("kycCountAll", all.length);
 
     // Badge sur l'onglet de navigation — visible seulement s'il y a des
     // dossiers en attente, sur le même modèle que navProblemsBadge.
+    // Inclut à la fois les nouveaux dossiers KYC et les renouvellements,
+    // les deux nécessitant une action de l'admin dans cette même section.
     const navBadge = document.getElementById("navKycBadge");
     if (navBadge) {
-        if (counts.pending > 0) {
-            navBadge.textContent = counts.pending;
+        const total = counts.pending + renewalCount;
+        if (total > 0) {
+            navBadge.textContent = total;
             navBadge.style.display = "inline-flex";
         } else {
             navBadge.style.display = "none";
@@ -158,9 +169,14 @@ function renderKycListCompact() {
     const wrap = document.getElementById("kyc-list-wrap");
     if (!wrap) return;
 
-    const filtered = KycState.filter
-        ? KycState.chauffeurs.filter(c => c.kyc_status === KycState.filter)
-        : KycState.chauffeurs;
+    // Le filtre "renewal" est indépendant de kyc_status : un dossier déjà
+    // approuvé peut avoir un document en cours de renouvellement (cf.
+    // rapport KYC §2). Les autres filtres restent basés sur kyc_status.
+    const filtered = KycState.filter === "renewal"
+        ? KycState.chauffeurs.filter(c => (c.pending_renewals || []).length > 0)
+        : KycState.filter
+            ? KycState.chauffeurs.filter(c => c.kyc_status === KycState.filter)
+            : KycState.chauffeurs;
 
     if (filtered.length === 0) {
         wrap.innerHTML = `<div class="empty-state">Aucun dossier dans cette catégorie.</div>`;
@@ -188,6 +204,15 @@ function renderKycListItem(c) {
     const statusLabels = { pending: "En attente", approved: "Approuvé", rejected: "Rejeté" };
     const statusPill = `<span class="kyc-status-pill kyc-${c.kyc_status}">${statusLabels[c.kyc_status] || c.kyc_status}</span>`;
 
+    // Pill secondaire visible dans TOUTES les vues (pas seulement le
+    // filtre "Renouvellement") — utile par ex. dans "Approuvés" pour
+    // repérer d'un coup d'œil un chauffeur qui a quand même un
+    // renouvellement en attente d'action.
+    const renewalCount = (c.pending_renewals || []).length;
+    const renewalPill = renewalCount > 0
+        ? `<span class="kyc-renewal-pill">Renouvellement (${renewalCount})</span>`
+        : "";
+
     return `
         <button type="button" class="kyc-list-item" data-kyc-open="${c.id}">
             <div class="kyc-avatar-sm">${initials}</div>
@@ -195,6 +220,7 @@ function renderKycListItem(c) {
                 <div class="kyc-list-item-name">${escapeHtml(c.name)}</div>
                 <div class="kyc-list-item-meta">${escapeHtml(c.phone)} · Plaque ${escapeHtml(c.plate)}</div>
             </div>
+            ${renewalPill}
             ${statusPill}
             <svg class="kyc-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
         </button>
@@ -236,19 +262,23 @@ function renderKycCard(c) {
     const statusPill = `<span class="kyc-status-pill kyc-${c.kyc_status}">${statusLabels[c.kyc_status] || c.kyc_status}</span>`;
 
     const docs = [
-        { title: "CNI", number: c.cni_number, expiration: c.cni_expiration,
+        { group: "cni", title: "CNI", number: c.cni_number, expiration: c.cni_expiration,
           thumbs: [["Recto", c.cni_photo_recto_url], ["Verso", c.cni_photo_verso_url]] },
-        { title: "Carte grise", number: c.carte_grise_immat, expiration: c.carte_grise_expiration,
+        { group: "carte_grise", title: "Carte grise", number: c.carte_grise_immat, expiration: c.carte_grise_expiration,
           thumbs: [["Photo", c.carte_grise_photo_url]] },
-        { title: "Permis de conduire", number: c.permit_number, expiration: c.permit_expiration,
+        { group: "permit", title: "Permis de conduire", number: c.permit_number, expiration: c.permit_expiration,
           thumbs: [["Recto", c.permit_photo_recto_url], ["Verso", c.permit_photo_verso_url]] },
-        { title: "Carte de capacité", number: c.capacity_number, expiration: c.capacity_expiration,
+        { group: "capacity", title: "Carte de capacité", number: c.capacity_number, expiration: c.capacity_expiration,
           thumbs: [["Recto", c.capacity_photo_recto_url], ["Verso", c.capacity_photo_verso_url]] },
-        { title: "Licence chauffeur", number: c.license_number, expiration: c.license_expiration,
+        { group: "license", title: "Licence chauffeur", number: c.license_number, expiration: c.license_expiration,
           thumbs: [["Recto", c.license_photo_recto_url], ["Verso", c.license_photo_verso_url]] }
     ];
 
-    const docsHtml = docs.map(renderKycDocBlock).join("");
+    // Associe à chaque document sa demande de renouvellement en attente,
+    // s'il y en a une — un renouvellement ne concerne qu'un seul groupe
+    // de documents à la fois (cf. table chauffeur_document_renewals).
+    const pendingRenewals = c.pending_renewals || [];
+    const docsHtml = docs.map(doc => renderKycDocBlock(doc, pendingRenewals.find(r => r.document_group === doc.group))).join("");
 
     let footerHtml;
     if (c.kyc_status === "pending") {
@@ -306,7 +336,7 @@ function renderKycCard(c) {
     `;
 }
 
-function renderKycDocBlock(doc) {
+function renderKycDocBlock(doc, renewal) {
     const expired = doc.expiration && new Date(doc.expiration) < new Date();
     const expirationHtml = doc.expiration
         ? `Expire le ${formatFrDate(doc.expiration)}${expired ? ' <span class="kyc-expired">(expiré)</span>' : ""}`
@@ -324,6 +354,8 @@ function renderKycDocBlock(doc) {
         `;
     }).join("");
 
+    const renewalHtml = renewal ? renderKycRenewalBlock(doc, renewal) : "";
+
     return `
         <div class="kyc-doc-block">
             <div class="kyc-doc-title">${escapeHtml(doc.title)}</div>
@@ -332,6 +364,66 @@ function renderKycDocBlock(doc) {
                 ${expirationHtml}
             </div>
             <div class="kyc-thumb-row">${thumbsHtml}</div>
+            ${renewalHtml}
+        </div>
+    `;
+}
+
+// Sous-bloc affiché quand CE document précis a une demande de
+// renouvellement en attente ou déjà rejetée — indépendant du
+// kyc_status global du chauffeur (cf. rapport KYC §2).
+function renderKycRenewalBlock(doc, renewal) {
+    const renewalExpired = renewal.expiration && new Date(renewal.expiration) < new Date();
+    const expirationHtml = renewal.expiration
+        ? `Expire le ${formatFrDate(renewal.expiration)}${renewalExpired ? ' <span class="kyc-expired">(déjà expiré)</span>' : ""}`
+        : "Date d'expiration non renseignée";
+
+    const thumbs = [["Recto", renewal.photo_recto_url], ["Verso", renewal.photo_verso_url]]
+        .filter(([, url]) => url)
+        .map(([label, url]) => `
+            <a class="kyc-thumb" href="${url}" target="_blank" rel="noopener">
+                <img src="${url}" alt="${escapeHtml(doc.title)} — renouvellement — ${label}" loading="lazy">
+                <span class="kyc-thumb-label">${label}</span>
+            </a>
+        `).join("");
+
+    if (renewal.status === "rejected") {
+        return `
+            <div class="kyc-renewal-block">
+                <div class="kyc-renewal-label"><i class="ti ti-refresh"></i> Renouvellement rejeté</div>
+                <div class="kyc-doc-meta">
+                    N° ${escapeHtml(renewal.number || "—")}<br>
+                    ${expirationHtml}<br>
+                    Motif : ${escapeHtml(renewal.rejection_reason || "—")}
+                </div>
+                <div class="kyc-thumb-row">${thumbs}</div>
+            </div>
+        `;
+    }
+
+    return `
+        <div class="kyc-renewal-block">
+            <div class="kyc-renewal-label"><i class="ti ti-refresh"></i> Renouvellement soumis le ${formatFrDate(renewal.submitted_at)}</div>
+            <div class="kyc-doc-meta">
+                N° ${escapeHtml(renewal.number || "—")}<br>
+                ${expirationHtml}
+            </div>
+            <div class="kyc-thumb-row">${thumbs}</div>
+            <div class="kyc-renewal-actions">
+                <button class="kyc-btn kyc-btn-reject" data-renewal-show-reject="${renewal.id}">
+                    <i class="ti ti-x"></i> Rejeter
+                </button>
+                <button class="kyc-btn kyc-btn-approve" data-renewal-approve="${renewal.id}">
+                    <i class="ti ti-check"></i> Approuver
+                </button>
+            </div>
+            <div class="kyc-renewal-reject-form" id="renewal-reject-form-${renewal.id}" style="display:none;">
+                <textarea id="renewal-reject-reason-${renewal.id}" placeholder="Motif du rejet (obligatoire, visible par le chauffeur)"></textarea>
+                <div class="kyc-reject-form-actions">
+                    <button class="btn btn-sm btn-outline" data-renewal-cancel-reject="${renewal.id}">Annuler</button>
+                    <button class="kyc-btn kyc-btn-reject" data-renewal-confirm-reject="${renewal.id}">Confirmer le rejet</button>
+                </div>
+            </div>
         </div>
     `;
 }
@@ -352,6 +444,22 @@ function wireKycCardActions(scope) {
     });
     scope.querySelectorAll("[data-kyc-confirm-reject]").forEach(btn => {
         btn.addEventListener("click", () => handleKycReject(Number(btn.dataset.kycConfirmReject), btn));
+    });
+
+    // Actions de renouvellement — mêmes patterns, mais ciblent une ligne
+    // de chauffeur_document_renewals (renewal_id), pas le dossier KYC
+    // global du chauffeur.
+    scope.querySelectorAll("[data-renewal-approve]").forEach(btn => {
+        btn.addEventListener("click", () => handleRenewalApprove(Number(btn.dataset.renewalApprove), btn));
+    });
+    scope.querySelectorAll("[data-renewal-show-reject]").forEach(btn => {
+        btn.addEventListener("click", () => toggleRenewalRejectForm(Number(btn.dataset.renewalShowReject)));
+    });
+    scope.querySelectorAll("[data-renewal-cancel-reject]").forEach(btn => {
+        btn.addEventListener("click", () => toggleRenewalRejectForm(Number(btn.dataset.renewalCancelReject), true));
+    });
+    scope.querySelectorAll("[data-renewal-confirm-reject]").forEach(btn => {
+        btn.addEventListener("click", () => handleRenewalReject(Number(btn.dataset.renewalConfirmReject), btn));
     });
 }
 
@@ -417,6 +525,90 @@ async function handleKycReject(driverId, btn) {
         const result = await submitKycReview(driverId, "reject", reason);
         if (result.status === "success") {
             showToast("Dossier rejeté", "success");
+            await loadKyc();
+        } else {
+            showToast(result.message || "Erreur", "error");
+            btn.disabled = false;
+        }
+    } catch (e) {
+        showToast("Erreur réseau", "error");
+        btn.disabled = false;
+    }
+}
+
+/* ──────────────────────────────────────────────
+   ACTIONS (renouvellement de document)
+────────────────────────────────────────────── */
+
+async function submitRenewalReview(renewalId, action, reason = "") {
+    const res = await fetch(`${ADMIN_API}/review_document_renewal.php`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ renewal_id: renewalId, action, reason })
+    });
+    return res.json();
+}
+
+async function handleRenewalApprove(renewalId, btn) {
+    const ok = await confirmAction({
+        title: "Approuver ce renouvellement ?",
+        message: "Le nouveau document remplace immédiatement l'ancien dans le dossier du chauffeur.",
+        confirmLabel: "Approuver",
+        cancelLabel: "Annuler",
+        danger: false
+    });
+    if (!ok) return;
+
+    btn.disabled = true;
+    try {
+        const result = await submitRenewalReview(renewalId, "approve");
+        if (result.status === "success") {
+            showToast("Renouvellement approuvé", "success");
+            await loadKyc();
+        } else {
+            showToast(result.message || "Erreur", "error");
+            btn.disabled = false;
+        }
+    } catch (e) {
+        showToast("Erreur réseau", "error");
+        btn.disabled = false;
+    }
+}
+
+function toggleRenewalRejectForm(renewalId, forceHide = false) {
+    const form = document.getElementById(`renewal-reject-form-${renewalId}`);
+    if (!form) return;
+    const show = forceHide ? false : form.style.display === "none";
+    form.style.display = show ? "flex" : "none";
+    if (show) {
+        document.getElementById(`renewal-reject-reason-${renewalId}`)?.focus();
+    }
+}
+
+async function handleRenewalReject(renewalId, btn) {
+    const textarea = document.getElementById(`renewal-reject-reason-${renewalId}`);
+    const reason = (textarea?.value || "").trim();
+
+    if (!reason) {
+        showToast("Merci d'indiquer un motif de rejet", "error");
+        textarea?.focus();
+        return;
+    }
+
+    const ok = await confirmAction({
+        title: "Rejeter ce renouvellement ?",
+        message: "L'ancien document reste en vigueur — le chauffeur verra ce motif et pourra resoumettre.",
+        confirmLabel: "Confirmer le rejet",
+        cancelLabel: "Annuler",
+        danger: true
+    });
+    if (!ok) return;
+
+    btn.disabled = true;
+    try {
+        const result = await submitRenewalReview(renewalId, "reject", reason);
+        if (result.status === "success") {
+            showToast("Renouvellement rejeté", "success");
             await loadKyc();
         } else {
             showToast(result.message || "Erreur", "error");

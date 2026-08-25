@@ -305,3 +305,27 @@ CREATE TABLE IF NOT EXISTS wallet_transactions (
 -- ALTER TABLE wallet_transactions
 --   ADD CONSTRAINT fk_wallet_chauffeur FOREIGN KEY (chauffeur_id) REFERENCES chauffeur(id),
 --   ADD CONSTRAINT fk_wallet_ride FOREIGN KEY (ride_id) REFERENCES rides(id);
+-- ================================================================
+-- TaxiGo — Table de renouvellement de documents chauffeur
+-- Séparée de `chauffeur` volontairement : un renouvellement soumis
+-- ne doit jamais écraser le document "live" tant qu'un admin ne l'a
+-- pas approuvé (voir rapport-kyc-chauffeur.md, §2). L'ancien document
+-- reste celui qui compte pour le blocage à la mise en ligne jusqu'à
+-- validation explicite.
+-- ================================================================
+CREATE TABLE IF NOT EXISTS chauffeur_document_renewals (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    chauffeur_id INT NOT NULL,
+    document_group ENUM('cni','carte_grise','permit','capacity','license') NOT NULL,
+    number VARCHAR(50) NOT NULL,
+    expiration DATE NOT NULL,
+    photo_recto VARCHAR(255) NULL,
+    photo_verso VARCHAR(255) NULL,  -- NULL pour carte_grise (photo unique)
+    status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+    rejection_reason VARCHAR(255) NULL,
+    submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    reviewed_at TIMESTAMP NULL,
+    FOREIGN KEY (chauffeur_id) REFERENCES chauffeur(id),
+    INDEX idx_renewals_chauffeur_group (chauffeur_id, document_group),
+    INDEX idx_renewals_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
