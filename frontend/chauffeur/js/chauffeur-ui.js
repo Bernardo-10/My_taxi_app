@@ -551,26 +551,31 @@ function initStatusToggle() {
  * qui ne vient jamais (poll bloqué par !isOnline).
  */
 function onGoOffline() {
-    // Ne pas vider l'historique du dashboard : le chauffeur doit pouvoir
-    // consulter ses stats et son historique même lorsqu'il est hors ligne.
-    // On bloque uniquement la réception de nouvelles courses, pas les données
-    // déjà chargées du dashboard.
+    // Hors ligne : on garde l’historique du dashboard, mais on nettoie
+    // complètement le flux live pour ne plus afficher des rides pending/actives
+    // qui peuvent provenir d’un ancien session ou d’une fermeture de l’app
+    // avant la fin d’une course.
     hydrateDashboardFromCache();
+
+    // Mieux que de simplement masquer certaines vues : on supprime aussi les
+    // données live en mémoire pour éviter qu’un cache stale réapparaisse au
+    // prochain render.
+    allRides = [];
+    routeCache.clear();
+    destinationMap.clear();
+
     renderPendingRides();
     if (activeTab === "courses") renderActiveCourses();
     updateNavBadges();
+    updateFilterCounts();
     if (activeTab === "dashboard") updateDashboard();
 
-    // Purger seulement le flux live pour ne plus afficher de nouvelles demandes
-    // ni de routes en attente de course ; conserver l'historique du dashboard.
     rideMarkers.forEach(m => map.removeLayer(m));
     rideMarkers = [];
     destinationMarkers.forEach(m => map.removeLayer(m));
     destinationMarkers = [];
     routeLayers.forEach(l => map.removeLayer(l));
     routeLayers = [];
-    routeCache.clear();
-    destinationMap.clear();
 }
 
 /* ═══════════════════════════════════════════════
@@ -1249,7 +1254,7 @@ function renderPendingRides() {
     const container = document.getElementById("pendingRides");
     if (!container) return;
 
-    const pending = allRides.filter(r => r.status === "pending");
+    const pending = isOnline ? allRides.filter(r => r.status === "pending") : [];
 
     const badge    = document.getElementById("pendingBadge");
     const navBadge = document.getElementById("navPendingBadge");
@@ -1273,7 +1278,7 @@ function renderPendingRides() {
         container.appendChild(emptyState(
             "🚦",
             "Aucune course en attente",
-            isOnline ? "Patientez…" : "Passez en ligne pour recevoir des demandes"
+            isOnline ? "Patientez…" : "Dashboard uniquement — le flux des courses est désactivé hors ligne"
         ));
         return;
     }
@@ -1286,7 +1291,9 @@ function renderActiveCourses() {
     const subEl     = document.getElementById("activeCoursesSub");
     if (!container) return;
 
-    const active = allRides.filter(r => r.status === "accepted" || r.status === "arrived" || r.status === "started");
+    const active = isOnline
+        ? allRides.filter(r => r.status === "accepted" || r.status === "arrived" || r.status === "started")
+        : [];
 
     let filtered = active;
     if (activeFilter === "accepted") filtered = active.filter(r => r.status === "accepted");
@@ -1304,8 +1311,10 @@ function renderActiveCourses() {
     if (filtered.length === 0) {
         container.appendChild(emptyState(
             "🚕",
-            "Aucune course ici",
-            activeFilter === "accepted" ? "Acceptez une course depuis la carte" : "Changez le filtre"
+            isOnline ? "Aucune course ici" : "Mode hors ligne",
+            isOnline
+                ? (activeFilter === "accepted" ? "Acceptez une course depuis la carte" : "Changez le filtre")
+                : "Le tableau de bord est disponible, mais les courses en temps réel sont désactivées"
         ));
         return;
     }
@@ -1314,6 +1323,13 @@ function renderActiveCourses() {
 }
 
 function updateFilterCounts() {
+    if (!isOnline) {
+        setText("acceptedFilterCount", 0);
+        setText("arrivedFilterCount", 0);
+        setText("startedFilterCount", 0);
+        return;
+    }
+
     const accepted = allRides.filter(r => r.status === "accepted").length;
     const arrived  = allRides.filter(r => r.status === "arrived").length;
     const started  = allRides.filter(r => r.status === "started").length;
@@ -1324,7 +1340,9 @@ function updateFilterCounts() {
 }
 
 function updateNavBadges() {
-    const active         = allRides.filter(r => r.status === "accepted" || r.status === "arrived" || r.status === "started");
+    const active = isOnline
+        ? allRides.filter(r => r.status === "accepted" || r.status === "arrived" || r.status === "started")
+        : [];
     const navActiveBadge = document.getElementById("navActivesBadge");
     if (navActiveBadge) {
         navActiveBadge.textContent = active.length || "";
