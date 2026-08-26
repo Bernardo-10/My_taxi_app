@@ -84,8 +84,11 @@ async function refreshKyc() {
 }
 
 function updateKycCounts(all) {
-    const counts = { pending: 0, approved: 0, rejected: 0 };
-    all.forEach(c => { if (counts[c.kyc_status] !== undefined) counts[c.kyc_status]++; });
+    const counts = { pending: 0, approved: 0, rejected: 0, incomplete: 0 };
+    all.forEach(c => {
+        if (counts[c.kyc_status] !== undefined) counts[c.kyc_status]++;
+        if (c.incomplete == 1) counts.incomplete++;
+    });
 
     // Compte les chauffeurs ayant au moins un document en attente de
     // renouvellement — indépendant de kyc_status (un chauffeur déjà
@@ -97,6 +100,7 @@ function updateKycCounts(all) {
     setText("kycCountPending", counts.pending);
     setText("kycCountApproved", counts.approved);
     setText("kycCountRejected", counts.rejected);
+    setText("kycCountIncomplete", counts.incomplete);
     setText("kycCountRenewal", renewalCount);
     setText("kycCountAll", all.length);
 
@@ -113,6 +117,18 @@ function updateKycCounts(all) {
         } else {
             navBadge.style.display = "none";
         }
+    }
+}
+
+function renderIncompleteBadgeIfAny(all) {
+    const incompleteCount = all.filter(c => c.incomplete == 1).length;
+    const el = document.getElementById('kycIncompleteBadge');
+    if (!el) return;
+    if (incompleteCount > 0) {
+        el.textContent = incompleteCount;
+        el.style.display = 'inline-flex';
+    } else {
+        el.style.display = 'none';
     }
 }
 
@@ -171,12 +187,17 @@ function renderKycListCompact() {
 
     // Le filtre "renewal" est indépendant de kyc_status : un dossier déjà
     // approuvé peut avoir un document en cours de renouvellement (cf.
-    // rapport KYC §2). Les autres filtres restent basés sur kyc_status.
+    // rapport KYC §2). Le filtre "incomplete" tolère aussi l'ancienne
+    // donnée (incomplete=1 sans kyc_status mis à jour, avant la migration
+    // de correction) en plus du vrai kyc_status='incomplete'. Les autres
+    // filtres restent basés strictement sur kyc_status.
     const filtered = KycState.filter === "renewal"
         ? KycState.chauffeurs.filter(c => (c.pending_renewals || []).length > 0)
-        : KycState.filter
-            ? KycState.chauffeurs.filter(c => c.kyc_status === KycState.filter)
-            : KycState.chauffeurs;
+        : KycState.filter === "incomplete"
+            ? KycState.chauffeurs.filter(c => c.kyc_status === "incomplete" || c.incomplete == 1)
+            : KycState.filter
+                ? KycState.chauffeurs.filter(c => c.kyc_status === KycState.filter)
+                : KycState.chauffeurs;
 
     if (filtered.length === 0) {
         wrap.innerHTML = `<div class="empty-state">Aucun dossier dans cette catégorie.</div>`;
@@ -201,7 +222,7 @@ function renderKycListCompact() {
 
 function renderKycListItem(c) {
     const initials = (c.name || "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
-    const statusLabels = { pending: "En attente", approved: "Approuvé", rejected: "Rejeté" };
+    const statusLabels = { incomplete: "Incomplet", pending: "En attente", approved: "Approuvé", rejected: "Rejeté" };
     const statusPill = `<span class="kyc-status-pill kyc-${c.kyc_status}">${statusLabels[c.kyc_status] || c.kyc_status}</span>`;
 
     // Pill secondaire visible dans TOUTES les vues (pas seulement le
@@ -213,6 +234,13 @@ function renderKycListItem(c) {
         ? `<span class="kyc-renewal-pill">Renouvellement (${renewalCount})</span>`
         : "";
 
+    // Pastille séparée seulement si incomplete=1 SANS que kyc_status soit
+    // déjà 'incomplete' — sinon la pastille de statut principale (ligne
+    // au-dessus) dit déjà la même chose, doublon inutile.
+    const incompletePill = (c.incomplete == 1 && c.kyc_status !== "incomplete")
+        ? `<span class="kyc-incomplete-pill">Incomplet</span>`
+        : "";
+
     return `
         <button type="button" class="kyc-list-item" data-kyc-open="${c.id}">
             <div class="kyc-avatar-sm">${initials}</div>
@@ -221,6 +249,7 @@ function renderKycListItem(c) {
                 <div class="kyc-list-item-meta">${escapeHtml(c.phone)} · Plaque ${escapeHtml(c.plate)}</div>
             </div>
             ${renewalPill}
+            ${incompletePill}
             ${statusPill}
             <svg class="kyc-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
         </button>
@@ -258,7 +287,7 @@ function renderKycCard(c) {
     const initials = (c.name || "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
     const submittedDate = formatFrDate(c.created_at);
 
-    const statusLabels = { pending: "En attente", approved: "Approuvé", rejected: "Rejeté" };
+    const statusLabels = { incomplete: "Incomplet", pending: "En attente", approved: "Approuvé", rejected: "Rejeté" };
     const statusPill = `<span class="kyc-status-pill kyc-${c.kyc_status}">${statusLabels[c.kyc_status] || c.kyc_status}</span>`;
 
     const docs = [
@@ -329,6 +358,7 @@ function renderKycCard(c) {
                     </div>
                 </div>
                 ${statusPill}
+                ${(c.incomplete == 1 && c.kyc_status !== "incomplete") ? '<span class="kyc-incomplete-pill kyc-card-incomplete">Incomplet</span>' : ''}
             </div>
             <div class="kyc-docs-grid">${docsHtml}</div>
             ${footerHtml}

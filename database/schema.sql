@@ -329,3 +329,6 @@ CREATE TABLE IF NOT EXISTS chauffeur_document_renewals (
     INDEX idx_renewals_chauffeur_group (chauffeur_id, document_group),
     INDEX idx_renewals_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+ALTER TABLE chauffeur
+  MODIFY kyc_status ENUM('incomplete', 'pending', 'approved', 'rejected')
+  NOT NULL DEFAULT 'pending';

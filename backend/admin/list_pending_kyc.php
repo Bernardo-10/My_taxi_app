@@ -24,16 +24,18 @@ $sql = "
 
 $params = [];
 $types = "";
-if (in_array($statusFilter, ["pending", "approved", "rejected"])) {
+if (in_array($statusFilter, ["pending", "approved", "rejected", "incomplete"])) {
     $sql .= " WHERE kyc_status = ?";
     $params[] = $statusFilter;
     $types .= "s";
 }
 
-// File d'attente : les plus anciens en attente remontent en premier
-// (c'est ceux qui attendent depuis le plus longtemps qu'il faut traiter
-// en priorité), les autres statuts triés par date de revue récente.
-$sql .= " ORDER BY (kyc_status = 'pending') DESC, created_at ASC";
+// File d'attente : les dossiers réellement soumis et en attente
+// ('pending') remontent en priorité — ce sont ceux qui attendent une
+// action admin. Les dossiers 'incomplete' (inscription non finalisée par
+// le chauffeur lui-même) ne bloquent personne d'autre, donc triés après,
+// mais toujours avant approved/rejected qui n'ont plus besoin d'attention.
+$sql .= " ORDER BY FIELD(kyc_status, 'pending', 'incomplete', 'rejected', 'approved'), created_at ASC";
 
 $stmt = $conn->prepare($sql);
 if ($params) {

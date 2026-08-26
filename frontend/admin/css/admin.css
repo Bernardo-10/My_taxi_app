@@ -757,6 +757,24 @@ tbody tr:hover td { background: var(--c-bg); }
 .kyc-status-pill.kyc-pending  { background: var(--c-amber-bg); color: var(--c-amber-text); }
 .kyc-status-pill.kyc-approved { background: var(--c-green-bg); color: var(--c-green); }
 .kyc-status-pill.kyc-rejected { background: var(--c-red-bg);   color: var(--c-red); }
+/* 'incomplete' = inscription non finalisée par le chauffeur lui-même
+   (voir rapport friction-inscription-chauffeur.md) — gris neutre plutôt
+   que l'ambre du 'pending', pour ne pas laisser croire qu'un admin doit
+   agir dessus : c'est au chauffeur de compléter son dossier. */
+.kyc-status-pill.kyc-incomplete { background: var(--c-gray-bg); color: var(--c-text-3); }
+
+/* Pastille secondaire "Incomplet" (liste + détail) — utilisée uniquement
+   quand incomplete=1 mais que kyc_status n'a pas encore été aligné
+   dessus (voir migration 20260826_fix_kyc_status_incomplete.sql). */
+.kyc-incomplete-pill {
+  background: var(--c-gray-bg);
+  color: var(--c-text-3);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
 
 /* ── Grille de documents dans la carte ───────────────── */
 .kyc-docs-grid {
