@@ -246,59 +246,81 @@ async function schedulePositionUpdate() {
 }
 
 async function refreshDriverStatus() {
-    try {
-        const res = await fetch(`${DRIVER_API_BASE}/common/current_user.php`, { cache: "no-store" });
-        if (res.status === 401) {
-            window.location.href = "/chauffeur/login";
-            return;
-        }
-
-        const result = await res.json();
-        if (result.status !== "success" || !result.user) return;
-
-        const serverStatus = result.user.status;
-        const serverOnline = result.user.is_online ? true : false;
-        const previouslyDisabled = isDisabled;
-
-        if (serverStatus !== "active") {
-            isDisabled = true;
-            if (isOnline) {
-                isOnline = false;
-                onGoOffline();
-            }
-            const btn = document.getElementById("statusToggle");
-            if (btn) btn.disabled = true;
-            const label = document.getElementById("statusLabel");
-            const profileStatus = document.getElementById("profileRowStatus");
-            if (label) label.textContent = "Compte désactivé";
-            if (profileStatus) profileStatus.textContent = "Compte désactivé";
-            if (!previouslyDisabled) {
-                showToast("Votre compte a été désactivé par l'administrateur. Contactez l'admin.", "error", 5000);
-            }
-            return;
-        }
-
-        if (isDisabled) {
-            isDisabled = false;
-            const btn = document.getElementById("statusToggle");
-            if (btn) btn.disabled = false;
-        }
-
-        // Si l'admin a forcé la mise hors ligne
-        if (!serverOnline && isOnline) {
-            isOnline = false;
-            onGoOffline();
-            const btn = document.getElementById("statusToggle");
-            if (btn) btn.classList.remove("online");
-            const label = document.getElementById("statusLabel");
-            const profileStatus = document.getElementById("profileRowStatus");
-            if (label) label.textContent = "Hors ligne";
-            if (profileStatus) profileStatus.textContent = "Hors ligne";
-            showToast("Votre statut a été changé hors ligne par l'administrateur.", "info", 4000);
-        }
-    } catch (error) {
-        console.warn("refreshDriverStatus error:", error);
+  try {
+    const res = await fetch(`${DRIVER_API_BASE}/common/current_user.php`, { cache: "no-store" });
+    if (res.status === 401) {
+      window.location.href = "/chauffeur/login";
+      return;
     }
+
+    const result = await res.json();
+    if (result.status !== "success" || !result.user) return;
+
+    const serverStatus = result.user.status;
+    const serverOnline = result.user.is_online ? true : false;
+    const previouslyDisabled = isDisabled;
+
+    if (serverStatus !== "active") {
+      isDisabled = true;
+      if (isOnline) {
+        isOnline = false;
+        onGoOffline();
+      }
+      const btn = document.getElementById("statusToggle");
+      if (btn) btn.disabled = true;
+      const label = document.getElementById("statusLabel");
+      const profileStatus = document.getElementById("profileRowStatus");
+      if (label) label.textContent = "Compte désactivé";
+      if (profileStatus) profileStatus.textContent = "Compte désactivé";
+      if (!previouslyDisabled) {
+        showToast("Votre compte a été désactivé par l'administrateur. Contactez l'admin.", "error", 5000);
+      }
+      return;
+    }
+
+    if (isDisabled) {
+      isDisabled = false;
+      const btn = document.getElementById("statusToggle");
+      if (btn) btn.disabled = false;
+    }
+
+    // Si l'admin a forcé la mise hors ligne (ou correctif §4.1/§4.2 :
+    // document expiré, ou position GPS restée silencieuse 10+ min)
+    if (!serverOnline && isOnline) {
+      isOnline = false;
+      onGoOffline();
+      const btn = document.getElementById("statusToggle");
+      if (btn) btn.classList.remove("online");
+      const label = document.getElementById("statusLabel");
+      const profileStatus = document.getElementById("profileRowStatus");
+      if (label) label.textContent = "Hors ligne";
+      if (profileStatus) profileStatus.textContent = "Hors ligne";
+
+      // Correctif §4.3 : le message était auparavant toujours
+      // "changé par l'administrateur", même quand la vraie cause
+      // était une position GPS restée silencieuse ou un document
+      // expiré — les deux autres cas rendus possibles par les
+      // correctifs §4.1/§4.2. On adapte le texte à la cause réelle.
+      const reason = result.user.offline_reason;
+      if (reason === "kyc_expired") {
+        const docs = (result.user.expired_documents || []).join(", ") || "Un document";
+        showToast(`${docs} expiré(s). Renouvelez-le(s) dans "Mes documents" pour continuer à recevoir des courses.`, "error", 6000);
+      } else if (reason === "stale_position") {
+        showToast("Votre position GPS n'a pas été reçue depuis un moment — vous avez été repassé hors ligne.", "info", 4000);
+      } else {
+        showToast("Votre statut a été changé hors ligne par l'administrateur.", "info", 4000);
+      }
+    }
+
+    // Badge discret "Mes documents" — mis à jour ici gratuitement à
+    // chaque appel de current_user.php (chargement de page + chaque
+    // tick du polling tant qu'en ligne), sans requête réseau dédiée.
+    if (result.user.kyc_alert) {
+      updateDocumentsAlertDot(result.user.kyc_alert);
+    }
+  } catch (error) {
+    console.warn("refreshDriverStatus error:", error);
+  }
 }
 
 /* ═══════════════════════════════════════════════

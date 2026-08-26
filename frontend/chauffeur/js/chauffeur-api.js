@@ -161,6 +161,25 @@ async function checkNewRides() {
             return;
         }
 
+        // Correctif §4.1 du rapport KYC : get_rides.php force is_online=0
+        // côté serveur si un document a expiré pendant que le chauffeur
+        // était en ligne — signalé par en-tête plutôt que dans le corps
+        // JSON (qui reste un tableau brut de courses, structure inchangée).
+        if (res.headers.get("X-Kyc-Blocked") && isOnline) {
+            isOnline = false;
+            onGoOffline();
+            const btn = document.getElementById("statusToggle");
+            if (btn) btn.classList.remove("online");
+            const label = document.getElementById("statusLabel");
+            const profileStatus = document.getElementById("profileRowStatus");
+            if (label) label.textContent = "Hors ligne";
+            if (profileStatus) profileStatus.textContent = "Hors ligne";
+
+            const docsRaw = res.headers.get("X-Kyc-Blocked-Documents");
+            const docsText = docsRaw ? decodeURIComponent(docsRaw) : "un document";
+            showToast(`${docsText} expiré(s). Renouvelez-le(s) dans "Mes documents" pour continuer à recevoir des courses.`, "error", 6000);
+        }
+
         const rides = await res.json();
         const freshRides = Array.isArray(rides) ? rides : [];
 
@@ -172,8 +191,6 @@ async function checkNewRides() {
         notifyIfNewPendingRides(allRides, freshRides);
 
         allRides = freshRides;
-        dashboardHistory = Array.isArray(freshRides) ? freshRides : [];
-        persistDashboardCache(dashboardHistory);
 
         updateRideLists();
         updateNavBadges();

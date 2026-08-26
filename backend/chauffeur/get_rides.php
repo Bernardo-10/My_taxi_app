@@ -4,6 +4,55 @@ require_once __DIR__ . "/../config/auth.php";
 $driverId = require_driver_id();
 $conn = db_connect();
 
+// ── Correctif §4.1 du rapport KYC ────────────────────────────────
+// current_user.php ne vérifie l'expiration des documents qu'au chargement
+// de page — insuffisant pour un chauffeur qui reste en ligne en continu
+// (sa position GPS ne cesse jamais d'être fraîche, donc il ne repasse
+// jamais par set_driver_status.php). get_rides.php, lui, est interrogé
+// en boucle toutes les 5s tant que le chauffeur est en ligne : c'est ici
+// que la vérification doit se répéter pour de vrai.
+$kycCheckStmt = $conn->prepare("
+    SELECT is_online, cni_expiration, carte_grise_expiration, permit_expiration,
+           capacity_expiration, license_expiration
+    FROM chauffeur WHERE id = ? LIMIT 1
+");
+$kycCheckStmt->bind_param("i", $driverId);
+$kycCheckStmt->execute();
+$driverRow = $kycCheckStmt->get_result()->fetch_assoc();
+$kycCheckStmt->close();
+
+if ($driverRow && (int) $driverRow["is_online"] === 1) {
+    $docLabels = [
+        "cni_expiration" => "CNI",
+        "carte_grise_expiration" => "Carte grise",
+        "permit_expiration" => "Permis de conduire",
+        "capacity_expiration" => "Carte de capacité",
+        "license_expiration" => "Licence professionnelle"
+    ];
+    $today = new DateTime("today");
+    $expiredLabels = [];
+    foreach ($docLabels as $col => $label) {
+        if (!empty($driverRow[$col]) && new DateTime($driverRow[$col]) < $today) {
+            $expiredLabels[] = $label;
+        }
+    }
+
+    if ($expiredLabels) {
+        $offStmt = $conn->prepare("UPDATE chauffeur SET is_online = 0 WHERE id = ?");
+        $offStmt->bind_param("i", $driverId);
+        $offStmt->execute();
+        $offStmt->close();
+
+        // Signalé via en-têtes plutôt que dans le corps JSON : get_rides.php
+        // renvoie un tableau brut de courses (pas un objet), consommé tel
+        // quel par plusieurs endroits du frontend (allRides = rides) —
+        // changer la forme de la réponse casserait ces usages. Les en-têtes
+        // permettent d'ajouter ce signal sans toucher au contrat existant.
+        header("X-Kyc-Blocked: 1");
+        header("X-Kyc-Blocked-Documents: " . rawurlencode(implode(", ", $expiredLabels)));
+    }
+}
+
 $stmt = $conn->prepare("
     SELECT
         id, user_id, pickup, destination,
