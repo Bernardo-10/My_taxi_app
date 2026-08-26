@@ -116,6 +116,20 @@ async function initUserHeader(loginPage) {
 
             // Initialiser le toggle depuis l'état serveur
             initToggleFromServer(user.is_online ? true : false, user.status);
+
+            // Exposer l'ID courant du chauffeur pour scinder les caches locaux
+            if (user.id !== undefined && user.id !== null) {
+                window.currentDriverId = user.id;
+            }
+
+            // Bandeau "Complétez votre profil" (voir rapport
+            // friction-inscription-chauffeur.md) — élément absent des pages
+            // qui n'ont pas de tableau de bord (ex. complete-profile.html
+            // elle-même), d'où le if (el) : pas d'erreur si absent.
+            const kycBanner = document.getElementById("kycBanner");
+            if (kycBanner) {
+                kycBanner.classList.toggle("hidden", user.kyc_status !== "incomplete");
+            }
         }
     } catch (error) {
         // Échec réseau (vraiment hors ligne) : on reste optimiste plutôt que de
@@ -140,6 +154,9 @@ async function initUserHeader(loginPage) {
             } catch (e) {
                 console.warn("Logout request failed:", e);
             } finally {
+                // Effacer l'ID courant pour éviter que le cache "anon" ou
+                // l'ID précédent soit réutilisé après logout.
+                try { window.currentDriverId = null; } catch (e) {}
                 window.location.href = loginPage;
             }
         });

@@ -5,6 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>TaxiGo — Inscription chauffeur</title>
 
+<!--
+  Inscription allégée — voir rapport friction-inscription-chauffeur.md.
+  Avant : formulaire à 6 étapes (identité + 5 groupes de documents KYC,
+  10 champs texte + 9 photos) avant de pouvoir créer un compte.
+  Maintenant : un seul écran, les champs strictement nécessaires à la
+  création du compte. Les documents se complètent ensuite, connecté,
+  via complete-profile.html — accessible depuis le bandeau du tableau
+  de bord tant que le profil est incomplet.
+-->
+
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600;700&display=swap');
 
@@ -50,7 +60,6 @@ body {
   align-items: center;
 }
 
-/* ── Header ───────────────────────────────────────────── */
 .top-row {
   width: 100%;
   display: flex;
@@ -100,93 +109,28 @@ body {
   100% { transform: scale(1.9); opacity: 0; }
 }
 
-/* ── Progress ─────────────────────────────────────────── */
-.progress-wrap { width: 100%; margin-bottom: 18px; }
-
-.progress-track {
-  display: flex;
-  gap: 5px;
-  margin-bottom: 10px;
-}
-.progress-seg {
-  flex: 1;
-  height: 4px;
-  border-radius: 3px;
-  background: var(--line);
-  overflow: hidden;
-  position: relative;
-}
-.progress-seg::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: var(--accent);
-  transform: scaleX(0);
-  transform-origin: left;
-  transition: transform .35s cubic-bezier(.65,0,.35,1);
-}
-.progress-seg.done::after { transform: scaleX(1); }
-.progress-seg.current::after { transform: scaleX(1); background: var(--accent); }
-
-.progress-meta {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-}
-.progress-step-count {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--ink-3);
-  letter-spacing: .03em;
-}
-.progress-step-title {
-  font-family: var(--font-head);
-  font-size: 15.5px;
-  font-weight: 700;
-  color: var(--ink);
-}
-
-/* ── Card / viewport ──────────────────────────────────── */
 .card {
   width: 100%;
   background: var(--white);
   border-radius: 22px;
   box-shadow: 0 24px 60px -12px rgba(17,24,39,.16), 0 4px 16px rgba(17,24,39,.06);
   overflow: hidden;
-}
-
-.viewport { overflow: hidden; }
-
-.track {
-  display: flex;
-  width: 600%; /* 6 slides */
-  transition: transform .38s cubic-bezier(.65,0,.35,1);
-}
-
-.slide {
-  width: calc(100% / 6);
   padding: 26px 24px 22px;
-  min-height: 1px;
 }
 
-.slide-eyebrow {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-  color: var(--accent-d);
-  margin-bottom: 4px;
+.intro-title {
+  font-family: var(--font-head);
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -.3px;
+  margin-bottom: 6px;
 }
-.slide-eyebrow svg { flex-shrink: 0; }
 
-.slide-sub {
+.intro-sub {
   font-size: 12.5px;
   color: var(--ink-3);
-  margin-bottom: 20px;
   line-height: 1.5;
+  margin-bottom: 22px;
 }
 
 .section-label {
@@ -207,13 +151,6 @@ body {
   flex: 1;
   height: 1px;
   background: var(--line);
-}
-
-.doc-note {
-  font-size: 11.5px;
-  color: var(--ink-3);
-  line-height: 1.5;
-  margin-bottom: 14px;
 }
 
 label {
@@ -244,7 +181,6 @@ input:focus {
   box-shadow: 0 0 0 3px rgba(249,115,22,.14);
   background: var(--white);
 }
-input[type="date"] { color: var(--ink); }
 
 .row-2 { display: flex; gap: 10px; }
 .row-2 > div { flex: 1; }
@@ -274,142 +210,19 @@ input[type="date"] { color: var(--ink); }
 .hint.error { color: var(--red); }
 .hint.ok { color: var(--green); }
 
-/* ── Document photo capture ──────────────────────────── */
-.doc-group { margin-bottom: 4px; }
-
-.doc-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 4px;
-  margin-top:8px;
-}
-.doc-icon {
-  flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  border-radius: 10px;
+.doc-note {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  line-height: 1.5;
+  margin-top: 16px;
+  padding: 12px 14px;
   background: var(--accent-tint);
-  color: var(--accent-d);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.doc-title-text {
-  font-family: var(--font-head);
-  font-size: 14px;
-  letter-spacing: -.2px;
-  color: var(--ink);
-}
-.req-mark {
-  color: var(--red);
-  font-weight: 800;
-  margin-left: 2px;
-}
-label.req::after {
-  content: ' *';
-  color: var(--red);
-  font-weight: 800;
-}
-
-.photo-row {
-  display: flex;
-  gap: 10px;
-  margin-top: 10px;
-}
-.photo-slot { flex: 1; }
-
-.slot-label {
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: .04em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-  margin-bottom: 6px;
-}
-
-.photo-btn {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 4 / 3;
-  border: 1.5px dashed var(--line);
   border-radius: 12px;
-  background: var(--field-bg);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  color: var(--ink-3);
-  cursor: pointer;
-  overflow: hidden;
-  transition: border-color .18s, background .18s;
 }
-.photo-btn:hover { border-color: var(--accent); color: var(--accent-d); background: var(--accent-tint); }
-
-.photo-btn .btn-txt {
-  font-size: 10.5px;
-  font-weight: 600;
-}
-
-.photo-btn input[type="file"] {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
-  padding: 0;
-  border: none;
-}
-
-.photo-btn.has-image {
-  border-style: solid;
-  border-color: var(--green);
-  color: transparent;
-}
-.photo-btn.has-image img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.badge-ok {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--green);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2;
-  box-shadow: 0 2px 6px rgba(0,0,0,.25);
-}
-
-.photo-btn.single {
-  aspect-ratio: 16 / 9;
-}
-
-.photo-btn.error {
-  border-style: solid;
-  border-color: var(--red);
-  background: #fef2f2;
-  color: var(--red);
-}
-
-/* ── Nav buttons ──────────────────────────────────────── */
-.nav-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 26px;
-}
+.doc-note strong { color: var(--accent-d); }
 
 .btn {
-  flex: 1;
+  width: 100%;
   border: none;
   border-radius: 13px;
   padding: 14px 16px;
@@ -422,8 +235,10 @@ label.req::after {
   justify-content: center;
   gap: 8px;
   transition: transform .15s, box-shadow .15s, background .15s;
+  margin-top: 22px;
 }
-.btn:active { transform: scale(.97); }
+.btn:active { transform: scale(.98); }
+.btn:disabled { opacity: .7; cursor: default; }
 
 .btn-primary {
   background: var(--accent);
@@ -431,14 +246,6 @@ label.req::after {
   box-shadow: 0 10px 24px -8px rgba(249,115,22,.55);
 }
 .btn-primary:hover { background: var(--accent-d); }
-
-.btn-ghost {
-  flex: 0 0 auto;
-  width: 48px;
-  background: var(--field-bg);
-  color: var(--ink-2);
-}
-.btn-ghost:hover { background: var(--line); }
 
 .message {
   margin-top: 12px;
@@ -456,23 +263,6 @@ label.req::after {
 }
 .link-row a { color: var(--accent-d); font-weight: 700; text-decoration: none; }
 .link-row a:hover { text-decoration: underline; }
-
-/* ── Step dots (mirrors progress, decorative on card) ─── */
-.step-icon-row {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 6px;
-}
-.step-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  background: var(--accent-tint);
-  color: var(--accent-d);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
 </style>
 </head>
 <body>
@@ -484,283 +274,64 @@ label.req::after {
     <div class="role-tag"><span class="pulse-dot"></span>Inscription chauffeur</div>
   </div>
 
-  <div class="progress-wrap">
-    <div class="progress-track" id="progressTrack">
-      <div class="progress-seg current" data-step="0"></div>
-      <div class="progress-seg" data-step="1"></div>
-      <div class="progress-seg" data-step="2"></div>
-      <div class="progress-seg" data-step="3"></div>
-      <div class="progress-seg" data-step="4"></div>
-      <div class="progress-seg" data-step="5"></div>
-    </div>
-    <div class="progress-meta">
-      <span class="progress-step-count" id="stepCount">Étape 1 sur 6</span>
-      <span class="progress-step-title" id="stepTitle">Identité</span>
-    </div>
-  </div>
-
   <div class="card">
+    <div class="intro-title">Créez votre compte</div>
+    <div class="intro-sub">Quelques informations suffisent pour commencer. Vous compléterez vos documents (CNI, carte grise, permis, capacité, licence) une fois connecté, avant de pouvoir accepter des courses.</div>
+
     <form id="registerForm" novalidate>
-      <div class="viewport">
-        <div class="track" id="track">
+      <div class="section-label">Vos coordonnées</div>
 
-          <!-- ═══════════ ÉTAPE 1 — IDENTITÉ + CNI ═══════════ -->
-          <section class="slide" data-step="0">
-            <div class="slide-eyebrow">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-              Étape 1 / 6
-            </div>
-            <div class="slide-sub">Commençons par vous — vos coordonnées et votre pièce d'identité.</div>
+      <label for="name">Nom complet</label>
+      <input id="name" name="name" autocomplete="name" placeholder="Jean Mballa" required>
 
-            <label for="name">Nom complet</label>
-            <input id="name" name="name" autocomplete="name" placeholder="Jean Mballa" required>
+      <label for="phone">Téléphone</label>
+      <input id="phone" name="phone" type="tel" autocomplete="tel" placeholder="+237 6XX XXX XXX" required>
 
-            <label for="phone">Téléphone</label>
-            <input id="phone" name="phone" type="tel" autocomplete="tel" placeholder="+237 6XX XXX XXX" required>
+      <label for="email">Adresse email</label>
+      <input id="email" name="email" type="email" autocomplete="email" placeholder="vous@exemple.com" required>
 
-            <label for="email">Adresse email</label>
-            <input id="email" name="email" type="email" autocomplete="email" placeholder="vous@exemple.com" required>
+      <div class="section-label">Votre véhicule</div>
 
-            <div class="doc-group">
-              <div class="doc-title">
-                <span class="doc-icon">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><circle cx="8" cy="12" r="2.5"/><path d="M14 10h5M14 14h4"/></svg>
-                </span>
-                <span class="doc-title-text">Carte Nationale d'Identité<span class="req-mark">*</span></span>
-              </div>
-              <label for="cni_number" class="req">Numéro de CNI</label>
-              <input id="cni_number" name="cni_number" placeholder="Ex : 123456789" required>
-              <label for="cni_expiration" class="req">Date d'expiration</label>
-              <input id="cni_expiration" name="cni_expiration" type="date" required>
-              <div class="photo-row">
-                <div class="photo-slot">
-                  <div class="slot-label">Recto</div>
-                  <button type="button" class="photo-btn" id="btn_cni_recto" data-target="file_cni_recto">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                    <span class="btn-txt">Prendre photo</span>
-                    <input type="file" id="file_cni_recto" name="cni_photo_recto" accept="image/*" capture="environment">
-                  </button>
-                </div>
-                <div class="photo-slot">
-                  <div class="slot-label">Verso</div>
-                  <button type="button" class="photo-btn" id="btn_cni_verso" data-target="file_cni_verso">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                    <span class="btn-txt">Prendre photo</span>
-                    <input type="file" id="file_cni_verso" name="cni_photo_verso" accept="image/*" capture="environment">
-                  </button>
-                </div>
-              </div>
-            </div>
-          </section>
+      <label for="plate">Plaque d'immatriculation</label>
+      <input id="plate" name="plate" placeholder="LT 1234 AB" required>
 
-          <!-- ═══════════ ÉTAPE 2 — VÉHICULE + CARTE GRISE ═══════════ -->
-          <section class="slide" data-step="1">
-            <div class="slide-eyebrow">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14M5 17a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm14 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM5 17l1.5-6h11L19 17M6.5 11l1-3.5A2 2 0 0 1 9.4 6h5.2a2 2 0 0 1 1.9 1.5l1 3.5"/></svg>
-              Étape 2 / 6
-            </div>
-            <div class="slide-sub">Le véhicule que vous utiliserez pour vos courses.</div>
-
-            <label for="plate" class="req">Plaque d'immatriculation</label>
-            <input id="plate" name="plate" placeholder="LT 1234 AB" required>
-
-            <div class="row-2">
-              <div>
-                <label for="car_brand">Marque</label>
-                <input id="car_brand" name="car_brand" placeholder="Toyota">
-              </div>
-              <div>
-                <label for="car_color">Couleur</label>
-                <input id="car_color" name="car_color" placeholder="Grise">
-              </div>
-            </div>
-
-            <div class="doc-group">
-              <div class="doc-title">
-                <span class="doc-icon">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6M9 11h2"/></svg>
-                </span>
-                <span class="doc-title-text">Carte grise<span class="req-mark">*</span></span>
-              </div>
-              <label for="carte_grise_immat" class="req">Numéro d'immatriculation (carte grise)</label>
-              <input id="carte_grise_immat" name="carte_grise_immat" placeholder="Ex : CE 123 CM" required>
-
-              <label for="carte_grise_expiration" class="req">Date d'expiration</label>
-              <input id="carte_grise_expiration" name="carte_grise_expiration" type="date" required>
-
-              <label class="req">Photo de la carte grise</label>
-              <button type="button" class="photo-btn single" id="btn_carte_grise" data-target="file_carte_grise">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                <span class="btn-txt">Prendre photo</span>
-                <input type="file" id="file_carte_grise" name="carte_grise_photo" accept="image/*" capture="environment">
-              </button>
-            </div>
-          </section>
-
-          <!-- ═══════════ ÉTAPE 3 — PERMIS DE CONDUIRE ═══════════ -->
-          <section class="slide" data-step="2">
-            <div class="slide-eyebrow">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M7 5V3.5A1.5 1.5 0 0 1 8.5 2h7A1.5 1.5 0 0 1 17 3.5V5"/></svg>
-              Étape 3 / 6
-            </div>
-            <div class="slide-sub">Votre permis de conduire, recto et verso.</div>
-
-            <div class="doc-group">
-              <div class="doc-title">
-                <span class="doc-icon">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M7 5V3.5A1.5 1.5 0 0 1 8.5 2h7A1.5 1.5 0 0 1 17 3.5V5"/></svg>
-                </span>
-                <span class="doc-title-text">Permis de conduire<span class="req-mark">*</span></span>
-              </div>
-              <label for="permit_number" class="req">Numéro de permis</label>
-              <input id="permit_number" name="permit_number" placeholder="Ex : 0012345/CN" required>
-              <label for="permit_expiration" class="req">Date d'expiration</label>
-              <input id="permit_expiration" name="permit_expiration" type="date" required>
-              <div class="photo-row">
-                <div class="photo-slot">
-                  <div class="slot-label">Recto</div>
-                  <button type="button" class="photo-btn" id="btn_permit_recto" data-target="file_permit_recto">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                    <span class="btn-txt">Prendre photo</span>
-                    <input type="file" id="file_permit_recto" name="permit_photo_recto" accept="image/*" capture="environment">
-                  </button>
-                </div>
-                <div class="photo-slot">
-                  <div class="slot-label">Verso</div>
-                  <button type="button" class="photo-btn" id="btn_permit_verso" data-target="file_permit_verso">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                    <span class="btn-txt">Prendre photo</span>
-                    <input type="file" id="file_permit_verso" name="permit_photo_verso" accept="image/*" capture="environment">
-                  </button>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <!-- ═══════════ ÉTAPE 4 — CARTE DE CAPACITÉ ═══════════ -->
-          <section class="slide" data-step="3">
-            <div class="slide-eyebrow">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6M9 11h2"/></svg>
-              Étape 4 / 6
-            </div>
-            <div class="slide-sub">Votre carte de capacité de transport, recto et verso.</div>
-
-            <div class="doc-group">
-              <div class="doc-title">
-                <span class="doc-icon">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6M9 11h2"/></svg>
-                </span>
-                <span class="doc-title-text">Carte de capacité de transport<span class="req-mark">*</span></span>
-              </div>
-              <label for="capacity_number" class="req">Numéro du document</label>
-              <input id="capacity_number" name="capacity_number" placeholder="Ex : CAP-2024-0456" required>
-              <label for="capacity_expiration" class="req">Date d'expiration</label>
-              <input id="capacity_expiration" name="capacity_expiration" type="date" required>
-              <div class="photo-row">
-                <div class="photo-slot">
-                  <div class="slot-label">Recto</div>
-                  <button type="button" class="photo-btn" id="btn_capacity_recto" data-target="file_capacity_recto">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                    <span class="btn-txt">Prendre photo</span>
-                    <input type="file" id="file_capacity_recto" name="capacity_photo_recto" accept="image/*" capture="environment">
-                  </button>
-                </div>
-                <div class="photo-slot">
-                  <div class="slot-label">Verso</div>
-                  <button type="button" class="photo-btn" id="btn_capacity_verso" data-target="file_capacity_verso">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                    <span class="btn-txt">Prendre photo</span>
-                    <input type="file" id="file_capacity_verso" name="capacity_photo_verso" accept="image/*" capture="environment">
-                  </button>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <!-- ═══════════ ÉTAPE 5 — LICENCE CHAUFFEUR ═══════════ -->
-          <section class="slide" data-step="4">
-            <div class="slide-eyebrow">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 6 6 1-4.5 4.5L17.5 20 12 17l-5.5 3 1-6.5L3 9l6-1z"/></svg>
-              Étape 5 / 6
-            </div>
-            <div class="slide-sub">Votre licence de chauffeur professionnel, recto et verso.</div>
-
-            <div class="doc-group">
-              <div class="doc-title">
-                <span class="doc-icon">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 6 6 1-4.5 4.5L17.5 20 12 17l-5.5 3 1-6.5L3 9l6-1z"/></svg>
-                </span>
-                <span class="doc-title-text">Licence chauffeur professionnel<span class="req-mark">*</span></span>
-              </div>
-              <label for="license_number" class="req">Numéro de licence</label>
-              <input id="license_number" name="license_number" placeholder="Ex : LIC-2024-0789" required>
-              <label for="license_expiration" class="req">Date d'expiration</label>
-              <input id="license_expiration" name="license_expiration" type="date" required>
-              <div class="photo-row">
-                <div class="photo-slot">
-                  <div class="slot-label">Recto</div>
-                  <button type="button" class="photo-btn" id="btn_license_recto" data-target="file_license_recto">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                    <span class="btn-txt">Prendre photo</span>
-                    <input type="file" id="file_license_recto" name="license_photo_recto" accept="image/*" capture="environment">
-                  </button>
-                </div>
-                <div class="photo-slot">
-                  <div class="slot-label">Verso</div>
-                  <button type="button" class="photo-btn" id="btn_license_verso" data-target="file_license_verso">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                    <span class="btn-txt">Prendre photo</span>
-                    <input type="file" id="file_license_verso" name="license_photo_verso" accept="image/*" capture="environment">
-                  </button>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <!-- ═══════════ ÉTAPE 6 — SÉCURITÉ (MOT DE PASSE) ═══════════ -->
-          <section class="slide" data-step="5">
-            <div class="slide-eyebrow">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-              Étape 6 / 6
-            </div>
-            <div class="slide-sub">Dernière étape : choisissez un mot de passe pour sécuriser votre compte.</div>
-
-            <label for="password">Mot de passe</label>
-            <div class="field-wrap">
-              <input id="password" name="password" type="password" autocomplete="new-password" minlength="6" placeholder="6 caractères minimum" required>
-              <button type="button" class="toggle-pass" id="togglePass" aria-label="Afficher le mot de passe">
-                <svg id="eyeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
-              </button>
-            </div>
-
-            <label for="password_confirm">Confirmer le mot de passe</label>
-            <div class="field-wrap">
-              <input id="password_confirm" name="password_confirm" type="password" autocomplete="new-password" minlength="6" placeholder="Retapez le mot de passe" required>
-              <button type="button" class="toggle-pass" id="togglePassConfirm" aria-label="Afficher le mot de passe">
-                <svg id="eyeIconConfirm" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
-              </button>
-            </div>
-            <div class="hint" id="passwordHint">Les deux mots de passe doivent être identiques.</div>
-
-            <div class="section-label">Récapitulatif</div>
-            <p class="doc-note" id="summaryText">Vos informations et vos documents (CNI, carte grise, permis, capacité, licence) seront transmis à l'administration pour vérification. Votre compte reste en attente de validation avant de pouvoir accepter des courses.</p>
-          </section>
-
+      <div class="row-2">
+        <div>
+          <label for="car_brand">Marque</label>
+          <input id="car_brand" name="car_brand" placeholder="Toyota">
+        </div>
+        <div>
+          <label for="car_color">Couleur</label>
+          <input id="car_color" name="car_color" placeholder="Grise">
         </div>
       </div>
 
-      <div style="padding: 0 24px 24px;">
-        <div class="nav-row">
-          <button type="button" class="btn btn-ghost" id="btnBack" style="visibility:hidden;">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-          </button>
-          <button type="button" class="btn btn-primary" id="btnNext">
-            Continuer
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-          </button>
-        </div>
-        <div class="message" id="message"></div>
+      <div class="section-label">Sécurité</div>
+
+      <label for="password">Mot de passe</label>
+      <div class="field-wrap">
+        <input id="password" name="password" type="password" autocomplete="new-password" minlength="6" placeholder="6 caractères minimum" required>
+        <button type="button" class="toggle-pass" id="togglePass" aria-label="Afficher le mot de passe">
+          <svg id="eyeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
       </div>
+
+      <label for="password_confirm">Confirmer le mot de passe</label>
+      <div class="field-wrap">
+        <input id="password_confirm" name="password_confirm" type="password" autocomplete="new-password" minlength="6" placeholder="Retapez le mot de passe" required>
+        <button type="button" class="toggle-pass" id="togglePassConfirm" aria-label="Afficher le mot de passe">
+          <svg id="eyeIconConfirm" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
+      <div class="hint" id="passwordHint">Les deux mots de passe doivent être identiques.</div>
+
+      <div class="doc-note"><strong>Prochaine étape :</strong> une fois connecté, vous pourrez ajouter vos documents depuis votre tableau de bord — pas besoin de les avoir sous la main maintenant.</div>
+
+      <button type="submit" class="btn btn-primary" id="btnSubmit">
+        Créer mon compte
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      </button>
+      <div class="message" id="message"></div>
     </form>
   </div>
 
@@ -769,113 +340,8 @@ label.req::after {
 </main>
 
 <script>
-  const TOTAL_STEPS = 6;
-  let currentStep = 0;
-
-  const track = document.getElementById("track");
-  const progressTrack = document.getElementById("progressTrack");
-  const stepCount = document.getElementById("stepCount");
-  const stepTitle = document.getElementById("stepTitle");
-  const btnBack = document.getElementById("btnBack");
-  const btnNext = document.getElementById("btnNext");
   const message = document.getElementById("message");
-
-  const stepTitles = ["Identité", "Véhicule", "Permis", "Capacité", "Licence", "Sécurité"];
-
-  // Champs requis (bloquants) par étape — tous les documents sont obligatoires.
-  const requiredByStep = {
-    0: ["name", "phone", "email", "cni_number", "cni_expiration", "file_cni_recto", "file_cni_verso"],
-    1: ["plate", "carte_grise_immat", "carte_grise_expiration", "file_carte_grise"],
-    2: ["permit_number", "permit_expiration", "file_permit_recto", "file_permit_verso"],
-    3: ["capacity_number", "capacity_expiration", "file_capacity_recto", "file_capacity_verso"],
-    4: ["license_number", "license_expiration", "file_license_recto", "file_license_verso"],
-    5: ["password", "password_confirm"]
-  };
-
-  function updateProgress() {
-    document.querySelectorAll(".progress-seg").forEach((seg, i) => {
-      seg.classList.toggle("done", i < currentStep);
-      seg.classList.toggle("current", i === currentStep);
-    });
-    stepCount.textContent = `Étape ${currentStep + 1} sur ${TOTAL_STEPS}`;
-    stepTitle.textContent = stepTitles[currentStep];
-  }
-
-  function updateNav() {
-    btnBack.style.visibility = currentStep === 0 ? "hidden" : "visible";
-    if (currentStep === TOTAL_STEPS - 1) {
-      btnNext.innerHTML = `Créer mon compte
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
-    } else {
-      btnNext.innerHTML = `Continuer
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>`;
-    }
-  }
-
-  function goToStep(step) {
-    currentStep = Math.max(0, Math.min(TOTAL_STEPS - 1, step));
-    track.style.transform = `translateX(-${currentStep * (100 / TOTAL_STEPS)}%)`;
-    updateProgress();
-    updateNav();
-    message.textContent = "";
-  }
-
-  function validateCurrentStep() {
-    const required = requiredByStep[currentStep] || [];
-    for (const fieldName of required) {
-      const el = document.getElementById(fieldName);
-      if (el.type === "file") {
-        const btn = document.getElementById(fieldName.replace("file_", "btn_"));
-        if (!el.files || el.files.length === 0) {
-          btn.classList.add("error");
-          message.textContent = "Merci d'ajouter toutes les photos demandées avant de continuer.";
-          btn.scrollIntoView({ behavior: "smooth", block: "center" });
-          return false;
-        }
-        btn.classList.remove("error");
-        continue;
-      }
-      if (!el.value.trim()) {
-        message.textContent = "Merci de renseigner ce champ avant de continuer.";
-        el.focus();
-        return false;
-      }
-    }
-    if (currentStep === 0) {
-      const email = document.getElementById("email");
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value.trim())) {
-        message.textContent = "Adresse email invalide.";
-        email.focus();
-        return false;
-      }
-    }
-    if (currentStep === TOTAL_STEPS - 1) {
-      const pass = document.getElementById("password");
-      const confirm = document.getElementById("password_confirm");
-      if (pass.value.length < 6) {
-        message.textContent = "Le mot de passe doit contenir au moins 6 caractères.";
-        pass.focus();
-        return false;
-      }
-      if (pass.value !== confirm.value) {
-        message.textContent = "Les deux mots de passe ne correspondent pas.";
-        confirm.focus();
-        return false;
-      }
-    }
-    return true;
-  }
-
-  btnNext.addEventListener("click", () => {
-    if (!validateCurrentStep()) return;
-    if (currentStep === TOTAL_STEPS - 1) {
-      document.getElementById("registerForm").requestSubmit();
-      return;
-    }
-    goToStep(currentStep + 1);
-  });
-
-  btnBack.addEventListener("click", () => goToStep(currentStep - 1));
+  const btnSubmit = document.getElementById("btnSubmit");
 
   // ── Mot de passe : afficher/masquer + vérification live ──
   function wireToggle(toggleId, inputId, iconId) {
@@ -914,70 +380,45 @@ label.req::after {
   document.getElementById("password").addEventListener("input", checkPasswordMatch);
   document.getElementById("password_confirm").addEventListener("input", checkPasswordMatch);
 
-  // ── Photos : aperçu au choix du fichier (recto/verso + carte grise) ──
-  const photoIds = [
-    "cni_recto", "cni_verso",
-    "carte_grise",
-    "permit_recto", "permit_verso",
-    "capacity_recto", "capacity_verso",
-    "license_recto", "license_verso"
-  ];
-
-  photoIds.forEach((id) => {
-    const btn = document.getElementById("btn_" + id);
-    const input = document.getElementById("file_" + id);
-    if (!btn || !input) return;
-    input.addEventListener("change", () => {
-      const file = input.files && input.files[0];
-      if (!file) return;
-      btn.classList.remove("error");
-      const reader = new FileReader();
-      reader.onload = () => {
-        btn.classList.add("has-image");
-        btn.innerHTML = `
-          <img src="${reader.result}" alt="Aperçu du document">
-          <span class="badge-ok">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-          </span>
-        `;
-        btn.appendChild(input);
-      };
-      reader.readAsDataURL(file);
-    });
-  });
-
-  // ── Soumission réelle ──────────────────────────────────
-  // Détermine à quelle étape renvoyer l'utilisateur si l'erreur serveur
-  // concerne un champ d'une étape déjà passée (ex: email en double,
-  // détecté à l'étape 1, mais l'utilisateur est arrivé à l'étape 6).
-  function findStepForError(msg) {
-    const m = msg.toLowerCase();
-    if (m.includes("existe deja") || m.includes("existe déjà")) {
-      // Message ambigu : peut viser l'email/téléphone (étape 1) ou la
-      // plaque (étape 2) — on ramène à l'étape 1 avec un indice clair.
-      return { step: 0, hint: " Vérifiez l'email/téléphone (étape 1) ou la plaque (étape 2)." };
+  function validateForm() {
+    const requiredIds = ["name", "phone", "email", "plate", "password", "password_confirm"];
+    for (const id of requiredIds) {
+      const el = document.getElementById(id);
+      if (!el.value.trim()) {
+        message.textContent = "Merci de renseigner tous les champs obligatoires.";
+        el.focus();
+        return false;
+      }
     }
-    const rules = [
-      { step: 4, test: /licence/ },
-      { step: 3, test: /capacit/ },
-      { step: 2, test: /permis/ },
-      { step: 1, test: /carte grise|plaque|immatriculation/ },
-      { step: 5, test: /mot de passe/ },
-      { step: 0, test: /\bcni\b|email|t[ée]l[ée]phone|\bnom\b/ }
-    ];
-    for (const r of rules) {
-      if (r.test.test(m)) return { step: r.step, hint: "" };
+    const email = document.getElementById("email");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value.trim())) {
+      message.textContent = "Adresse email invalide.";
+      email.focus();
+      return false;
     }
-    return null;
+    const pass = document.getElementById("password");
+    const confirm = document.getElementById("password_confirm");
+    if (pass.value.length < 6) {
+      message.textContent = "Le mot de passe doit contenir au moins 6 caractères.";
+      pass.focus();
+      return false;
+    }
+    if (pass.value !== confirm.value) {
+      message.textContent = "Les deux mots de passe ne correspondent pas.";
+      confirm.focus();
+      return false;
+    }
+    return true;
   }
 
   document.getElementById("registerForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     message.style.color = "";
     message.textContent = "";
-    btnNext.disabled = true;
-    btnBack.style.pointerEvents = "none";
-    btnNext.innerHTML = "Création du compte…";
+    if (!validateForm()) return;
+
+    btnSubmit.disabled = true;
+    btnSubmit.textContent = "Création du compte…";
 
     try {
       const formData = new FormData(document.getElementById("registerForm"));
@@ -998,27 +439,18 @@ label.req::after {
         return;
       }
 
-      const errMsg = result.message || "Inscription impossible.";
-      const target = findStepForError(errMsg);
       message.style.color = "var(--red)";
-      if (target && target.step !== currentStep) {
-        goToStep(target.step);
-        message.textContent = errMsg + target.hint;
-      } else {
-        message.textContent = errMsg;
-      }
+      message.textContent = result.message || "Inscription impossible.";
       message.scrollIntoView({ behavior: "smooth", block: "center" });
     } catch (err) {
       message.style.color = "var(--red)";
       message.textContent = "Erreur réseau — vérifiez votre connexion et réessayez.";
     } finally {
-      btnNext.disabled = false;
-      btnBack.style.pointerEvents = "";
-      updateNav();
+      btnSubmit.disabled = false;
+      btnSubmit.innerHTML = `Créer mon compte
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
     }
   });
-
-  goToStep(0);
 </script>
 </body>
 </html>

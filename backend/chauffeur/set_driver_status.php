@@ -58,9 +58,18 @@ try {
     // recevoir de courses tant que kyc_status n'est pas 'approved'.
     if ($isOnline && $driver['kyc_status'] !== 'approved') {
         $conn->close();
-        $message = $driver['kyc_status'] === 'rejected'
-            ? 'Vos documents ont été rejetés. Contactez l\'administrateur pour plus de détails.'
-            : 'Vos documents sont en cours de vérification. Vous pourrez vous mettre en ligne une fois validés.';
+        // 'incomplete' (nouveau, voir rapport friction-inscription-chauffeur.md) :
+        // le chauffeur n'a encore rien soumis, distinct de 'pending' (déjà soumis,
+        // en attente d'un admin) — le message doit le renvoyer vers la complétion
+        // de son profil, pas lui faire croire qu'il attend une validation qui n'a
+        // pas encore commencé.
+        if ($driver['kyc_status'] === 'incomplete') {
+            $message = 'Complétez votre profil (CNI, carte grise, permis, capacité, licence) pour pouvoir passer en ligne.';
+        } elseif ($driver['kyc_status'] === 'rejected') {
+            $message = 'Vos documents ont été rejetés. Contactez l\'administrateur pour plus de détails.';
+        } else {
+            $message = 'Vos documents sont en cours de vérification. Vous pourrez vous mettre en ligne une fois validés.';
+        }
         json_response([
             'status' => 'error',
             'message' => $message,

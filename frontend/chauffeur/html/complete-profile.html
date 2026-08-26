@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>TaxiGo — Compléter mon profil</title>
+
+<!--
+  Nouvelle page — voir rapport friction-inscription-chauffeur.md.
+  Reprend le wizard documentaire qui vivait auparavant dans register.html
+  (étapes CNI / carte grise / permis / capacité / licence), affiché ici
+  après l'inscription plutôt que pendant. Accessible depuis le bandeau
+  du tableau de bord tant que kyc_status === 'incomplete'.
+  Nécessite une session chauffeur active (complete_chauffeur_profile.php
+  répond 401 sinon, voir require_driver_id()).
+-->
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600;700&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --ink:        #111827;
+  --ink-2:      #4b5563;
+  --ink-3:      #9ca3af;
+  --paper:      #f9fafb;
+  --line:       #e5e7eb;
+  --white:      #ffffff;
+  --field-bg:   #f3f4f6;
+  --accent:     #f97316;
+  --accent-d:   #ea580c;
+  --accent-tint:#fff3ea;
+  --red:        #dc2626;
+  --green:      #16a34a;
+  --font-head:  'Syne', sans-serif;
+  --font-body:  'DM Sans', system-ui, sans-serif;
+  --safe-top:   env(safe-area-inset-top, 0px);
+  --safe-bot:   env(safe-area-inset-bottom, 0px);
+}
+
+html, body { min-height: 100%; }
+
+body {
+  font-family: var(--font-body);
+  background: var(--paper);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  min-height: 100vh;
+}
+
+.wrap {
+  width: 100%;
+  max-width: 440px;
+  margin: 0 auto;
+  padding: calc(var(--safe-top) + 28px) 20px calc(var(--safe-bot) + 24px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.top-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.brand {
+  font-family: var(--font-head);
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -.4px;
+  color: var(--ink);
+  text-decoration: none;
+}
+.brand span { color: var(--accent); }
+
+.skip-link {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-3);
+  text-decoration: none;
+}
+.skip-link:hover { color: var(--ink-2); }
+
+.progress-wrap { width: 100%; margin-bottom: 18px; }
+
+.progress-track {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+.progress-seg {
+  flex: 1;
+  height: 4px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+  position: relative;
+}
+.progress-seg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform .35s cubic-bezier(.65,0,.35,1);
+}
+.progress-seg.done::after { transform: scaleX(1); }
+.progress-seg.current::after { transform: scaleX(1); background: var(--accent); }
+
+.progress-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.progress-step-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-3);
+  letter-spacing: .03em;
+}
+.progress-step-title {
+  font-family: var(--font-head);
+  font-size: 15.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.card {
+  width: 100%;
+  background: var(--white);
+  border-radius: 22px;
+  box-shadow: 0 24px 60px -12px rgba(17,24,39,.16), 0 4px 16px rgba(17,24,39,.06);
+  overflow: hidden;
+}
+
+.viewport { overflow: hidden; }
+
+.track {
+  display: flex;
+  width: 500%; /* 5 slides */
+  transition: transform .38s cubic-bezier(.65,0,.35,1);
+}
+
+.slide {
+  width: calc(100% / 5);
+  padding: 26px 24px 22px;
+  min-height: 1px;
+}
+
+.slide-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--accent-d);
+  margin-bottom: 4px;
+}
+.slide-eyebrow svg { flex-shrink: 0; }
+
+.slide-sub {
+  font-size: 12.5px;
+  color: var(--ink-3);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+label {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin-bottom: 6px;
+  margin-top: 14px;
+}
+label:first-of-type { margin-top: 0; }
+
+input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  font-family: inherit;
+  font-size: 14.5px;
+  color: var(--ink);
+  background: var(--field-bg);
+  outline: none;
+  transition: border-color .18s, box-shadow .18s, background .18s;
+}
+input::placeholder { color: var(--ink-3); }
+input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(249,115,22,.14);
+  background: var(--white);
+}
+input[type="date"] { color: var(--ink); }
+
+.doc-group { margin-bottom: 4px; }
+
+.doc-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+  margin-top:8px;
+}
+.doc-icon {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  background: var(--accent-tint);
+  color: var(--accent-d);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.doc-title-text {
+  font-family: var(--font-head);
+  font-size: 14px;
+  letter-spacing: -.2px;
+  color: var(--ink);
+}
+.req-mark {
+  color: var(--red);
+  font-weight: 800;
+  margin-left: 2px;
+}
+label.req::after {
+  content: ' *';
+  color: var(--red);
+  font-weight: 800;
+}
+
+.photo-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+.photo-slot { flex: 1; }
+
+.slot-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 6px;
+}
+
+.photo-btn {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border: 1.5px dashed var(--line);
+  border-radius: 12px;
+  background: var(--field-bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--ink-3);
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color .18s, background .18s;
+}
+.photo-btn:hover { border-color: var(--accent); color: var(--accent-d); background: var(--accent-tint); }
+
+.photo-btn .btn-txt {
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.photo-btn input[type="file"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  padding: 0;
+  border: none;
+}
+
+.photo-btn.has-image {
+  border-style: solid;
+  border-color: var(--green);
+  color: transparent;
+}
+.photo-btn.has-image img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.badge-ok {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--green);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  box-shadow: 0 2px 6px rgba(0,0,0,.25);
+}
+
+.photo-btn.single {
+  aspect-ratio: 16 / 9;
+}
+
+.photo-btn.error {
+  border-style: solid;
+  border-color: var(--red);
+  background: #fef2f2;
+  color: var(--red);
+}
+
+.doc-note {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  line-height: 1.5;
+  margin-top: 16px;
+}
+
+.nav-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 26px;
+}
+
+.btn {
+  flex: 1;
+  border: none;
+  border-radius: 13px;
+  padding: 14px 16px;
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: transform .15s, box-shadow .15s, background .15s;
+}
+.btn:active { transform: scale(.97); }
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 10px 24px -8px rgba(249,115,22,.55);
+}
+.btn-primary:hover { background: var(--accent-d); }
+
+.btn-ghost {
+  flex: 0 0 auto;
+  width: 48px;
+  background: var(--field-bg);
+  color: var(--ink-2);
+}
+.btn-ghost:hover { background: var(--line); }
+
+.message {
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: var(--red);
+  text-align: center;
+  min-height: 16px;
+}
+</style>
+</head>
+<body>
+
+<main class="wrap">
+
+  <div class="top-row">
+    <a href="#" class="brand">Taxi<span>Go</span></a>
+    <a href="/chauffeur" class="skip-link">Plus tard</a>
+  </div>
+
+  <div class="progress-wrap">
+    <div class="progress-track" id="progressTrack">
+      <div class="progress-seg current" data-step="0"></div>
+      <div class="progress-seg" data-step="1"></div>
+      <div class="progress-seg" data-step="2"></div>
+      <div class="progress-seg" data-step="3"></div>
+      <div class="progress-seg" data-step="4"></div>
+    </div>
+    <div class="progress-meta">
+      <span class="progress-step-count" id="stepCount">Étape 1 sur 5</span>
+      <span class="progress-step-title" id="stepTitle">CNI</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <form id="profileForm" novalidate>
+      <div class="viewport">
+        <div class="track" id="track">
+
+          <!-- ═══════════ ÉTAPE 1 — CNI ═══════════ -->
+          <section class="slide" data-step="0">
+            <div class="slide-eyebrow">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><circle cx="8" cy="12" r="2.5"/><path d="M14 10h5M14 14h4"/></svg>
+              Étape 1 / 5
+            </div>
+            <div class="slide-sub">Votre carte nationale d'identité, recto et verso.</div>
+
+            <div class="doc-group">
+              <div class="doc-title">
+                <span class="doc-icon">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><circle cx="8" cy="12" r="2.5"/><path d="M14 10h5M14 14h4"/></svg>
+                </span>
+                <span class="doc-title-text">Carte Nationale d'Identité<span class="req-mark">*</span></span>
+              </div>
+              <label for="cni_number" class="req">Numéro de CNI</label>
+              <input id="cni_number" name="cni_number" placeholder="Ex : 123456789" required>
+              <label for="cni_expiration" class="req">Date d'expiration</label>
+              <input id="cni_expiration" name="cni_expiration" type="date" required>
+              <div class="photo-row">
+                <div class="photo-slot">
+                  <div class="slot-label">Recto</div>
+                  <button type="button" class="photo-btn" id="btn_cni_recto" data-target="file_cni_recto">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                    <span class="btn-txt">Prendre photo</span>
+                    <input type="file" id="file_cni_recto" name="cni_photo_recto" accept="image/*" capture="environment">
+                  </button>
+                </div>
+                <div class="photo-slot">
+                  <div class="slot-label">Verso</div>
+                  <button type="button" class="photo-btn" id="btn_cni_verso" data-target="file_cni_verso">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                    <span class="btn-txt">Prendre photo</span>
+                    <input type="file" id="file_cni_verso" name="cni_photo_verso" accept="image/*" capture="environment">
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ═══════════ ÉTAPE 2 — CARTE GRISE ═══════════ -->
+          <section class="slide" data-step="1">
+            <div class="slide-eyebrow">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6M9 11h2"/></svg>
+              Étape 2 / 5
+            </div>
+            <div class="slide-sub">La carte grise de votre véhicule.</div>
+
+            <div class="doc-group">
+              <div class="doc-title">
+                <span class="doc-icon">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6M9 11h2"/></svg>
+                </span>
+                <span class="doc-title-text">Carte grise<span class="req-mark">*</span></span>
+              </div>
+              <label for="carte_grise_immat" class="req">Numéro d'immatriculation (carte grise)</label>
+              <input id="carte_grise_immat" name="carte_grise_immat" placeholder="Ex : CE 123 CM" required>
+
+              <label for="carte_grise_expiration" class="req">Date d'expiration</label>
+              <input id="carte_grise_expiration" name="carte_grise_expiration" type="date" required>
+
+              <label class="req">Photo de la carte grise</label>
+              <button type="button" class="photo-btn single" id="btn_carte_grise" data-target="file_carte_grise">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                <span class="btn-txt">Prendre photo</span>
+                <input type="file" id="file_carte_grise" name="carte_grise_photo" accept="image/*" capture="environment">
+              </button>
+            </div>
+          </section>
+
+          <!-- ═══════════ ÉTAPE 3 — PERMIS DE CONDUIRE ═══════════ -->
+          <section class="slide" data-step="2">
+            <div class="slide-eyebrow">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M7 5V3.5A1.5 1.5 0 0 1 8.5 2h7A1.5 1.5 0 0 1 17 3.5V5"/></svg>
+              Étape 3 / 5
+            </div>
+            <div class="slide-sub">Votre permis de conduire, recto et verso.</div>
+
+            <div class="doc-group">
+              <div class="doc-title">
+                <span class="doc-icon">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M7 5V3.5A1.5 1.5 0 0 1 8.5 2h7A1.5 1.5 0 0 1 17 3.5V5"/></svg>
+                </span>
+                <span class="doc-title-text">Permis de conduire<span class="req-mark">*</span></span>
+              </div>
+              <label for="permit_number" class="req">Numéro de permis</label>
+              <input id="permit_number" name="permit_number" placeholder="Ex : 0012345/CN" required>
+              <label for="permit_expiration" class="req">Date d'expiration</label>
+              <input id="permit_expiration" name="permit_expiration" type="date" required>
+              <div class="photo-row">
+                <div class="photo-slot">
+                  <div class="slot-label">Recto</div>
+                  <button type="button" class="photo-btn" id="btn_permit_recto" data-target="file_permit_recto">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                    <span class="btn-txt">Prendre photo</span>
+                    <input type="file" id="file_permit_recto" name="permit_photo_recto" accept="image/*" capture="environment">
+                  </button>
+                </div>
+                <div class="photo-slot">
+                  <div class="slot-label">Verso</div>
+                  <button type="button" class="photo-btn" id="btn_permit_verso" data-target="file_permit_verso">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                    <span class="btn-txt">Prendre photo</span>
+                    <input type="file" id="file_permit_verso" name="permit_photo_verso" accept="image/*" capture="environment">
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ═══════════ ÉTAPE 4 — CARTE DE CAPACITÉ ═══════════ -->
+          <section class="slide" data-step="3">
+            <div class="slide-eyebrow">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6M9 11h2"/></svg>
+              Étape 4 / 5
+            </div>
+            <div class="slide-sub">Votre carte de capacité de transport, recto et verso.</div>
+
+            <div class="doc-group">
+              <div class="doc-title">
+                <span class="doc-icon">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6M9 11h2"/></svg>
+                </span>
+                <span class="doc-title-text">Carte de capacité de transport<span class="req-mark">*</span></span>
+              </div>
+              <label for="capacity_number" class="req">Numéro du document</label>
+              <input id="capacity_number" name="capacity_number" placeholder="Ex : CAP-2024-0456" required>
+              <label for="capacity_expiration" class="req">Date d'expiration</label>
+              <input id="capacity_expiration" name="capacity_expiration" type="date" required>
+              <div class="photo-row">
+                <div class="photo-slot">
+                  <div class="slot-label">Recto</div>
+                  <button type="button" class="photo-btn" id="btn_capacity_recto" data-target="file_capacity_recto">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                    <span class="btn-txt">Prendre photo</span>
+                    <input type="file" id="file_capacity_recto" name="capacity_photo_recto" accept="image/*" capture="environment">
+                  </button>
+                </div>
+                <div class="photo-slot">
+                  <div class="slot-label">Verso</div>
+                  <button type="button" class="photo-btn" id="btn_capacity_verso" data-target="file_capacity_verso">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                    <span class="btn-txt">Prendre photo</span>
+                    <input type="file" id="file_capacity_verso" name="capacity_photo_verso" accept="image/*" capture="environment">
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ═══════════ ÉTAPE 5 — LICENCE CHAUFFEUR ═══════════ -->
+          <section class="slide" data-step="4">
+            <div class="slide-eyebrow">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 6 6 1-4.5 4.5L17.5 20 12 17l-5.5 3 1-6.5L3 9l6-1z"/></svg>
+              Étape 5 / 5
+            </div>
+            <div class="slide-sub">Votre licence de chauffeur professionnel, recto et verso.</div>
+
+            <div class="doc-group">
+              <div class="doc-title">
+                <span class="doc-icon">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 6 6 1-4.5 4.5L17.5 20 12 17l-5.5 3 1-6.5L3 9l6-1z"/></svg>
+                </span>
+                <span class="doc-title-text">Licence chauffeur professionnel<span class="req-mark">*</span></span>
+              </div>
+              <label for="license_number" class="req">Numéro de licence</label>
+              <input id="license_number" name="license_number" placeholder="Ex : LIC-2024-0789" required>
+              <label for="license_expiration" class="req">Date d'expiration</label>
+              <input id="license_expiration" name="license_expiration" type="date" required>
+              <div class="photo-row">
+                <div class="photo-slot">
+                  <div class="slot-label">Recto</div>
+                  <button type="button" class="photo-btn" id="btn_license_recto" data-target="file_license_recto">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                    <span class="btn-txt">Prendre photo</span>
+                    <input type="file" id="file_license_recto" name="license_photo_recto" accept="image/*" capture="environment">
+                  </button>
+                </div>
+                <div class="photo-slot">
+                  <div class="slot-label">Verso</div>
+                  <button type="button" class="photo-btn" id="btn_license_verso" data-target="file_license_verso">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                    <span class="btn-txt">Prendre photo</span>
+                    <input type="file" id="file_license_verso" name="license_photo_verso" accept="image/*" capture="environment">
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <p class="doc-note">Vos documents seront transmis à l'administration pour vérification. Vous pourrez passer en ligne une fois validés.</p>
+          </section>
+
+        </div>
+      </div>
+
+      <div style="padding: 0 24px 24px;">
+        <div class="nav-row">
+          <button type="button" class="btn btn-ghost" id="btnBack" style="visibility:hidden;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+          </button>
+          <button type="button" class="btn btn-primary" id="btnNext">
+            Continuer
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </button>
+        </div>
+        <div class="message" id="message"></div>
+      </div>
+    </form>
+  </div>
+
+</main>
+
+<script>
+  const TOTAL_STEPS = 5;
+  let currentStep = 0;
+
+  const track = document.getElementById("track");
+  const stepCount = document.getElementById("stepCount");
+  const stepTitle = document.getElementById("stepTitle");
+  const btnBack = document.getElementById("btnBack");
+  const btnNext = document.getElementById("btnNext");
+  const message = document.getElementById("message");
+
+  const stepTitles = ["CNI", "Carte grise", "Permis", "Capacité", "Licence"];
+
+  const requiredByStep = {
+    0: ["cni_number", "cni_expiration", "file_cni_recto", "file_cni_verso"],
+    1: ["carte_grise_immat", "carte_grise_expiration", "file_carte_grise"],
+    2: ["permit_number", "permit_expiration", "file_permit_recto", "file_permit_verso"],
+    3: ["capacity_number", "capacity_expiration", "file_capacity_recto", "file_capacity_verso"],
+    4: ["license_number", "license_expiration", "file_license_recto", "file_license_verso"]
+  };
+
+  function updateProgress() {
+    document.querySelectorAll(".progress-seg").forEach((seg, i) => {
+      seg.classList.toggle("done", i < currentStep);
+      seg.classList.toggle("current", i === currentStep);
+    });
+    stepCount.textContent = `Étape ${currentStep + 1} sur ${TOTAL_STEPS}`;
+    stepTitle.textContent = stepTitles[currentStep];
+  }
+
+  function updateNav() {
+    btnBack.style.visibility = currentStep === 0 ? "hidden" : "visible";
+    if (currentStep === TOTAL_STEPS - 1) {
+      btnNext.innerHTML = `Envoyer mes documents
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+    } else {
+      btnNext.innerHTML = `Continuer
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>`;
+    }
+  }
+
+  function goToStep(step) {
+    currentStep = Math.max(0, Math.min(TOTAL_STEPS - 1, step));
+    track.style.transform = `translateX(-${currentStep * (100 / TOTAL_STEPS)}%)`;
+    updateProgress();
+    updateNav();
+    message.textContent = "";
+  }
+
+  function validateCurrentStep() {
+    const required = requiredByStep[currentStep] || [];
+    for (const fieldName of required) {
+      const el = document.getElementById(fieldName);
+      if (el.type === "file") {
+        const btn = document.getElementById(fieldName.replace("file_", "btn_"));
+        if (!el.files || el.files.length === 0) {
+          btn.classList.add("error");
+          message.textContent = "Merci d'ajouter toutes les photos demandées avant de continuer.";
+          btn.scrollIntoView({ behavior: "smooth", block: "center" });
+          return false;
+        }
+        btn.classList.remove("error");
+        continue;
+      }
+      if (!el.value.trim()) {
+        message.textContent = "Merci de renseigner ce champ avant de continuer.";
+        el.focus();
+        return false;
+      }
+    }
+    return true;
+  }
+
+  btnNext.addEventListener("click", () => {
+    if (!validateCurrentStep()) return;
+    if (currentStep === TOTAL_STEPS - 1) {
+      document.getElementById("profileForm").requestSubmit();
+      return;
+    }
+    goToStep(currentStep + 1);
+  });
+
+  btnBack.addEventListener("click", () => goToStep(currentStep - 1));
+
+  // ── Photos : aperçu au choix du fichier (recto/verso + carte grise) ──
+  const photoIds = [
+    "cni_recto", "cni_verso",
+    "carte_grise",
+    "permit_recto", "permit_verso",
+    "capacity_recto", "capacity_verso",
+    "license_recto", "license_verso"
+  ];
+
+  photoIds.forEach((id) => {
+    const btn = document.getElementById("btn_" + id);
+    const input = document.getElementById("file_" + id);
+    if (!btn || !input) return;
+    input.addEventListener("change", () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      btn.classList.remove("error");
+      const reader = new FileReader();
+      reader.onload = () => {
+        btn.classList.add("has-image");
+        btn.innerHTML = `
+          <img src="${reader.result}" alt="Aperçu du document">
+          <span class="badge-ok">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </span>
+        `;
+        btn.appendChild(input);
+      };
+      reader.readAsDataURL(file);
+    });
+  });
+
+  // ── Soumission réelle ──────────────────────────────────
+  function findStepForError(msg) {
+    const m = msg.toLowerCase();
+    const rules = [
+      { step: 4, test: /licence/ },
+      { step: 3, test: /capacit/ },
+      { step: 2, test: /permis/ },
+      { step: 1, test: /carte grise|immatriculation/ },
+      { step: 0, test: /\bcni\b/ }
+    ];
+    for (const r of rules) {
+      if (r.test.test(m)) return r.step;
+    }
+    return null;
+  }
+
+  document.getElementById("profileForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    message.style.color = "";
+    message.textContent = "";
+    btnNext.disabled = true;
+    btnBack.style.pointerEvents = "none";
+    btnNext.innerHTML = "Envoi en cours…";
+
+    try {
+      const formData = new FormData(document.getElementById("profileForm"));
+      const response = await fetch("/backend/chauffeur/complete_chauffeur_profile.php", {
+        method: "POST",
+        body: formData
+      });
+
+      if (response.status === 401) {
+        window.location.href = "/chauffeur/login";
+        return;
+      }
+
+      let result;
+      try {
+        result = await response.json();
+      } catch {
+        throw new Error("network");
+      }
+
+      if (result.status === "success") {
+        window.location.href = "/chauffeur";
+        return;
+      }
+
+      const errMsg = result.message || "Envoi impossible.";
+      const targetStep = findStepForError(errMsg);
+      message.style.color = "var(--red)";
+      if (targetStep !== null && targetStep !== currentStep) {
+        goToStep(targetStep);
+      }
+      message.textContent = errMsg;
+      message.scrollIntoView({ behavior: "smooth", block: "center" });
+    } catch (err) {
+      message.style.color = "var(--red)";
+      message.textContent = "Erreur réseau — vérifiez votre connexion et réessayez.";
+    } finally {
+      btnNext.disabled = false;
+      btnBack.style.pointerEvents = "";
+      updateNav();
+    }
+  });
+
+  goToStep(0);
+</script>
+</body>
+</html>

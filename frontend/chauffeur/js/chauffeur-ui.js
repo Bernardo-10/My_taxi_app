@@ -55,32 +55,38 @@
 /* ═══════════════════════════════════════════════
    ÉTAT GLOBAL
 ═══════════════════════════════════════════════ */
-const DASHBOARD_CACHE_KEY = "taxigo_driver_dashboard_history";
+function getDashboardCacheKey() {
+  // Sépare le cache par chauffeur pour éviter les fuites entre comptes
+  const id = (window.currentDriverId !== undefined && window.currentDriverId !== null)
+    ? String(window.currentDriverId)
+    : "anon";
+  return `taxigo_driver_dashboard_history_${id}`;
+}
 
 function loadDashboardCache() {
-    try {
-        const raw = localStorage.getItem(DASHBOARD_CACHE_KEY);
-        if (!raw) return [];
-        const parsed = JSON.parse(raw);
-        return Array.isArray(parsed) ? parsed : [];
-    } catch (e) {
-        return [];
-    }
+  try {
+    const raw = localStorage.getItem(getDashboardCacheKey());
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
 }
 
 function persistDashboardCache(rides) {
-    try {
-        localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(Array.isArray(rides) ? rides : []));
-    } catch (e) {
-        // stockage local indisponible : l’état live reste en mémoire, le cache
-        // n'est alors qu'un meilleur-effort pour la reprise hors ligne.
-    }
+  try {
+    localStorage.setItem(getDashboardCacheKey(), JSON.stringify(Array.isArray(rides) ? rides : []));
+  } catch (e) {
+    // stockage local indisponible : l'état live reste en mémoire, le cache
+    // n'est alors qu'un meilleur-effort pour la reprise hors ligne.
+  }
 }
 
 function hydrateDashboardFromCache() {
-    if (Array.isArray(dashboardHistory) && dashboardHistory.length > 0) return;
-    const cached = loadDashboardCache();
-    if (cached.length > 0) dashboardHistory = cached;
+  if (Array.isArray(dashboardHistory) && dashboardHistory.length > 0) return;
+  const cached = loadDashboardCache();
+  if (cached.length > 0) dashboardHistory = cached;
 }
 
 let map;

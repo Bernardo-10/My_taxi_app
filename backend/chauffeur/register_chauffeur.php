@@ -1,10 +1,26 @@
 <?php
 require_once __DIR__ . "/../config/auth.php";
 
-// Le formulaire d'inscription envoie un FormData (champs texte + fichiers
-// photo), donc on lit $_POST / $_FILES au lieu du JSON brut.
+// ── Inscription allégée (voir rapport friction-inscription-chauffeur.md) ──
+// Avant : ce fichier exigeait les 5 documents KYC (10 champs texte + 9
+// photos) dès l'inscription — un formulaire de 6 étapes avant même de
+// voir l'application. Le chauffeur ne pouvait pas savoir "ce qu'il y a
+// derrière" avant de s'être engagé dans tout ce travail.
+//
+// Maintenant : seuls les champs strictement nécessaires à la création
+// d'un compte (identité, mot de passe, véhicule) sont demandés ici. Le
+// compte est créé avec kyc_status = 'incomplete' (nouveau statut, à
+// ajouter à l'ENUM en base — voir rapport). La complétion des documents
+// se fait ensuite, connecté, via complete_chauffeur_profile.php — le
+// chauffeur voit le tableau de bord avant de s'engager dans les documents.
+//
+// set_driver_status.php bloque toujours la mise en ligne tant que
+// kyc_status !== 'approved' (ce comportement existait déjà et n'a pas
+// changé) : l'exigence documentaire n'est pas retirée, seulement déplacée
+// après la création du compte.
 
-// ── Champs de base ──────────────────────────────────────────────
+// Le formulaire envoie un FormData (compatibilité avec l'ancien flux),
+// donc on lit $_POST comme avant.
 $name = trim($_POST["name"] ?? "");
 $phone = trim($_POST["phone"] ?? "");
 $email = trim($_POST["email"] ?? "");
@@ -30,144 +46,6 @@ if ($password !== $passwordConfirm) {
     json_response(["status" => "error", "message" => "Les deux mots de passe ne correspondent pas"], 400);
 }
 
-// ── Documents : tous obligatoires (numéro + date d'expiration) ──
-// Contrairement à une version précédente, plus aucun document n'est
-// facultatif : la vérification (KYC) démarre dès l'inscription, mais
-// reste "pending" tant qu'un admin n'a pas validé (voir plus bas).
-$requiredTextFields = [
-    "cni_number"             => "Numéro de CNI",
-    "cni_expiration"         => "Date d'expiration de la CNI",
-    "carte_grise_immat"      => "Numéro d'immatriculation (carte grise)",
-    "carte_grise_expiration" => "Date d'expiration de la carte grise",
-    "permit_number"          => "Numéro de permis",
-    "permit_expiration"      => "Date d'expiration du permis",
-    "capacity_number"        => "Numéro de carte de capacité",
-    "capacity_expiration"    => "Date d'expiration de la carte de capacité",
-    "license_number"         => "Numéro de licence",
-    "license_expiration"     => "Date d'expiration de la licence",
-];
-
-$textValues = [];
-foreach ($requiredTextFields as $field => $label) {
-    $value = trim($_POST[$field] ?? "");
-    if ($value === "") {
-        json_response(["status" => "error", "message" => "Champ requis manquant : $label"], 400);
-    }
-    $textValues[$field] = $value;
-}
-
-// Valide qu'une date est au format Y-m-d et n'est pas déjà expirée —
-// un document déjà périmé au moment de l'inscription n'a pas de sens
-// à accepter tel quel.
-function validate_expiration_date(string $value, string $label): string {
-    $date = DateTime::createFromFormat("Y-m-d", $value);
-    $errors = DateTime::getLastErrors();
-    if (!$date || ($errors && ($errors["warning_count"] > 0 || $errors["error_count"] > 0))) {
-        json_response(["status" => "error", "message" => "Date invalide : $label"], 400);
-    }
-    $today = new DateTime("today");
-    if ($date < $today) {
-        json_response(["status" => "error", "message" => "Document expiré : $label"], 400);
-    }
-    return $date->format("Y-m-d");
-}
-
-$textValues["cni_expiration"]         = validate_expiration_date($textValues["cni_expiration"], "CNI");
-$textValues["carte_grise_expiration"] = validate_expiration_date($textValues["carte_grise_expiration"], "Carte grise");
-$textValues["permit_expiration"]      = validate_expiration_date($textValues["permit_expiration"], "Permis");
-$textValues["capacity_expiration"]    = validate_expiration_date($textValues["capacity_expiration"], "Carte de capacité");
-$textValues["license_expiration"]     = validate_expiration_date($textValues["license_expiration"], "Licence");
-
-// ── Photos : 9 fichiers obligatoires ──────────────────────────────
-$documentFields = [
-    "cni_photo_recto"      => "CNI (recto)",
-    "cni_photo_verso"      => "CNI (verso)",
-    "carte_grise_photo"    => "Carte grise",
-    "permit_photo_recto"   => "Permis de conduire (recto)",
-    "permit_photo_verso"   => "Permis de conduire (verso)",
-    "capacity_photo_recto" => "Carte de capacite (recto)",
-    "capacity_photo_verso" => "Carte de capacite (verso)",
-    "license_photo_recto"  => "Licence de chauffeur (recto)",
-    "license_photo_verso"  => "Licence de chauffeur (verso)"
-];
-
-$allowedMimes = [
-    "image/jpeg" => "jpg",
-    "image/png"  => "png",
-    "image/webp" => "webp"
-];
-$maxFileSize = 8 * 1024 * 1024; // 8 Mo
-
-function compress_uploaded_image(string $sourcePath, string $mimeType, string $destinationPath): bool {
-    if (!function_exists("imagecreatefromstring")) {
-        return move_uploaded_file($sourcePath, $destinationPath);
-    }
-
-    $sourceData = @file_get_contents($sourcePath);
-    if ($sourceData === false) {
-        return move_uploaded_file($sourcePath, $destinationPath);
-    }
-
-    $image = @imagecreatefromstring($sourceData);
-    if ($image === false) {
-        return move_uploaded_file($sourcePath, $destinationPath);
-    }
-
-    $width = imagesx($image);
-    $height = imagesy($image);
-    $maxSide = 1400;
-
-    if ($width > $maxSide || $height > $maxSide) {
-        $ratio = min($maxSide / $width, $maxSide / $height);
-        $newWidth = max(1, (int) round($width * $ratio));
-        $newHeight = max(1, (int) round($height * $ratio));
-
-        $resized = imagecreatetruecolor($newWidth, $newHeight);
-        imagecopyresampled($resized, $image, 0, 0, 0, 0, $newWidth, $newHeight, $width, $height);
-        imagedestroy($image);
-        $image = $resized;
-    }
-
-    $result = false;
-
-    if ($mimeType === "image/jpeg") {
-        $result = imagejpeg($image, $destinationPath, 75);
-    } elseif ($mimeType === "image/webp" && function_exists("imagewebp")) {
-        $result = imagewebp($image, $destinationPath, 75);
-    } elseif ($mimeType === "image/png" && function_exists("imagepng")) {
-        $result = imagepng($image, $destinationPath, 7);
-    }
-
-    imagedestroy($image);
-
-    if ($result === true) {
-        @unlink($sourcePath);
-        return true;
-    }
-
-    return move_uploaded_file($sourcePath, $destinationPath);
-}
-
-foreach ($documentFields as $field => $label) {
-    if (empty($_FILES[$field]) || $_FILES[$field]["error"] === UPLOAD_ERR_NO_FILE) {
-        json_response(["status" => "error", "message" => "Photo requise manquante : $label"], 400);
-    }
-    if ($_FILES[$field]["error"] !== UPLOAD_ERR_OK) {
-        json_response(["status" => "error", "message" => "Echec de l'envoi de la photo : $label"], 400);
-    }
-    if ($_FILES[$field]["size"] > $maxFileSize) {
-        json_response(["status" => "error", "message" => "Photo trop volumineuse (8 Mo max) : $label"], 400);
-    }
-
-    $finfo = finfo_open(FILEINFO_MIME_TYPE);
-    $mime = finfo_file($finfo, $_FILES[$field]["tmp_name"]);
-    finfo_close($finfo);
-
-    if (!isset($allowedMimes[$mime])) {
-        json_response(["status" => "error", "message" => "Format non supporte pour : $label (JPEG, PNG ou WEBP uniquement)"], 400);
-    }
-}
-
 // ── Compte déjà existant ? ────────────────────────────────────────
 $conn = db_connect();
 
@@ -184,27 +62,20 @@ if ($exists) {
 
 $passwordHash = password_hash($password, PASSWORD_DEFAULT);
 
-// ── Création du compte (documents/photos ajoutés juste après) ────
+// ── Création du compte : aucun document, kyc_status = 'incomplete' ──
+// Toutes les colonnes documents (cni_number, permit_number, etc.) restent
+// NULL jusqu'à la complétion du profil — c'est exactement l'état que
+// get_my_documents.php et l'admin savent déjà afficher comme "manquant".
 $stmt = $conn->prepare("
     INSERT INTO chauffeur (
         name, phone, email, password_hash, plate, car_brand, car_color,
-        cni_number, cni_expiration,
-        carte_grise_immat, carte_grise_expiration,
-        permit_number, permit_expiration,
-        capacity_number, capacity_expiration,
-        license_number, license_expiration,
         kyc_status, status
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'active')
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'incomplete', 'active')
 ");
 $stmt->bind_param(
-    "sssssssssssssssss",
-    $name, $phone, $email, $passwordHash, $plate, $carBrand, $carColor,
-    $textValues["cni_number"], $textValues["cni_expiration"],
-    $textValues["carte_grise_immat"], $textValues["carte_grise_expiration"],
-    $textValues["permit_number"], $textValues["permit_expiration"],
-    $textValues["capacity_number"], $textValues["capacity_expiration"],
-    $textValues["license_number"], $textValues["license_expiration"]
+    "sssssss",
+    $name, $phone, $email, $passwordHash, $plate, $carBrand, $carColor
 );
 
 if (!$stmt->execute()) {
@@ -215,73 +86,6 @@ if (!$stmt->execute()) {
 
 $driverId = $conn->insert_id;
 $stmt->close();
-
-// ── Stockage des photos : backend/uploads/chauffeur_docs/{driverId}/ ──
-// Dossier protege par .htaccess (Require all denied) place dans le
-// dossier parent backend/uploads/ : jamais d'acces direct par URL,
-// seul serve_document.php (admin) peut les servir.
-$uploadRoot = __DIR__ . "/../uploads/chauffeur_docs/" . $driverId;
-
-if (!is_dir($uploadRoot) && !mkdir($uploadRoot, 0750, true)) {
-    $conn->query("DELETE FROM chauffeur WHERE id = " . (int) $driverId);
-    $conn->close();
-    json_response(["status" => "error", "message" => "Impossible de creer le dossier des documents"], 500);
-}
-
-$storedPaths = [
-    "cni_photo_recto" => null, "cni_photo_verso" => null,
-    "carte_grise_photo" => null,
-    "permit_photo_recto" => null, "permit_photo_verso" => null,
-    "capacity_photo_recto" => null, "capacity_photo_verso" => null,
-    "license_photo_recto" => null, "license_photo_verso" => null
-];
-
-foreach ($documentFields as $field => $label) {
-    $finfo = finfo_open(FILEINFO_MIME_TYPE);
-    $mime = finfo_file($finfo, $_FILES[$field]["tmp_name"]);
-    finfo_close($finfo);
-    $ext = $allowedMimes[$mime];
-
-    $filename = $field . "_" . bin2hex(random_bytes(6)) . "." . $ext;
-    $destination = $uploadRoot . "/" . $filename;
-
-    if (!compress_uploaded_image($_FILES[$field]["tmp_name"], $mime, $destination)) {
-        // Nettoyage en cas d'echec partiel : on retire le chauffeur et
-        // les fichiers deja deplaces pour ne rien laisser d'incoherent.
-        foreach ($storedPaths as $path) {
-            if ($path !== null) {
-                @unlink(__DIR__ . "/../uploads/chauffeur_docs/" . $driverId . "/" . basename($path));
-            }
-        }
-        $conn->query("DELETE FROM chauffeur WHERE id = " . (int) $driverId);
-        $conn->close();
-        json_response(["status" => "error", "message" => "Echec de l'enregistrement de la photo : $label"], 500);
-    }
-
-    // Chemin relatif stocke en base (jamais le chemin absolu du serveur)
-    $storedPaths[$field] = "chauffeur_docs/$driverId/$filename";
-}
-
-$updateStmt = $conn->prepare("
-    UPDATE chauffeur SET
-        cni_photo_recto = ?, cni_photo_verso = ?,
-        carte_grise_photo = ?,
-        permit_photo_recto = ?, permit_photo_verso = ?,
-        capacity_photo_recto = ?, capacity_photo_verso = ?,
-        license_photo_recto = ?, license_photo_verso = ?
-    WHERE id = ?
-");
-$updateStmt->bind_param(
-    "sssssssssi",
-    $storedPaths["cni_photo_recto"], $storedPaths["cni_photo_verso"],
-    $storedPaths["carte_grise_photo"],
-    $storedPaths["permit_photo_recto"], $storedPaths["permit_photo_verso"],
-    $storedPaths["capacity_photo_recto"], $storedPaths["capacity_photo_verso"],
-    $storedPaths["license_photo_recto"], $storedPaths["license_photo_verso"],
-    $driverId
-);
-$updateStmt->execute();
-$updateStmt->close();
 
 // ── Session ────────────────────────────────────────────────────
 session_regenerate_id(true);
@@ -296,7 +100,7 @@ $conn->close();
 
 json_response([
     "status" => "success",
-    "message" => "Compte chauffeur cree, documents recus. Verification en cours.",
+    "message" => "Compte chauffeur cree. Completez votre profil pour passer en ligne.",
     "session_token" => $sessionToken,
     "driver" => [
         "id" => (int) $driverId,
@@ -306,7 +110,7 @@ json_response([
         "plate" => $plate,
         "car_brand" => $carBrand,
         "car_color" => $carColor,
-        "kyc_status" => "pending"
+        "kyc_status" => "incomplete"
     ]
 ]);
 ?>

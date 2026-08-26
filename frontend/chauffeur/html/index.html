@@ -41,6 +41,21 @@
     </div>
   </header>
 
+  <!-- Bandeau "profil incomplet" — masqué par défaut, affiché par
+       initUserHeader() (chauffeur-api.js) uniquement quand kyc_status
+       === 'incomplete'. Ne concerne que les comptes créés via la nouvelle
+       inscription allégée ; les chauffeurs déjà inscrits avant ce
+       changement ont kyc_status = pending/approved/rejected et ne le
+       voient jamais. Voir rapport friction-inscription-chauffeur.md. -->
+  <a href="/chauffeur/complete-profile" class="kyc-banner hidden" id="kycBanner">
+    <i class="ti ti-file-alert" aria-hidden="true"></i>
+    <div class="kyc-banner-text">
+      <div class="kyc-banner-title">Complétez votre profil</div>
+      <div class="kyc-banner-sub">Ajoutez vos documents pour pouvoir passer en ligne</div>
+    </div>
+    <i class="ti ti-chevron-right" aria-hidden="true"></i>
+  </a>
+
   <!-- FAB rafraîchir (visible sur onglet carte) -->
   <button class="map-fab" id="refreshFab" aria-label="Rafraîchir">
     <i class="ti ti-refresh" aria-hidden="true"></i>
