@@ -763,19 +763,6 @@ tbody tr:hover td { background: var(--c-bg); }
    agir dessus : c'est au chauffeur de compléter son dossier. */
 .kyc-status-pill.kyc-incomplete { background: var(--c-gray-bg); color: var(--c-text-3); }
 
-/* Pastille secondaire "Incomplet" (liste + détail) — utilisée uniquement
-   quand incomplete=1 mais que kyc_status n'a pas encore été aligné
-   dessus (voir migration 20260826_fix_kyc_status_incomplete.sql). */
-.kyc-incomplete-pill {
-  background: var(--c-gray-bg);
-  color: var(--c-text-3);
-  font-size: 11px;
-  font-weight: 700;
-  padding: 3px 9px;
-  border-radius: 10px;
-  white-space: nowrap;
-}
-
 /* ── Grille de documents dans la carte ───────────────── */
 .kyc-docs-grid {
   display: grid;
