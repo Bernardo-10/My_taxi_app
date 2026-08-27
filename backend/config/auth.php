@@ -201,6 +201,17 @@ function sync_stale_drivers_offline($conn) {
     ");
 }
 
+/**
+ * Blocage par solde (< 500 FCFA) — voir plan "Blocage par solde".
+ * Seuil centralisé ici pour éviter les hardcodes divergents dans
+ * accept_ride.php / set_driver_status.php / get_rides.php.
+ */
+define("WALLET_MIN_BALANCE_FCFA", 500);
+
+function is_wallet_balance_blocked($balanceFcfa) {
+    return (float) $balanceFcfa < WALLET_MIN_BALANCE_FCFA;
+}
+
 function json_response($payload, $statusCode = 200) {
     http_response_code($statusCode);
     header("Content-Type: application/json; charset=utf-8");

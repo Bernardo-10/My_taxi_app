@@ -29,7 +29,7 @@ if ($isOnline === null) {
 try {
     $conn = db_connect();
 
-    $checkStmt = $conn->prepare("SELECT status, kyc_status FROM chauffeur WHERE id = ? LIMIT 1");
+    $checkStmt = $conn->prepare("SELECT status, kyc_status, wallet_balance_fcfa FROM chauffeur WHERE id = ? LIMIT 1");
     if (!$checkStmt) {
         throw new Exception('Erreur de préparation : ' . $conn->error);
     }
@@ -75,6 +75,29 @@ try {
             'message' => $message,
             'kyc_status' => $driver['kyc_status']
         ], 403);
+    }
+
+    // Blocage par solde : un chauffeur sous le seuil ne peut pas se
+    // remettre en ligne, SAUF s'il a déjà une course active en cours
+    // (on ne coupe jamais un chauffeur qui est en train de rouler).
+    if ($isOnline && is_wallet_balance_blocked($driver['wallet_balance_fcfa'] ?? 0)) {
+        $activeStmt = $conn->prepare("
+            SELECT id FROM rides
+            WHERE driver_id = ? AND status IN ('accepted', 'arrived', 'started')
+            LIMIT 1
+        ");
+        $activeStmt->bind_param('i', $driverId);
+        $activeStmt->execute();
+        $hasActiveRide = $activeStmt->get_result()->num_rows > 0;
+        $activeStmt->close();
+
+        if (!$hasActiveRide) {
+            $conn->close();
+            json_response([
+                'status' => 'error',
+                'message' => 'Votre solde est insuffisant (< ' . WALLET_MIN_BALANCE_FCFA . ' FCFA). Rechargez votre compte pour pouvoir vous mettre en ligne.'
+            ], 402);
+        }
     }
 
     $stmt = $conn->prepare("

@@ -13,7 +13,7 @@ $conn = db_connect();
 // que la vérification doit se répéter pour de vrai.
 $kycCheckStmt = $conn->prepare("
     SELECT is_online, cni_expiration, carte_grise_expiration, permit_expiration,
-           capacity_expiration, license_expiration
+           capacity_expiration, license_expiration, wallet_balance_fcfa
     FROM chauffeur WHERE id = ? LIMIT 1
 ");
 $kycCheckStmt->bind_param("i", $driverId);
@@ -53,6 +53,24 @@ if ($driverRow && (int) $driverRow["is_online"] === 1) {
     }
 }
 
+// Blocage par solde (< 500 FCFA) : contrairement au blocage KYC ci-dessus,
+// on ne force JAMAIS is_online = 0 ici — un chauffeur en course active ne
+// doit pas être coupé. On se contente de ne pas lui envoyer de nouvelles
+// courses 'pending' et de signaler l'état via en-tête, comme pour le KYC.
+$balanceBlocked = $driverRow
+    && (int) $driverRow["is_online"] === 1
+    && is_wallet_balance_blocked($driverRow["wallet_balance_fcfa"] ?? 0);
+
+if ($balanceBlocked) {
+    header("X-Balance-Blocked: 1");
+}
+
+$pendingClause = $balanceBlocked
+    ? "(1 = 0)" // solde insuffisant : aucune nouvelle course pending envoyée
+    : "(status = 'pending' AND id NOT IN (
+              SELECT ride_id FROM ride_refusals WHERE driver_id = ?
+          ))";
+
 $stmt = $conn->prepare("
     SELECT
         id, user_id, pickup, destination,
@@ -63,14 +81,17 @@ $stmt = $conn->prepare("
         accepted_at, arrived_at, started_at, completed_at, cancelled_at,
         problem_description
     FROM rides
-    WHERE (status = 'pending' AND id NOT IN (
-              SELECT ride_id FROM ride_refusals WHERE driver_id = ?
-          ))
+    WHERE $pendingClause
        OR (driver_id = ? AND status IN ('accepted', 'arrived', 'started', 'completed'))
        OR (driver_id = ? AND status = 'cancelled_client' AND cancelled_at >= NOW() - INTERVAL 1 DAY)
     ORDER BY created_at DESC
 ");
-$stmt->bind_param("iii", $driverId, $driverId, $driverId);
+
+if ($balanceBlocked) {
+    $stmt->bind_param("ii", $driverId, $driverId);
+} else {
+    $stmt->bind_param("iii", $driverId, $driverId, $driverId);
+}
 $stmt->execute();
 $result = $stmt->get_result();
 

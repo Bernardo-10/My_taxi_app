@@ -197,6 +197,13 @@ async function checkNewRides() {
             showToast(`${docsText} expiré(s). Renouvelez-le(s) dans "Mes documents" pour continuer à recevoir des courses.`, "error", 6000);
         }
 
+        // Blocage par solde (< 500 FCFA) : contrairement au blocage KYC
+        // ci-dessus, on ne force PAS le passage hors ligne ici — un
+        // chauffeur en course active reste en ligne normalement. On
+        // expose juste un flag lu par renderPendingRides() pour afficher
+        // le bon message à la place de "Aucune course en attente".
+        window.__taxigo_balanceBlocked = !!res.headers.get("X-Balance-Blocked");
+
         const rides = await res.json();
         const freshRides = Array.isArray(rides) ? rides : [];
 

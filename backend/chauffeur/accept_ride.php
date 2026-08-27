@@ -24,7 +24,7 @@ if ($driverLat === null || $driverLng === null) {
 
 $conn = db_connect();
 
-$driverStmt = $conn->prepare("SELECT name, plate FROM chauffeur WHERE id = ? AND status = 'active' AND is_online = 1");
+$driverStmt = $conn->prepare("SELECT name, plate, wallet_balance_fcfa FROM chauffeur WHERE id = ? AND status = 'active' AND is_online = 1");
 $driverStmt->bind_param("i", $driverId);
 $driverStmt->execute();
 $driver = $driverStmt->get_result()->fetch_assoc();
@@ -33,6 +33,17 @@ $driverStmt->close();
 if (!$driver) {
     $conn->close();
     json_response(["status" => "error", "message" => "Chauffeur introuvable ou inactif"], 403);
+}
+
+// Blocage par solde : un chauffeur sous le seuil ne peut pas accepter de
+// nouvelle course. Vérifié ici côté serveur (source de vérité) — le
+// filtrage de get_rides.php n'est qu'une aide UX côté client.
+if (is_wallet_balance_blocked($driver["wallet_balance_fcfa"] ?? 0)) {
+    $conn->close();
+    json_response([
+        "status" => "error",
+        "message" => "Solde insuffisant pour accepter une course. Rechargez votre compte pour continuer."
+    ], 402);
 }
 
 $checkStmt = $conn->prepare("SELECT id, status FROM rides WHERE id = ?");

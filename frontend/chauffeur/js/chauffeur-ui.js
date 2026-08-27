@@ -1303,6 +1303,18 @@ function renderPendingRides() {
     container.innerHTML = "";
 
     if (pending.length === 0) {
+        // Blocage par solde (< 500 FCFA) : distinct du cas "pas de course
+        // dispo pour l'instant". Le flag est positionné par checkNewRides()
+        // (chauffeur-api.js) à partir de l'en-tête X-Balance-Blocked.
+        if (isOnline && window.__taxigo_balanceBlocked) {
+            container.appendChild(emptyState(
+                "💳",
+                "Votre solde est négatif",
+                "Solde < 500 FCFA — rechargez pour recevoir des courses"
+            ));
+            return;
+        }
+
         container.appendChild(emptyState(
             "🚦",
             "Aucune course en attente",
