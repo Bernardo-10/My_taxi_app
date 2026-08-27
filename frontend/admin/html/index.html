@@ -326,7 +326,7 @@ window.refreshDriversOnMap = async function() {
               <td class="text-mono">${d.plate}</td>
               <td>${d.car_brand || "—"} ${d.car_color || ""}</td>
               <td>${d.phone || "—"}</td>
-              <td>${d.course_active > 0
+              <td>${d.courses_started >= 5
                 ? '<span class="topbar-badge badge-amber">En course</span>'
                 : '<span class="topbar-badge badge-green">Disponible</span>'}</td>
               <td style="color:var(--c-text-3);font-size:12px">${formatDate(d.update_position_driver)}</td>

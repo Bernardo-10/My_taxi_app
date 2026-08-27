@@ -13,7 +13,13 @@ $stmt = $conn->prepare("
                FROM rides r
                WHERE r.driver_id = c.id
                  AND r.status IN ('accepted','arrived','started')
-           ) AS course_active
+           ) AS course_active,
+           (
+               SELECT COUNT(*)
+               FROM rides r2
+               WHERE r2.driver_id = c.id
+                 AND r2.status = 'started'
+           ) AS courses_started
     FROM chauffeur c
     WHERE c.is_online = 1
       AND c.driver_lat IS NOT NULL
@@ -28,6 +34,10 @@ $drivers = [];
 while ($row = $result->fetch_assoc()) {
     $row["id"]           = (int)$row["id"];
     $row["course_active"]= (int)$row["course_active"];
+    // Compteur PAR chauffeur : nombre de ses courses actuellement au
+    // statut 'started' uniquement (pas accepted/arrived). Sert au badge
+    // orange sur la carte temps réel admin — seuil >= 5, par chauffeur.
+    $row["courses_started"] = (int)$row["courses_started"];
     $row["driver_lat"]   = (float)$row["driver_lat"];
     $row["driver_lng"]   = (float)$row["driver_lng"];
     $drivers[] = $row;

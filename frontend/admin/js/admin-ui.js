@@ -450,7 +450,9 @@ async function refreshDriversOnMap() {
         seen.add(driver.id);
         const lat = driver.driver_lat;
         const lng = driver.driver_lng;
-        const isActive   = driver.course_active > 0;
+        // Par chauffeur : orange dès que CE chauffeur a 5 courses ou plus
+        // au statut 'started' (pas accepted/arrived).
+        const isActive   = driver.courses_started >= 5;
         const iconHtml   = `<div class="driver-pin ${isActive ? 'active' : 'available'}">🚕</div>`;
 
         const popupHtml = `
@@ -459,7 +461,7 @@ async function refreshDriversOnMap() {
               <span style="color:#6b7280;font-size:12px">${driver.plate} · ${driver.car_brand || ''} ${driver.car_color || ''}</span><br>
               <span style="color:#6b7280;font-size:12px">📱 ${driver.phone || '—'}</span><br>
               <div style="margin-top:6px">
-                ${driver.course_active > 0
+                ${driver.courses_started >= 5
                     ? `<span style="background:#f97316;color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">En course</span>`
                     : `<span style="background:#16a34a;color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">Disponible</span>`
                 }
