@@ -69,7 +69,7 @@
       <button class="nav-item" data-section="wallets">
         <i class="ti ti-wallet"></i>
         <span>Portefeuille chauffeurs</span>
-        <span class="nav-badge" id="navWalletsBadge"></span>
+        <span class="nav-item-badge" id="navWalletsBadge" style="display:none">0</span>
       </button>
     </nav>
 
@@ -224,17 +224,17 @@
             <button class="kyc-filter-btn active" data-kyc-filter="pending">
               En attente <span class="kyc-filter-count" id="kycCountPending">0</span>
             </button>
+            <button class="kyc-filter-btn" data-kyc-filter="renewal">
+              Renouvellement <span class="kyc-filter-count" id="kycCountRenewal">0</span>
+            </button>
             <button class="kyc-filter-btn" data-kyc-filter="approved">
               Approuvés <span class="kyc-filter-count" id="kycCountApproved">0</span>
-            </button>
-            <button class="kyc-filter-btn" data-kyc-filter="rejected">
-              Rejetés <span class="kyc-filter-count" id="kycCountRejected">0</span>
             </button>
             <button class="kyc-filter-btn" data-kyc-filter="incomplete">
               Incomplets <span class="kyc-filter-count" id="kycCountIncomplete">0</span>
             </button>
-            <button class="kyc-filter-btn" data-kyc-filter="renewal">
-              Renouvellement <span class="kyc-filter-count" id="kycCountRenewal">0</span>
+            <button class="kyc-filter-btn" data-kyc-filter="rejected">
+              Rejetés <span class="kyc-filter-count" id="kycCountRejected">0</span>
             </button>
             <button class="kyc-filter-btn" data-kyc-filter="">
               Tous <span class="kyc-filter-count" id="kycCountAll">0</span>

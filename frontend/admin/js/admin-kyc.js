@@ -20,6 +20,7 @@ const KycState = {
     filter: "pending",
     chauffeurs: [],
     interval: null,
+    badgeInterval: null,
     view: "list",        // "list" | "detail"
     selectedId: null
 };
@@ -68,6 +69,34 @@ async function loadKyc() {
 
     if (KycState.interval) clearInterval(KycState.interval);
     KycState.interval = setInterval(refreshKyc, 30000);
+}
+
+// Badge de la sidebar ("navKycBadge") : indépendant de la section affichée.
+// Avant ce correctif, seul loadKyc() (déclenché en entrant dans la section
+// "Vérification chauffeur") mettait à jour le badge — donc au chargement du
+// dashboard, ou après un F5 sur une autre section, le badge restait vide
+// jusqu'à la première visite de la section. Ici, même principe que
+// initGlobalProblemWatch()/checkClientProblems() dans admin-ui.js pour
+// navProblemsBadge : un appel léger (pas de rendu de liste), au chargement
+// puis en polling, peu importe la section active.
+async function refreshKycBadge() {
+    try {
+        const all = await fetchKycChauffeurs("");
+        // On ne réécrit pas KycState.chauffeurs ici si la section KYC est
+        // déjà active : loadKyc()/refreshKyc() s'en chargent avec leur
+        // propre cycle, pas la peine de dupliquer le travail de rendu.
+        const section = document.getElementById("section-kyc");
+        const kycSectionActive = section && section.classList.contains("active");
+        if (!kycSectionActive) updateKycCounts(all);
+    } catch (e) {
+        // silencieux — prochain cycle réessaiera
+    }
+}
+
+function initKycBadgeWatch() {
+    refreshKycBadge();
+    if (KycState.badgeInterval) clearInterval(KycState.badgeInterval);
+    KycState.badgeInterval = setInterval(refreshKycBadge, 30000);
 }
 
 async function refreshKyc() {
@@ -669,4 +698,5 @@ function escapeHtml(str) {
 
 document.addEventListener("DOMContentLoaded", () => {
     initKycFilters();
+    initKycBadgeWatch();
 });

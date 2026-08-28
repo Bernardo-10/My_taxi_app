@@ -28,7 +28,8 @@ const AdminState = {
 
     // Portefeuille
     walletsFilter: { chauffeur_id: 0, type: '', status: '' },
-    walletsInterval: null
+    walletsInterval: null,
+    walletsBadgeInterval: null // badge sidebar (navWalletsBadge), indépendant de la section active
 };
 
 /* ── DOM ready ────────────────────────────────────────────── */
@@ -42,6 +43,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     initSidebarMobile();
     initLogout();
     initGlobalProblemWatch();
+    initWalletsBadgeWatch();
     showSection("dashboard");
 });
 
@@ -171,6 +173,34 @@ function initGlobalProblemWatch() {
     checkClientProblems();
     if (AdminState.problemsInterval) clearInterval(AdminState.problemsInterval);
     AdminState.problemsInterval = setInterval(checkClientProblems, 15000);
+}
+
+// Badge "Portefeuille chauffeurs" (navWalletsBadge) : nombre de recharges
+// en attente, tous chauffeurs confondus. Même principe que
+// initGlobalProblemWatch()/navProblemsBadge et refreshKycBadge()/navKycBadge
+// (admin-kyc.js) : indépendant de la section affichée, actualisé dès le
+// chargement du dashboard puis en polling — pas seulement en entrant dans
+// la section "Portefeuille". list_wallet_transactions.php supporte déjà
+// le filtre type=recharge&status=pending ; limit=1 suffit, seul
+// pagination.total nous intéresse ici (pas de re-téléchargement de la
+// liste complète juste pour un chiffre).
+function initWalletsBadgeWatch() {
+    refreshWalletsBadge();
+    if (AdminState.walletsBadgeInterval) clearInterval(AdminState.walletsBadgeInterval);
+    AdminState.walletsBadgeInterval = setInterval(refreshWalletsBadge, 30000);
+}
+
+async function refreshWalletsBadge() {
+    try {
+        const data = await fetchWalletTransactions({ type: "recharge", status: "pending", limit: 1 });
+        const count = (data.pagination && data.pagination.total) || 0;
+        const badge = document.getElementById("navWalletsBadge");
+        if (!badge) return;
+        badge.textContent = count;
+        badge.style.display = count > 0 ? "inline-block" : "none";
+    } catch (e) {
+        // silencieux — prochain cycle réessaiera
+    }
 }
 
 async function checkClientProblems() {
