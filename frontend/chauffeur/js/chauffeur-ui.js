@@ -1326,6 +1326,70 @@ function renderPendingRides() {
     pending.forEach(ride => container.appendChild(createRideCard(ride)));
 }
 
+/* ─── Tri des courses actives par proximité chauffeur ───
+   Le re-tri n'est déclenché que si la position GPS du chauffeur a bougé
+   de façon significative (>50m) OU si l'ensemble des courses actives a
+   changé (ajout/retrait). Sans ce garde-fou, updateRideLists() tournant
+   à chaque poll re-trierait (et donc ferait bouger visuellement) les
+   cartes en continu — dangereux pour un chauffeur au volant. */
+let lastSortDriverPos  = null;   // { lat, lng } utilisée lors du dernier tri
+let lastSortActiveKey  = null;   // signature des ids de courses actives triées
+let activeRideOrder    = new Map(); // rideId -> distance utilisée pour le tri
+
+function getActiveSortKey(rides) {
+    // Inclut le statut (pas seulement l'id) : un changement de statut
+    // (ex. arrived → started) doit aussi déclencher un retri, car la
+    // cible de distance change (pickup → destination).
+    return rides
+        .map(r => `${r.id}:${r.status}`)
+        .sort()
+        .join(",");
+}
+
+function shouldResortActiveCourses(driverPos, activeKey) {
+    if (lastSortActiveKey === null) return true;
+    if (activeKey !== lastSortActiveKey) return true;
+    if (!driverPos) return false; // pas de position fraîche : on garde l'ordre existant
+    if (!lastSortDriverPos) return true;
+    return getDistanceFromLatLng(
+        lastSortDriverPos.lat, lastSortDriverPos.lng,
+        driverPos.lat, driverPos.lng
+    ) > 0.05; // 50 mètres
+}
+
+function recomputeActiveRideOrder(active, driverPos) {
+    activeRideOrder = new Map();
+    if (!driverPos) return; // fallback : pas de position → ordre créé (created_at) inchangé
+
+    active.forEach(ride => {
+        let dist;
+        if (ride.status === "started") {
+            const destLat = parseFloat(ride.destination_lat);
+            const destLng = parseFloat(ride.destination_lng);
+            dist = (isNaN(destLat) || isNaN(destLng))
+                ? Infinity
+                : getDistanceFromLatLng(driverPos.lat, driverPos.lng, destLat, destLng);
+        } else {
+            // accepted / arrived → distance au point de pickup
+            const pLat = parseFloat(ride.pickup_lat);
+            const pLng = parseFloat(ride.pickup_lng);
+            dist = (isNaN(pLat) || isNaN(pLng))
+                ? Infinity
+                : getDistanceFromLatLng(driverPos.lat, driverPos.lng, pLat, pLng);
+        }
+        activeRideOrder.set(ride.id, dist);
+    });
+}
+
+function sortByActiveRideOrder(list) {
+    if (activeRideOrder.size === 0) return list; // pas de position connue : ordre d'origine (created_at)
+    return [...list].sort((a, b) => {
+        const da = activeRideOrder.has(a.id) ? activeRideOrder.get(a.id) : Infinity;
+        const db = activeRideOrder.has(b.id) ? activeRideOrder.get(b.id) : Infinity;
+        return da - db;
+    });
+}
+
 function renderActiveCourses() {
     const container = document.getElementById("activeRidesList");
     const subEl     = document.getElementById("activeCoursesSub");
@@ -1335,10 +1399,24 @@ function renderActiveCourses() {
         ? allRides.filter(r => r.status === "accepted" || r.status === "arrived" || r.status === "started")
         : [];
 
-    let filtered = active;
-    if (activeFilter === "accepted") filtered = active.filter(r => r.status === "accepted");
-    if (activeFilter === "arrived")  filtered = active.filter(r => r.status === "arrived");
-    if (activeFilter === "started")  filtered = active.filter(r => r.status === "started");
+    // Position GPS courante (alimentée par onGpsPosition → cacheGpsPosition
+    // dans chauffeur-api.js ; lastKnownPos est une variable top-level de ce
+    // même document, donc directement lisible ici).
+    const driverPos = (typeof lastKnownPos !== "undefined" && lastKnownPos)
+        ? { lat: lastKnownPos.lat, lng: lastKnownPos.lng }
+        : null;
+    const activeKey = getActiveSortKey(active);
+
+    if (shouldResortActiveCourses(driverPos, activeKey)) {
+        recomputeActiveRideOrder(active, driverPos);
+        lastSortDriverPos = driverPos;
+        lastSortActiveKey = activeKey;
+    }
+
+    let filtered = sortByActiveRideOrder(active);
+    if (activeFilter === "accepted") filtered = filtered.filter(r => r.status === "accepted");
+    if (activeFilter === "arrived")  filtered = filtered.filter(r => r.status === "arrived");
+    if (activeFilter === "started")  filtered = filtered.filter(r => r.status === "started");
 
     if (subEl) {
         subEl.textContent = active.length > 0
