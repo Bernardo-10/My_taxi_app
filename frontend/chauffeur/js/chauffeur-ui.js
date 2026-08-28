@@ -886,6 +886,60 @@ function renderDocumentsList(documents, container) {
   container.querySelectorAll("[data-doc-edit]").forEach(btn => {
     btn.addEventListener("click", () => openRenewalModal(btn.dataset.docEdit, documents[btn.dataset.docEdit]));
   });
+
+  // Zoom sur les miniatures : clic → image en grand dans une lightbox
+  // (auto-suffisante, cf. confirm-modal.js). Sans ça, un tap sur .doc-thumb
+  // ne fait rien — les photos KYC ne sont pourtant lisibles qu'en grand
+  // sur mobile (numéro de série, date, petits caractères).
+  container.querySelectorAll(".doc-thumb").forEach(img => {
+    img.addEventListener("click", () => openDocPhotoLightbox(img.src, img.alt));
+  });
+}
+
+// Lightbox minimale pour zoomer une photo de document. Injecte son propre
+// CSS une seule fois (même principe que confirm-modal.js) pour ne dépendre
+// d'aucune règle déjà présente dans chauffeur.css.
+function openDocPhotoLightbox(src, alt) {
+  const STYLE_ID = "tg-doc-lightbox-styles";
+  if (!document.getElementById(STYLE_ID)) {
+    const style = document.createElement("style");
+    style.id = STYLE_ID;
+    style.textContent = `
+.tg-doc-lightbox-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.85);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  z-index: 100000;
+}
+.tg-doc-lightbox-overlay img {
+  max-width: 100%; max-height: 100%;
+  border-radius: 8px;
+  touch-action: pinch-zoom;
+}
+.tg-doc-lightbox-close {
+  position: absolute; top: 14px; right: 16px;
+  width: 40px; height: 40px; border-radius: 50%;
+  background: rgba(255,255,255,.15); color: #fff;
+  border: none; font-size: 22px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+}
+`;
+    document.head.appendChild(style);
+  }
+
+  const overlay = document.createElement("div");
+  overlay.className = "tg-doc-lightbox-overlay";
+  overlay.innerHTML = `
+    <button class="tg-doc-lightbox-close" type="button" aria-label="Fermer">&times;</button>
+    <img src="${src}" alt="${alt || ""}" />
+  `;
+  overlay.addEventListener("click", e => {
+    if (e.target === overlay || e.target.closest(".tg-doc-lightbox-close")) {
+      overlay.remove();
+    }
+  });
+  document.body.appendChild(overlay);
 }
 
 function renderDocumentCard(key, meta, doc) {

@@ -1066,6 +1066,7 @@ html, body {
   width: 64px; height: 44px; border-radius: var(--radius-sm);
   object-fit: cover; border: .5px solid var(--c-border);
   background: var(--c-surface2);
+  cursor: pointer; /* affordance : clic pour zoomer (openDocPhotoLightbox) */
 }
 
 .doc-pending-banner {
