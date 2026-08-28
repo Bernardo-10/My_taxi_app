@@ -17,7 +17,7 @@
 <link rel="apple-touch-icon" href="/chauffeur/icons/chauffeur-180.png" />
 
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -32,7 +32,7 @@
   --accent:     #f97316;
   --accent-d:   #ea580c;
   --red:        #dc2626;
-  --font-head:  'Syne', sans-serif;
+  --font-head:  'DM Sans', system-ui, sans-serif;
   --font-body:  'DM Sans', system-ui, sans-serif;
   --safe-top:   env(safe-area-inset-top, 0px);
   --safe-bot:   env(safe-area-inset-bottom, 0px);
@@ -61,11 +61,17 @@ body {
 
 .brand {
   font-family: var(--font-head);
-  font-size: 26px;
-  font-weight: 800;
-  letter-spacing: -.4px;
+  font-size: 27px;            /* Augmenté de 27px à 29px pour compenser la petite hauteur de DM Sans */
+  font-weight: 800;           /* Conservé comme demandé */
+  letter-spacing: 0.5px;      /* Passé de -.4px à +0.5px pour étendre l'espace, typique du style étalé de Syne */
   color: var(--ink);
   text-decoration: none;
+
+  /* ─── PROPRIÉTÉS AJOUTÉES POUR SIMULER 'SYNE' ─── */
+  display: inline-block;      /* Nécessaire pour appliquer la transformation de largeur */
+  transform: scaleX(1.25);    /* Étire horizontalement DM Sans de 25% (Syne à 800 est extrêmement large) */ 
+  /* Optionnel : Un léger contour invisible pour booster le gras si le 800 de DM Sans reste trop fin */
+  -webkit-text-stroke: 0.3px currentColor; 
 }
 .brand span { color: var(--accent); }
 

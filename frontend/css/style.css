@@ -25,8 +25,8 @@
   --nav-h:        68px;
   --sheet-gap:    12px;
   --sheet-peek-h: 100px;
-  --font-head:    'Syne', sans-serif;
-  --font-body:    'DM Sans', sans-serif;
+  --font-head:    'DM Sans', system-ui, sans-serif;
+  --font-body:    'DM Sans', system-ui, sans-serif;
   --safe-bottom:  env(safe-area-inset-bottom, 0px);
   --safe-top:     env(safe-area-inset-top, 0px);
 }
