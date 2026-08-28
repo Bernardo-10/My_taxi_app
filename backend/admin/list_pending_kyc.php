@@ -24,18 +24,16 @@ $sql = "
 
 $params = [];
 $types = "";
-if (in_array($statusFilter, ["pending", "approved", "rejected", "incomplete"])) {
+if (in_array($statusFilter, ["pending", "approved", "rejected"])) {
     $sql .= " WHERE kyc_status = ?";
     $params[] = $statusFilter;
     $types .= "s";
 }
 
-// File d'attente : les dossiers réellement soumis et en attente
-// ('pending') remontent en priorité — ce sont ceux qui attendent une
-// action admin. Les dossiers 'incomplete' (inscription non finalisée par
-// le chauffeur lui-même) ne bloquent personne d'autre, donc triés après,
-// mais toujours avant approved/rejected qui n'ont plus besoin d'attention.
-$sql .= " ORDER BY FIELD(kyc_status, 'pending', 'incomplete', 'rejected', 'approved'), created_at ASC";
+// File d'attente : les plus anciens en attente remontent en premier
+// (c'est ceux qui attendent depuis le plus longtemps qu'il faut traiter
+// en priorité), les autres statuts triés par date de revue récente.
+$sql .= " ORDER BY (kyc_status = 'pending') DESC, created_at ASC";
 
 $stmt = $conn->prepare($sql);
 if ($params) {
@@ -43,6 +41,45 @@ if ($params) {
 }
 $stmt->execute();
 $result = $stmt->get_result();
+
+// ── Renouvellements en cours, pour tous les chauffeurs en une seule
+// requête (évite le N+1) — seuls 'pending'/'rejected' comptent, un
+// renouvellement 'approved' a déjà été copié dans les colonnes live
+// et n'a plus besoin d'être signalé à l'admin. Seule la ligne la plus
+// récente par (chauffeur, document_group) est retenue, au cas où
+// plusieurs resoumissions se seraient accumulées dans l'historique.
+$renewalsByChauffeur = [];
+$renewalResult = $conn->query("
+    SELECT id, chauffeur_id, document_group, number, expiration,
+           photo_recto, photo_verso, status, rejection_reason, submitted_at
+    FROM chauffeur_document_renewals
+    WHERE status IN ('pending', 'rejected')
+    ORDER BY submitted_at DESC
+");
+while ($r = $renewalResult->fetch_assoc()) {
+    $cid = (int) $r["chauffeur_id"];
+    $renewalsByChauffeur[$cid] = $renewalsByChauffeur[$cid] ?? [];
+
+    // Une seule entrée par document_group pour ce chauffeur (la plus
+    // récente, grâce au ORDER BY submitted_at DESC ci-dessus).
+    $alreadyHasGroup = false;
+    foreach ($renewalsByChauffeur[$cid] as $existing) {
+        if ($existing["document_group"] === $r["document_group"]) { $alreadyHasGroup = true; break; }
+    }
+    if ($alreadyHasGroup) continue;
+
+    $renewalsByChauffeur[$cid][] = [
+        "id" => (int) $r["id"],
+        "document_group" => $r["document_group"],
+        "number" => $r["number"],
+        "expiration" => $r["expiration"],
+        "photo_recto_url" => !empty($r["photo_recto"]) ? "/backend/admin/serve_document.php?path=" . rawurlencode($r["photo_recto"]) : null,
+        "photo_verso_url" => !empty($r["photo_verso"]) ? "/backend/admin/serve_document.php?path=" . rawurlencode($r["photo_verso"]) : null,
+        "status" => $r["status"],
+        "rejection_reason" => $r["rejection_reason"],
+        "submitted_at" => $r["submitted_at"]
+    ];
+}
 
 $chauffeurs = [];
 while ($row = $result->fetch_assoc()) {
@@ -66,6 +103,8 @@ while ($row = $result->fetch_assoc()) {
             $row[$field . "_url"] = null;
         }
     }
+
+    $row["pending_renewals"] = $renewalsByChauffeur[$row["id"]] ?? [];
 
     $chauffeurs[] = $row;
 }
