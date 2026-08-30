@@ -27,10 +27,12 @@ $sql = "
             WHERE wt.chauffeur_id = c.id ORDER BY wt.created_at DESC LIMIT 1
         ) AS derniere_transaction_type
     FROM chauffeur c
-    ORDER BY c.wallet_balance_fcfa ASC
+    ORDER BY (recharges_en_attente > 0) DESC, wallet_balance_fcfa ASC
 ";
-// Tri par solde croissant : les chauffeurs les plus endettés (négatif) remontent
-// en premier -- c'est l'info la plus utile à surveiller pour l'admin au quotidien.
+// Tri : priorité aux chauffeurs avec une recharge en attente (action requise
+// de l'admin), puis par solde croissant à l'intérieur de chaque groupe --
+// les plus endettés (négatif) remontent en premier, c'est l'info la plus
+// utile à surveiller pour l'admin au quotidien.
 
 $result = $conn->query($sql);
 

@@ -37,6 +37,7 @@ const AdminState = {
     // ne notifier (son+vibration) qu'une fois par élément réellement nouveau.
     shownKycPendingIds: new Set(),  // ids chauffeurs vus en kyc_status='pending'
     shownRenewalIds: new Set(),     // ids de renouvellements de documents déjà signalés
+    shownExpiredDocIds: new Set(),  // ids chauffeurs déjà signalés pour document expiré
     kycWatchStarted: false          // évite de notifier pour des dossiers déjà en attente au premier chargement
 };
 

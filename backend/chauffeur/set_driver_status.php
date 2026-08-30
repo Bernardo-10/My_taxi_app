@@ -29,7 +29,12 @@ if ($isOnline === null) {
 try {
     $conn = db_connect();
 
-    $checkStmt = $conn->prepare("SELECT status, kyc_status, wallet_balance_fcfa FROM chauffeur WHERE id = ? LIMIT 1");
+    $checkStmt = $conn->prepare("
+        SELECT status, kyc_status, wallet_balance_fcfa,
+               cni_expiration, carte_grise_expiration, permit_expiration,
+               capacity_expiration, license_expiration
+        FROM chauffeur WHERE id = ? LIMIT 1
+    ");
     if (!$checkStmt) {
         throw new Exception('Erreur de préparation : ' . $conn->error);
     }
@@ -75,6 +80,38 @@ try {
             'message' => $message,
             'kyc_status' => $driver['kyc_status']
         ], 403);
+    }
+
+    // Documents expirés : bloque la mise en ligne, même si kyc_status
+    // reste 'approved' (kyc_status ne descend jamais tout seul — voir
+    // proposition ci-dessous). Avant ce correctif, seul get_rides.php
+    // (en boucle toutes les 5s pendant que le chauffeur est déjà en
+    // ligne) détectait ça — un chauffeur hors ligne pouvait donc repasser
+    // en ligne sans blocage immédiat, jusqu'au prochain cycle. Ici, on
+    // coupe la possibilité même de passer en ligne.
+    if ($isOnline) {
+        $docLabels = [
+            "cni_expiration" => "CNI",
+            "carte_grise_expiration" => "Carte grise",
+            "permit_expiration" => "Permis de conduire",
+            "capacity_expiration" => "Carte de capacité",
+            "license_expiration" => "Licence professionnelle"
+        ];
+        $today = new DateTime("today");
+        $expiredLabels = [];
+        foreach ($docLabels as $col => $label) {
+            if (!empty($driver[$col]) && new DateTime($driver[$col]) < $today) {
+                $expiredLabels[] = $label;
+            }
+        }
+        if ($expiredLabels) {
+            $conn->close();
+            json_response([
+                'status' => 'error',
+                'message' => 'Document(s) expiré(s) : ' . implode(', ', $expiredLabels) . '. Renouvelez-le(s) dans "Mes documents" pour pouvoir vous mettre en ligne.',
+                'kyc_status' => $driver['kyc_status']
+            ], 403);
+        }
     }
 
     // Blocage par solde : un chauffeur sous le seuil ne peut pas se

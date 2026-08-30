@@ -17,7 +17,7 @@
 "use strict";
 
 const KycState = {
-    filter: "pending",
+    filter: "pending", // choix unique (boutons) — voir initKycFilters()
     chauffeurs: [],
     interval: null,
     badgeInterval: null,
@@ -116,6 +116,13 @@ function checkKycAlerts(all) {
                 if (!isFirstCheck) hasNew = true;
             }
         });
+        // Document fraîchement expiré (kyc_status ne change jamais tout
+        // seul — voir proposition "expiration" — donc c'est cette
+        // détection lazy, à chaque poll, qui rend l'événement visible).
+        if (countExpiredDocuments(c) > 0 && !AdminState.shownExpiredDocIds.has(c.id)) {
+            AdminState.shownExpiredDocIds.add(c.id);
+            if (!isFirstCheck) hasNew = true;
+        }
     });
 
     // Comme pour les recharges : pas de son au tout premier chargement pour
@@ -146,39 +153,36 @@ async function refreshKyc() {
 }
 
 function updateKycCounts(all) {
-    const counts = { incomplete: 0, pending: 0, approved: 0, rejected: 0 };
-    // kyc_status porte désormais l'information de façon fiable (voir
-    // register_chauffeur.php et complete_chauffeur_profile.php) — la
-    // colonne `incomplete` n'est plus lue ici. La compter en plus aurait
-    // pu double-compter un chauffeur avec kyc_status='incomplete' ET
-    // incomplete=1 simultanément (cas des chauffeurs migrés par la
-    // migration rétroactive du 26/08, avant qu'ils ne complètent leur
-    // profil).
-    all.forEach(c => {
-        if (counts[c.kyc_status] !== undefined) counts[c.kyc_status]++;
-    });
-
-    // Compte les chauffeurs ayant au moins un document en attente de
-    // renouvellement — indépendant de kyc_status (un chauffeur déjà
-    // 'approved' peut très bien avoir un renouvellement 'pending' en
-    // parallèle, cf. rapport KYC §2 : la table chauffeur_document_renewals
-    // ne touche jamais kyc_status global).
+    // Comptes calculés via KYC_FILTER_PREDICATES (une seule définition,
+    // partagée avec le filtrage de la liste) — "approved" exclut désormais
+    // les dossiers avec document expiré (voir KYC_FILTER_PREDICATES).
+    const counts = {
+        incomplete: all.filter(KYC_FILTER_PREDICATES.incomplete).length,
+        pending:    all.filter(KYC_FILTER_PREDICATES.pending).length,
+        approved:   all.filter(KYC_FILTER_PREDICATES.approved).length,
+        rejected:   all.filter(KYC_FILTER_PREDICATES.rejected).length,
+        expired:    all.filter(KYC_FILTER_PREDICATES.expired).length
+    };
+    // Pas un filtre/onglet à part (voir KYC_FILTER_PREDICATES) — juste un
+    // compte pour le badge de la sidebar (navKycBadge).
     const renewalCount = all.filter(c => (c.pending_renewals || []).length > 0).length;
 
     setText("kycCountPending", counts.pending);
     setText("kycCountApproved", counts.approved);
     setText("kycCountRejected", counts.rejected);
     setText("kycCountIncomplete", counts.incomplete);
-    setText("kycCountRenewal", renewalCount);
+    setText("kycCountExpired", counts.expired);
     setText("kycCountAll", all.length);
 
     // Badge sur l'onglet de navigation — visible seulement s'il y a des
     // dossiers en attente, sur le même modèle que navProblemsBadge.
-    // Inclut à la fois les nouveaux dossiers KYC et les renouvellements,
-    // les deux nécessitant une action de l'admin dans cette même section.
+    // Inclut les nouveaux dossiers KYC, les renouvellements ET les
+    // documents expirés (kyc_status reste 'approved' pour toujours — voir
+    // proposition "expiration" — c'est ce compteur qui rend le problème
+    // visible côté admin, sinon totalement invisible).
     const navBadge = document.getElementById("navKycBadge");
     if (navBadge) {
-        const total = counts.pending + renewalCount;
+        const total = counts.pending + renewalCount + counts.expired;
         if (total > 0) {
             navBadge.textContent = total;
             navBadge.style.display = "inline-flex";
@@ -237,26 +241,71 @@ function renderKycView() {
    RENDU — liste compacte cliquable
 ────────────────────────────────────────────── */
 
+// Prédicats de filtre KYC — utilisés à la fois par renderKycListCompact()
+// (filtrage OR multi-choix) et updateKycCounts() (comptage par filtre),
+// pour ne pas dupliquer la logique à deux endroits.
+//
+// "expired" est l'INVERSE de "approved" (demande explicite) : un dossier
+const KYC_FILTER_PREDICATES = {
+    pending:    c => c.kyc_status === "pending",
+    incomplete: c => c.kyc_status === "incomplete",
+    rejected:   c => c.kyc_status === "rejected",
+    approved:   c => c.kyc_status === "approved" && countExpiredDocuments(c) === 0,
+    expired:    c => countExpiredDocuments(c) > 0
+};
+
+// Date d'expiration la plus RÉCENTE parmi les documents expirés d'un
+// chauffeur (celle la plus proche d'aujourd'hui, donc le "signal" le plus
+// frais) — utilisée pour trier l'onglet "Expirés".
+function mostRecentExpirationDate(c) {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const dates = EXPIRATION_FIELDS
+        .map(f => c[f] ? new Date(c[f]) : null)
+        .filter(d => d && d < today);
+    if (dates.length === 0) return null;
+    return new Date(Math.max(...dates));
+}
+
 function renderKycListCompact() {
     const wrap = document.getElementById("kyc-list-wrap");
     if (!wrap) return;
 
-    // Le filtre "renewal" est indépendant de kyc_status : un dossier déjà
-    // approuvé peut avoir un document en cours de renouvellement (cf.
-    // rapport KYC §2). Les autres filtres, y compris "incomplete", restent
-    // basés strictement sur kyc_status — désormais géré de bout en bout
-    // par register_chauffeur.php (incomplete → à la création) et
-    // complete_chauffeur_profile.php (incomplete → pending, à la
-    // soumission des documents). La colonne `incomplete` (booléenne,
-    // migration rétroactive du 26/08) n'est plus lue ici : elle n'est
-    // jamais remise à 0 par complete_chauffeur_profile.php, donc un
-    // chauffeur migré qui complète son profil resterait affiché comme
-    // "Incomplet" indéfiniment si on continuait à s'y fier.
-    const filtered = KycState.filter === "renewal"
-        ? KycState.chauffeurs.filter(c => (c.pending_renewals || []).length > 0)
-        : KycState.filter
-            ? KycState.chauffeurs.filter(c => c.kyc_status === KycState.filter)
-            : KycState.chauffeurs;
+    // "expired" et "approved" sont mutuellement exclusifs (voir
+    // KYC_FILTER_PREDICATES) — un dossier expiré ne réapparaît plus sous
+    // "Approuvés" tant qu'il n'est pas corrigé.
+    const filtered = KycState.filter
+        ? KycState.chauffeurs.filter(c => KYC_FILTER_PREDICATES[KycState.filter]?.(c))
+        : [...KycState.chauffeurs];
+
+    // Logique de tri par onglet (simple, un seul jeu de règles par
+    // onglet — pas de combinaison depuis le retour aux boutons à choix
+    // unique) :
+    //   - "En attente" : le plus ANCIEN d'abord (file d'attente, ne pas
+    //     laisser un dossier poireauter)
+    //   - "Incomplets" : le plus RÉCENT d'abord (voir les nouveaux
+    //     dossiers en premier)
+    //   - "Approuvés" : le plus RÉCENT d'abord (kyc_reviewed_at), avec
+    //     priorité aux dossiers ayant un renouvellement en attente
+    //   - "Expirés" : le plus RÉCEMMENT expiré d'abord, avec priorité aux
+    //     dossiers ayant un renouvellement en attente
+    //   - "Rejetés" / "Tous" : ordre reçu du serveur, inchangé
+    if (KycState.filter === "pending") {
+        filtered.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    } else if (KycState.filter === "incomplete") {
+        filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    } else if (KycState.filter === "approved") {
+        filtered.sort((a, b) => {
+            const renewA = (a.pending_renewals || []).length > 0, renewB = (b.pending_renewals || []).length > 0;
+            if (renewA !== renewB) return renewA ? -1 : 1;
+            return new Date(b.kyc_reviewed_at || b.created_at) - new Date(a.kyc_reviewed_at || a.created_at);
+        });
+    } else if (KycState.filter === "expired") {
+        filtered.sort((a, b) => {
+            const renewA = (a.pending_renewals || []).length > 0, renewB = (b.pending_renewals || []).length > 0;
+            if (renewA !== renewB) return renewA ? -1 : 1;
+            return mostRecentExpirationDate(b) - mostRecentExpirationDate(a);
+        });
+    }
 
     if (filtered.length === 0) {
         wrap.innerHTML = `<div class="empty-state">Aucun dossier dans cette catégorie.</div>`;
@@ -279,15 +328,53 @@ function renderKycListCompact() {
     });
 }
 
+const EXPIRATION_FIELDS = [
+    "cni_expiration", "carte_grise_expiration", "permit_expiration",
+    "capacity_expiration", "license_expiration"
+];
+
+// Même logique que backend/chauffeur/get_rides.php et set_driver_status.php
+// (date < aujourd'hui). Calculée ici côté client car list_pending_kyc.php
+// renvoie déjà ces 5 colonnes pour chaque chauffeur — aucune requête
+// supplémentaire nécessaire. Retourne un COMPTE (pas juste un booléen),
+// pour rester cohérent avec le style "Renouvellement (x)" du pill voisin.
+function countExpiredDocuments(c) {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    return EXPIRATION_FIELDS.filter(f => c[f] && new Date(c[f]) < today).length;
+}
+
+const KYC_STATUS_LABELS = { incomplete: "Incomplet", pending: "En attente", approved: "Approuvé", rejected: "Rejeté" };
+
+// Pastille de statut — SOURCE UNIQUE utilisée à la fois par la liste
+// (renderKycListItem) et le détail (renderKycDetail). Avant ce correctif,
+// chacune avait sa propre logique : la liste appliquait déjà la règle
+// "Expiré remplace Approuvé", mais le détail affichait encore le
+// kyc_status brut ('approved') — donc une carte "Expiré" en liste
+// redevenait "Approuvé" dès qu'on cliquait dessus. Centralisé ici pour
+// que les deux vues ne puissent plus diverger.
+//
+// "Expiré" est l'INVERSE de "Approuvé" (demande explicite) : mutuellement
+// exclusifs, pas cumulés. Un dossier approuvé mais avec un document
+// expiré affiche "Expiré (x)" en rouge À LA PLACE de "Approuvé" — dès que
+// le renouvellement correspondant est validé (document non expiré), il
+// repasse naturellement sur "Approuvé" (countExpiredDocuments retombe à
+// 0, rien à faire de spécial ici). N'affecte que les dossiers 'approved'
+// en pratique — les autres statuts n'ont pas de document "live" encore
+// validé pouvant expirer au sens propre.
+function kycStatusPillHtml(c) {
+    const expiredCount = countExpiredDocuments(c);
+    if (c.kyc_status === "approved" && expiredCount > 0) {
+        return `<span class="kyc-status-pill kyc-expired">Expiré (${expiredCount})</span>`;
+    }
+    return `<span class="kyc-status-pill kyc-${c.kyc_status}">${KYC_STATUS_LABELS[c.kyc_status] || c.kyc_status}</span>`;
+}
+
 function renderKycListItem(c) {
     const initials = (c.name || "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
-    const statusLabels = { incomplete: "Incomplet", pending: "En attente", approved: "Approuvé", rejected: "Rejeté" };
-    const statusPill = `<span class="kyc-status-pill kyc-${c.kyc_status}">${statusLabels[c.kyc_status] || c.kyc_status}</span>`;
+    const statusPill = kycStatusPillHtml(c);
 
-    // Pill secondaire visible dans TOUTES les vues (pas seulement le
-    // filtre "Renouvellement") — utile par ex. dans "Approuvés" pour
-    // repérer d'un coup d'œil un chauffeur qui a quand même un
-    // renouvellement en attente d'action.
+    // Pill "Renouvellement" — toujours indépendante et affichée à côté,
+    // que le statut principal soit "Approuvé" ou "Expiré".
     const renewalCount = (c.pending_renewals || []).length;
     const renewalPill = renewalCount > 0
         ? `<span class="kyc-renewal-pill">Renouvellement (${renewalCount})</span>`
@@ -345,8 +432,7 @@ function renderKycCard(c) {
     const initials = (c.name || "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
     const submittedDate = formatFrDate(c.created_at);
 
-    const statusLabels = { incomplete: "Incomplet", pending: "En attente", approved: "Approuvé", rejected: "Rejeté" };
-    const statusPill = `<span class="kyc-status-pill kyc-${c.kyc_status}">${statusLabels[c.kyc_status] || c.kyc_status}</span>`;
+    const statusPill = kycStatusPillHtml(c);
 
     const docs = [
         { group: "cni", title: "CNI", number: c.cni_number, expiration: c.cni_expiration,

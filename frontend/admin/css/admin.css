@@ -757,6 +757,7 @@ tbody tr:hover td { background: var(--c-bg); }
 .kyc-status-pill.kyc-pending  { background: var(--c-amber-bg); color: var(--c-amber-text); }
 .kyc-status-pill.kyc-approved { background: var(--c-green-bg); color: var(--c-green); }
 .kyc-status-pill.kyc-rejected { background: var(--c-red-bg);   color: var(--c-red); }
+.kyc-status-pill.kyc-expired  { background: var(--c-red-bg);   color: var(--c-red); }
 /* 'incomplete' = inscription non finalisée par le chauffeur lui-même
    (voir rapport friction-inscription-chauffeur.md) — gris neutre plutôt
    que l'ambre du 'pending', pour ne pas laisser croire qu'un admin doit
