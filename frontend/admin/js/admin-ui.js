@@ -29,7 +29,15 @@ const AdminState = {
     // Portefeuille
     walletsFilter: { chauffeur_id: 0, type: '', status: '' },
     walletsInterval: null,
-    walletsBadgeInterval: null // badge sidebar (navWalletsBadge), indépendant de la section active
+    walletsBadgeInterval: null, // badge sidebar (navWalletsBadge), indépendant de la section active
+    shownRechargeIds: new Set(), // recharges déjà signalées (son+vibration) — évite de re-notifier à chaque poll de 30s
+    rechargeWatchStarted: false, // évite de notifier pour des recharges déjà en attente au premier chargement
+
+    // Vérification chauffeur (KYC) — mêmes principe que shownProblemIds :
+    // ne notifier (son+vibration) qu'une fois par élément réellement nouveau.
+    shownKycPendingIds: new Set(),  // ids chauffeurs vus en kyc_status='pending'
+    shownRenewalIds: new Set(),     // ids de renouvellements de documents déjà signalés
+    kycWatchStarted: false          // évite de notifier pour des dossiers déjà en attente au premier chargement
 };
 
 /* ── DOM ready ────────────────────────────────────────────── */
@@ -44,6 +52,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     initLogout();
     initGlobalProblemWatch();
     initWalletsBadgeWatch();
+    if (typeof initPushNotifications === "function") initPushNotifications("admin");
     showSection("dashboard");
 });
 
@@ -192,12 +201,31 @@ function initWalletsBadgeWatch() {
 
 async function refreshWalletsBadge() {
     try {
-        const data = await fetchWalletTransactions({ type: "recharge", status: "pending", limit: 1 });
+        // limit plus large qu'avant (on avait limit:1, suffisant pour le
+        // compteur mais insuffisant pour repérer LESQUELLES sont nouvelles).
+        const data  = await fetchWalletTransactions({ type: "recharge", status: "pending", limit: 50 });
         const count = (data.pagination && data.pagination.total) || 0;
         const badge = document.getElementById("navWalletsBadge");
-        if (!badge) return;
-        badge.textContent = count;
-        badge.style.display = count > 0 ? "inline-block" : "none";
+        if (badge) {
+            badge.textContent = count;
+            badge.style.display = count > 0 ? "inline-block" : "none";
+        }
+
+        const isFirstCheck = !AdminState.rechargeWatchStarted;
+        AdminState.rechargeWatchStarted = true;
+
+        const transactions = data.transactions || [];
+        const newOnes = transactions.filter(t => !AdminState.shownRechargeIds.has(t.id));
+        transactions.forEach(t => AdminState.shownRechargeIds.add(t.id));
+
+        // Au tout premier chargement (arrivée sur le dashboard), on ne
+        // notifie pas pour des recharges déjà en attente depuis avant —
+        // seulement pour celles qui arrivent APRÈS, pendant que l'admin
+        // est connecté. Même logique que shownProblemIds pour les
+        // signalements client.
+        if (!isFirstCheck && newOnes.length > 0 && window.notifyFeedback) {
+            window.notifyFeedback({ sound: "admin_alert", vibrate: [80, 40, 80] });
+        }
     } catch (e) {
         // silencieux — prochain cycle réessaiera
     }

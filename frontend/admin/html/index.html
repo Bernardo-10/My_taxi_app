@@ -298,10 +298,23 @@
 </div><!-- /admin-shell -->
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-messaging-compat.js"></script>
+<script src="/frontend/js/firebase-config.js"></script>
+<script src="/frontend/js/push-notifications.js"></script>
 <script src="/frontend/js/confirm-modal.js"></script>
+<script src="/frontend/js/notify-feedback.js"></script>
 <script src="/frontend/admin/js/admin-api.js"></script>
 <script src="/frontend/admin/js/admin-ui.js"></script>
 <script src="/frontend/admin/js/admin-kyc.js"></script>
+
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/admin/sw.js").catch(() => {});
+    });
+  }
+</script>
 
 <!-- Mise à jour du tableau de la carte quand les positions refreshent -->
 <script>

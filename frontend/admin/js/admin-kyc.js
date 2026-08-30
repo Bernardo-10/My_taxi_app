@@ -88,8 +88,41 @@ async function refreshKycBadge() {
         const section = document.getElementById("section-kyc");
         const kycSectionActive = section && section.classList.contains("active");
         if (!kycSectionActive) updateKycCounts(all);
+
+        checkKycAlerts(all);
     } catch (e) {
         // silencieux — prochain cycle réessaiera
+    }
+}
+
+// Son + vibration admin sur nouveau dossier en attente OU nouveau
+// renouvellement — même principe que checkClientProblems()/shownProblemIds
+// dans admin-ui.js (référence AdminState directement : scripts classiques
+// partageant le même scope global, admin-ui.js chargé avant ce fichier).
+function checkKycAlerts(all) {
+    const isFirstCheck = !AdminState.kycWatchStarted;
+    AdminState.kycWatchStarted = true;
+
+    let hasNew = false;
+
+    all.forEach(c => {
+        if (c.kyc_status === "pending" && !AdminState.shownKycPendingIds.has(c.id)) {
+            AdminState.shownKycPendingIds.add(c.id);
+            if (!isFirstCheck) hasNew = true;
+        }
+        (c.pending_renewals || []).forEach(r => {
+            if (!AdminState.shownRenewalIds.has(r.id)) {
+                AdminState.shownRenewalIds.add(r.id);
+                if (!isFirstCheck) hasNew = true;
+            }
+        });
+    });
+
+    // Comme pour les recharges : pas de son au tout premier chargement pour
+    // des dossiers déjà en attente avant la connexion de l'admin — seulement
+    // pour les nouveaux, arrivés pendant qu'il est connecté.
+    if (hasNew && window.notifyFeedback) {
+        window.notifyFeedback({ sound: "admin_alert", vibrate: [80, 40, 80] });
     }
 }
 

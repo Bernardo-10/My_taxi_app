@@ -25,6 +25,7 @@ require_once __DIR__ . "/../config/auth.php";
 // exige le dossier complet.
 
 require_once __DIR__ . "/../config/auth.php";
+require_once __DIR__ . "/../common/send_push.php";
 $driverId = require_driver_id();
 
 $conn = db_connect();
@@ -262,6 +263,16 @@ if (!$updateStmt->execute()) {
     json_response(["status" => "error", "message" => "Echec de l'enregistrement du profil"], 500);
 }
 $updateStmt->close();
+
+// Alerte admin (son+vibration si onglet ouvert, push sinon) — best-effort,
+// ne doit jamais faire échouer la complétion du profil elle-même.
+send_push_to_all_admins(
+    $conn,
+    "Nouveau dossier chauffeur à vérifier",
+    "Un chauffeur a complété son profil et attend la validation KYC.",
+    ["link" => "/admin/#kyc"]
+);
+
 $conn->close();
 
 json_response([

@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . "/../config/auth.php";
 require_once __DIR__ . "/../config/db.php";
+require_once __DIR__ . "/../common/send_push.php";
 
 $driverId = require_driver_id();
 
@@ -34,6 +35,23 @@ $stmt->bind_param("iisss", $driverId, $amount, $operator, $reference, $descripti
 if ($stmt->execute()) {
     $id = $stmt->insert_id;
     $stmt->close();
+
+    // Alerte admin (son+vibration si l'onglet est ouvert, push si fermé/en
+    // arrière-plan — voir chantier notifications admin). Best-effort : ne
+    // doit jamais faire échouer la demande de recharge elle-même.
+    $nameStmt = $conn->prepare("SELECT name FROM chauffeur WHERE id = ? LIMIT 1");
+    $nameStmt->bind_param("i", $driverId);
+    $nameStmt->execute();
+    $driverName = $nameStmt->get_result()->fetch_assoc()['name'] ?? 'Un chauffeur';
+    $nameStmt->close();
+
+    send_push_to_all_admins(
+        $conn,
+        "Nouvelle recharge en attente",
+        "$driverName demande une recharge de $amount FCFA.",
+        ["link" => "/admin/#wallets"]
+    );
+
     $conn->close();
     json_response([
         "status" => "success",

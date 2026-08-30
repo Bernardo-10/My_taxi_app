@@ -8,8 +8,8 @@
 // les notifications, même app fermée/écran verrouillé — ce fichier ne fait
 // que l'enregistrement initial, appelé une fois par session.
 //
-// Appel attendu : initPushNotifications("client") ou
-// initPushNotifications("chauffeur"), une fois la session confirmée
+// Appel attendu : initPushNotifications("client"), initPushNotifications("chauffeur")
+// ou initPushNotifications("admin"), une fois la session confirmée
 // authentifiée (après initUserSession()/vérification current_user.php).
 
 async function initPushNotifications(userType) {
@@ -55,7 +55,9 @@ async function initPushNotifications(userType) {
       return;
     }
 
-    const apiBase = userType === "chauffeur" ? "/backend/chauffeur" : "/backend/client";
+    const apiBase = userType === "chauffeur" ? "/backend/chauffeur"
+                  : userType === "admin"     ? "/backend/admin"
+                  : "/backend/client";
     await fetch(`${apiBase}/save_push_subscription.php`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

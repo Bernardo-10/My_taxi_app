@@ -8,6 +8,7 @@
 // approuvé).
 
 require_once __DIR__ . "/../config/auth.php";
+require_once __DIR__ . "/../common/send_push.php";
 $driverId = require_driver_id();
 
 // ── Groupe de document ─────────────────────────────────────────
@@ -224,6 +225,18 @@ if (!$ok) {
     $conn->close();
     json_response(["status" => "error", "message" => "Échec de l'enregistrement du renouvellement"], 500);
 }
+
+// Alerte admin (son+vibration si onglet ouvert, push sinon) — best-effort,
+// ne doit jamais faire échouer la soumission elle-même. Pas de nom de
+// chauffeur ici (pas déjà chargé dans ce fichier, pas de requête
+// supplémentaire ajoutée pour rester minimal sur un fichier déjà dense en
+// rollback de fichiers uploadés).
+send_push_to_all_admins(
+    $conn,
+    "Document à vérifier",
+    "Renouvellement soumis : " . $groupLabels[$documentGroup],
+    ["link" => "/admin/#kyc"]
+);
 
 $conn->close();
 json_response([

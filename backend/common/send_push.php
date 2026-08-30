@@ -255,4 +255,24 @@ function send_push_to_users(mysqli $conn, string $userType, array $userIds, stri
         error_log('[FCM] send_push_to_users exception : ' . $e->getMessage());
     }
 }
+
+/**
+ * Notifie TOUS les comptes admin (la table `admin` peut contenir plusieurs
+ * comptes — pas d'hypothèse d'admin unique). Utilisé pour les alertes
+ * recharge en attente / document KYC soumis (voir chantier notifications
+ * admin). Comme send_push_to_user(s), n'échoue jamais bruyamment.
+ */
+function send_push_to_all_admins(mysqli $conn, string $title, string $body, array $data = []): void {
+    try {
+        $res = $conn->query("SELECT id FROM admin");
+        if (!$res) return;
+        $adminIds = [];
+        while ($row = $res->fetch_assoc()) {
+            $adminIds[] = (int) $row['id'];
+        }
+        send_push_to_users($conn, 'admin', $adminIds, $title, $body, $data);
+    } catch (Throwable $e) {
+        error_log('[FCM] send_push_to_all_admins exception : ' . $e->getMessage());
+    }
+}
 ?>
