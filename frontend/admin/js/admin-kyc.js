@@ -37,11 +37,11 @@ async function fetchKycChauffeurs(status = "") {
     return data.chauffeurs || [];
 }
 
-async function submitKycReview(driverId, action, reason = "") {
-    const res = await fetch(`${ADMIN_API}/review_kyc.php`, {
+async function submitKycDocumentReview(driverId, documentGroup, action, reason = "") {
+    const res = await fetch(`${ADMIN_API}/review_kyc_document.php`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ driver_id: driverId, action, reason })
+        body: JSON.stringify({ driver_id: driverId, document_group: documentGroup, action, reason })
     });
     return res.json();
 }
@@ -369,9 +369,39 @@ function kycStatusPillHtml(c) {
     return `<span class="kyc-status-pill kyc-${c.kyc_status}">${KYC_STATUS_LABELS[c.kyc_status] || c.kyc_status}</span>`;
 }
 
+// Répartition Approuvé(x) / Rejeté(x) / En attente(x) sur les 5 documents
+// de l'examen KYC INITIAL — remplace la pastille de statut unique tant
+// que le dossier passe par ce système (voir chauffeur_document_reviews).
+// Seuls les comptes non nuls s'affichent (ex. "Rejeté" uniquement s'il y
+// en a au moins un — demande explicite). Le compte "En attente" diminue
+// naturellement à chaque décision admin, puisqu'il ne compte que les
+// documents encore jamais examinés.
+function kycDocumentCountsHtml(c) {
+    const reviews = Object.values(c.document_reviews || {});
+    if (reviews.length === 0) return null; // pas encore de lignes (migration pas encore passée, ou profil pas complété) -> fallback
+
+    const counts = { approved: 0, rejected: 0, pending: 0 };
+    reviews.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
+
+    const pills = [];
+    if (counts.approved > 0) pills.push(`<span class="kyc-status-pill kyc-approved">Approuvé (${counts.approved})</span>`);
+    if (counts.rejected > 0) pills.push(`<span class="kyc-status-pill kyc-rejected">Rejeté (${counts.rejected})</span>`);
+    if (counts.pending > 0)  pills.push(`<span class="kyc-status-pill kyc-pending">En attente (${counts.pending})</span>`);
+    return pills.join("");
+}
+
 function renderKycListItem(c) {
     const initials = (c.name || "?").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
-    const statusPill = kycStatusPillHtml(c);
+
+    // Priorité : "Expiré" (post-approbation, voir kyc_status==='approved'
+    // + document live périmé) > répartition par document > pastille de
+    // statut unique en repli (dossier sans lignes chauffeur_document_reviews
+    // — ne devrait plus arriver après la migration de backfill, gardé par
+    // robustesse).
+    const expiredCount = countExpiredDocuments(c);
+    const statusPill = (c.kyc_status === "approved" && expiredCount > 0)
+        ? kycStatusPillHtml(c)
+        : (kycDocumentCountsHtml(c) || kycStatusPillHtml(c));
 
     // Pill "Renouvellement" — toujours indépendante et affichée à côté,
     // que le statut principal soit "Approuvé" ou "Expiré".
@@ -379,13 +409,6 @@ function renderKycListItem(c) {
     const renewalPill = renewalCount > 0
         ? `<span class="kyc-renewal-pill">Renouvellement (${renewalCount})</span>`
         : "";
-
-    // Pastille "Incomplet" retirée d'ici : elle lisait la colonne
-    // `incomplete` (booléenne, migration rétroactive du 26/08), qui n'est
-    // plus tenue à jour par le code courant (ni register_chauffeur.php ni
-    // complete_chauffeur_profile.php ne la touchent). kyc_status seul
-    // porte l'information de façon fiable — la pastille de statut
-    // principale ci-dessous affiche déjà "Incomplet" le cas échéant.
 
     return `
         <button type="button" class="kyc-list-item" data-kyc-open="${c.id}">
@@ -447,46 +470,42 @@ function renderKycCard(c) {
           thumbs: [["Recto", c.license_photo_recto_url], ["Verso", c.license_photo_verso_url]] }
     ];
 
-    // Associe à chaque document sa demande de renouvellement en attente,
-    // s'il y en a une — un renouvellement ne concerne qu'un seul groupe
-    // de documents à la fois (cf. table chauffeur_document_renewals).
+    // Associe à chaque document sa demande de renouvellement en attente
+    // ET son examen KYC initial — deux systèmes séparés, voir
+    // review_kyc_document.php / migration chauffeur_document_reviews.
     const pendingRenewals = c.pending_renewals || [];
-    const docsHtml = docs.map(doc => renderKycDocBlock(doc, pendingRenewals.find(r => r.document_group === doc.group))).join("");
+    const reviews = c.document_reviews || {};
+    const docsHtml = docs.map(doc => renderKycDocBlock(
+        doc,
+        pendingRenewals.find(r => r.document_group === doc.group),
+        reviews[doc.group] || null,
+        c.id
+    )).join("");
 
+    // Résumé des 5 examens initiaux — plus de bouton Approuver/Rejeter
+    // "tout le dossier" ici : chaque document a désormais son propre
+    // bouton (voir renderKycDocBlock). kyc_status reste affiché comme
+    // avant (statusPill, dérivé automatiquement par recompute_kyc_status()
+    // côté serveur à chaque action).
     let footerHtml;
-    if (c.kyc_status === "pending") {
-        footerHtml = `
-            <div class="kyc-card-footer" id="kyc-footer-${c.id}">
-                <span class="kyc-review-note">Soumis le ${submittedDate}</span>
-                <div class="kyc-actions">
-                    <button class="kyc-btn kyc-btn-reject" data-kyc-show-reject="${c.id}">
-                        <i class="ti ti-x"></i> Rejeter
-                    </button>
-                    <button class="kyc-btn kyc-btn-approve" data-kyc-approve="${c.id}">
-                        <i class="ti ti-check"></i> Approuver
-                    </button>
-                </div>
-            </div>
-            <div class="kyc-reject-form" id="kyc-reject-form-${c.id}" style="display:none; padding: 0 18px 14px;">
-                <textarea id="kyc-reject-reason-${c.id}" placeholder="Motif du rejet (obligatoire, visible par le chauffeur)"></textarea>
-                <div class="kyc-reject-form-actions">
-                    <button class="btn btn-sm btn-outline" data-kyc-cancel-reject="${c.id}">Annuler</button>
-                    <button class="kyc-btn kyc-btn-reject" data-kyc-confirm-reject="${c.id}">Confirmer le rejet</button>
-                </div>
-            </div>
-        `;
-    } else if (c.kyc_status === "approved") {
+    if (c.kyc_status === "approved") {
         footerHtml = `
             <div class="kyc-card-footer">
                 <span class="kyc-review-note">Approuvé le <strong>${formatFrDate(c.kyc_reviewed_at)}</strong></span>
             </div>
         `;
-    } else {
+    } else if (c.kyc_status === "rejected") {
         footerHtml = `
             <div class="kyc-card-footer">
                 <span class="kyc-review-note kyc-reject-reason">
-                    Rejeté le ${formatFrDate(c.kyc_reviewed_at)} — Motif : ${escapeHtml(c.kyc_rejection_reason || "—")}
+                    Dossier rejeté le ${formatFrDate(c.kyc_reviewed_at)} — au moins un document reste à corriger (voir détail par document ci-dessus). Le chauffeur peut resoumettre les documents rejetés.
                 </span>
+            </div>
+        `;
+    } else {
+        footerHtml = `
+            <div class="kyc-card-footer">
+                <span class="kyc-review-note">Soumis le ${submittedDate} — examinez chaque document ci-dessus.</span>
             </div>
         `;
     }
@@ -509,7 +528,7 @@ function renderKycCard(c) {
     `;
 }
 
-function renderKycDocBlock(doc, renewal) {
+function renderKycDocBlock(doc, renewal, initialReview, driverId) {
     const expired = doc.expiration && new Date(doc.expiration) < new Date();
     const expirationHtml = doc.expiration
         ? `Expire le ${formatFrDate(doc.expiration)}${expired ? ' <span class="kyc-expired">(expiré)</span>' : ""}`
@@ -528,6 +547,7 @@ function renderKycDocBlock(doc, renewal) {
     }).join("");
 
     const renewalHtml = renewal ? renderKycRenewalBlock(doc, renewal) : "";
+    const initialReviewHtml = initialReview ? renderKycInitialReviewBlock(doc, initialReview, driverId) : "";
 
     return `
         <div class="kyc-doc-block">
@@ -537,7 +557,56 @@ function renderKycDocBlock(doc, renewal) {
                 ${expirationHtml}
             </div>
             <div class="kyc-thumb-row">${thumbsHtml}</div>
+            ${initialReviewHtml}
             ${renewalHtml}
+        </div>
+    `;
+}
+
+// Sous-bloc d'examen KYC INITIAL — indépendant du renouvellement
+// ci-dessous (renderKycRenewalBlock). N'affiche des boutons Approuver/
+// Rejeter QUE si ce document précis est encore 'pending' (jamais examiné) ;
+// s'il est déjà 'approved' ou 'rejected', l'action est terminée côté
+// admin — pour 'rejected', c'est au chauffeur d'agir (resoumettre), pas
+// à l'admin de re-rejeter.
+function renderKycInitialReviewBlock(doc, review, driverId) {
+    if (review.status === "approved") {
+        return `
+            <div class="kyc-initial-review-block kyc-initial-approved">
+                <i class="ti ti-check"></i> Document approuvé${review.reviewed_at ? ` le ${formatFrDate(review.reviewed_at)}` : ""}
+            </div>
+        `;
+    }
+
+    if (review.status === "rejected") {
+        return `
+            <div class="kyc-initial-review-block kyc-initial-rejected">
+                <div class="kyc-renewal-label"><i class="ti ti-x"></i> Document rejeté</div>
+                <div class="kyc-doc-meta">Motif : ${escapeHtml(review.rejection_reason || "—")}</div>
+                <div class="kyc-doc-meta" style="margin-top:4px;font-style:italic;">En attente de resoumission par le chauffeur.</div>
+            </div>
+        `;
+    }
+
+    // 'pending' — examen jamais encore fait pour ce document précis.
+    const key = `${driverId}:${doc.group}`;
+    return `
+        <div class="kyc-initial-review-block">
+            <div class="kyc-renewal-actions">
+                <button class="kyc-btn kyc-btn-reject" data-initial-show-reject="${key}">
+                    <i class="ti ti-x"></i> Rejeter
+                </button>
+                <button class="kyc-btn kyc-btn-approve" data-initial-approve="${key}">
+                    <i class="ti ti-check"></i> Approuver
+                </button>
+            </div>
+            <div class="kyc-renewal-reject-form" id="initial-reject-form-${key}" style="display:none;">
+                <textarea id="initial-reject-reason-${key}" placeholder="Motif du rejet (obligatoire, visible par le chauffeur)"></textarea>
+                <div class="kyc-reject-form-actions">
+                    <button class="btn btn-sm btn-outline" data-initial-cancel-reject="${key}">Annuler</button>
+                    <button class="kyc-btn kyc-btn-reject" data-initial-confirm-reject="${key}">Confirmer le rejet</button>
+                </div>
+            </div>
         </div>
     `;
 }
@@ -606,17 +675,25 @@ function renderKycRenewalBlock(doc, renewal) {
 ────────────────────────────────────────────── */
 
 function wireKycCardActions(scope) {
-    scope.querySelectorAll("[data-kyc-approve]").forEach(btn => {
-        btn.addEventListener("click", () => handleKycApprove(Number(btn.dataset.kycApprove), btn));
+    // Actions d'examen KYC INITIAL — ciblent (driverId, document_group),
+    // pas un id de ligne (review_kyc_document.php n'en a pas besoin, une
+    // seule ligne pending possible par (chauffeur, groupe) à la fois).
+    scope.querySelectorAll("[data-initial-approve]").forEach(btn => {
+        const [driverId, group] = btn.dataset.initialApprove.split(":");
+        btn.addEventListener("click", () => handleInitialApprove(Number(driverId), group, btn));
     });
-    scope.querySelectorAll("[data-kyc-show-reject]").forEach(btn => {
-        btn.addEventListener("click", () => toggleRejectForm(Number(btn.dataset.kycShowReject)));
+    scope.querySelectorAll("[data-initial-show-reject]").forEach(btn => {
+        const key = btn.dataset.initialShowReject;
+        btn.addEventListener("click", () => toggleInitialRejectForm(key));
     });
-    scope.querySelectorAll("[data-kyc-cancel-reject]").forEach(btn => {
-        btn.addEventListener("click", () => toggleRejectForm(Number(btn.dataset.kycCancelReject), true));
+    scope.querySelectorAll("[data-initial-cancel-reject]").forEach(btn => {
+        const key = btn.dataset.initialCancelReject;
+        btn.addEventListener("click", () => toggleInitialRejectForm(key, true));
     });
-    scope.querySelectorAll("[data-kyc-confirm-reject]").forEach(btn => {
-        btn.addEventListener("click", () => handleKycReject(Number(btn.dataset.kycConfirmReject), btn));
+    scope.querySelectorAll("[data-initial-confirm-reject]").forEach(btn => {
+        const key = btn.dataset.initialConfirmReject;
+        const [driverId, group] = key.split(":");
+        btn.addEventListener("click", () => handleInitialReject(Number(driverId), group, key, btn));
     });
 
     // Actions de renouvellement — mêmes patterns, mais ciblent une ligne
@@ -636,10 +713,10 @@ function wireKycCardActions(scope) {
     });
 }
 
-async function handleKycApprove(driverId, btn) {
+async function handleInitialApprove(driverId, group, btn) {
     const ok = await confirmAction({
-        title: "Approuver ce dossier ?",
-        message: "Le chauffeur pourra se mettre en ligne et recevoir des courses dès validation.",
+        title: "Approuver ce document ?",
+        message: "Le dossier passera à \"Approuvé\" une fois les 5 documents traités et acceptés.",
         confirmLabel: "Approuver",
         cancelLabel: "Annuler",
         danger: false
@@ -648,11 +725,9 @@ async function handleKycApprove(driverId, btn) {
 
     btn.disabled = true;
     try {
-        const result = await submitKycReview(driverId, "approve");
+        const result = await submitKycDocumentReview(driverId, group, "approve");
         if (result.status === "success") {
-            showToast("Dossier approuvé", "success");
-            // On reste sur la fiche détail (mise à jour), pas de retour forcé
-            // à la liste — l'admin voit immédiatement le nouveau statut.
+            showToast("Document approuvé", "success");
             await loadKyc();
         } else {
             showToast(result.message || "Erreur", "error");
@@ -664,18 +739,18 @@ async function handleKycApprove(driverId, btn) {
     }
 }
 
-function toggleRejectForm(driverId, forceHide = false) {
-    const form = document.getElementById(`kyc-reject-form-${driverId}`);
+function toggleInitialRejectForm(key, forceHide = false) {
+    const form = document.getElementById(`initial-reject-form-${key}`);
     if (!form) return;
     const show = forceHide ? false : form.style.display === "none";
     form.style.display = show ? "flex" : "none";
     if (show) {
-        document.getElementById(`kyc-reject-reason-${driverId}`)?.focus();
+        document.getElementById(`initial-reject-reason-${key}`)?.focus();
     }
 }
 
-async function handleKycReject(driverId, btn) {
-    const textarea = document.getElementById(`kyc-reject-reason-${driverId}`);
+async function handleInitialReject(driverId, group, key, btn) {
+    const textarea = document.getElementById(`initial-reject-reason-${key}`);
     const reason = (textarea?.value || "").trim();
 
     if (!reason) {
@@ -685,8 +760,8 @@ async function handleKycReject(driverId, btn) {
     }
 
     const ok = await confirmAction({
-        title: "Rejeter ce dossier ?",
-        message: "Le chauffeur verra ce motif et devra corriger ses documents.",
+        title: "Rejeter ce document ?",
+        message: "Le chauffeur verra ce motif et pourra resoumettre uniquement ce document — les autres documents déjà traités ne sont pas affectés.",
         confirmLabel: "Confirmer le rejet",
         cancelLabel: "Annuler",
         danger: true
@@ -695,9 +770,9 @@ async function handleKycReject(driverId, btn) {
 
     btn.disabled = true;
     try {
-        const result = await submitKycReview(driverId, "reject", reason);
+        const result = await submitKycDocumentReview(driverId, group, "reject", reason);
         if (result.status === "success") {
-            showToast("Dossier rejeté", "success");
+            showToast("Document rejeté", "success");
             await loadKyc();
         } else {
             showToast(result.message || "Erreur", "error");

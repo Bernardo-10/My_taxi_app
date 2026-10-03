@@ -1070,3 +1070,24 @@ tbody tr:hover td { background: var(--c-bg); }
   flex-direction: column;
   gap: 8px;
 }
+
+/* Sous-bloc d'examen KYC INITIAL — même emplacement dans .kyc-doc-block
+   que .kyc-renewal-block, système indépendant (voir
+   chauffeur_document_reviews). Réutilise .kyc-renewal-actions et
+   .kyc-renewal-reject-form tels quels (génériques). */
+.kyc-initial-review-block {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--c-border2);
+}
+.kyc-initial-approved {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-green);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.kyc-initial-rejected .kyc-renewal-label {
+  color: var(--c-red);
+}
