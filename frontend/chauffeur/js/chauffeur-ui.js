@@ -884,7 +884,7 @@ function renderDocumentsList(documents, container) {
   // Boutons "Modifier" — un listener par carte plutôt qu'un onclick inline,
   // pour rester cohérent avec le reste du fichier (voir initReportModal()).
   container.querySelectorAll("[data-doc-edit]").forEach(btn => {
-    btn.addEventListener("click", () => openRenewalModal(btn.dataset.docEdit, documents[btn.dataset.docEdit]));
+    btn.addEventListener("click", () => openRenewalModal(btn.dataset.docEdit, documents[btn.dataset.docEdit], btn.dataset.docEditMode || "renewal"));
   });
 
   // Zoom sur les miniatures : clic → image en grand dans une lightbox
@@ -944,12 +944,22 @@ function openDocPhotoLightbox(src, alt) {
 
 function renderDocumentCard(key, meta, doc) {
   const hasPending = doc.pending && doc.pending.status === "pending";
-  const isRejected = doc.pending && doc.pending.status === "rejected";
+  const isRenewalRejected = doc.pending && doc.pending.status === "rejected";
   const missingData = !doc.number || !doc.expiration || !doc.photo_recto || (meta.hasVerso && !doc.photo_verso);
+
+  // Examen KYC INITIAL (chauffeur_document_reviews) — système séparé des
+  // renouvellements ci-dessus. Ne s'applique QUE tant que ce document n'a
+  // jamais été approuvé une première fois ('approved' => le renouvellement
+  // prend le relai pour toute future modification, voir plus bas).
+  const initialReview = doc.initial_review;
+  const isInitialPending  = initialReview && initialReview.status === "pending";
+  const isInitialRejected = initialReview && initialReview.status === "rejected";
 
   let statusPill = '<span class="doc-status-pill approved">À jour</span>';
   if (hasPending) statusPill = '<span class="doc-status-pill pending">En vérification</span>';
-  else if (isRejected) statusPill = '<span class="doc-status-pill rejected">Rejeté</span>';
+  else if (isInitialRejected) statusPill = '<span class="doc-status-pill rejected">Rejeté</span>';
+  else if (isInitialPending) statusPill = '<span class="doc-status-pill pending">En vérification</span>';
+  else if (isRenewalRejected) statusPill = '<span class="doc-status-pill rejected">Rejeté</span>';
   else if (missingData) statusPill = '<span class="doc-status-pill pending">En attente</span>';
 
   const daysLeft = doc.days_until_expiration;
@@ -972,7 +982,13 @@ function renderDocumentCard(key, meta, doc) {
   let pendingBanner = "";
   if (hasPending) {
     pendingBanner = `<div class="doc-pending-banner"><i class="ti ti-clock" aria-hidden="true"></i> Renouvellement envoyé, en attente de vérification par l'admin.</div>`;
-  } else if (isRejected) {
+  } else if (isInitialRejected) {
+    pendingBanner = `<div class="doc-rejected-banner">Document rejeté à la vérification.
+      <span class="doc-reject-reason">${escapeHtml(initialReview.rejection_reason || "Motif non précisé")}</span>
+    </div>`;
+  } else if (isInitialPending) {
+    pendingBanner = `<div class="doc-pending-banner"><i class="ti ti-clock" aria-hidden="true"></i> Document envoyé, en attente de vérification par l'admin.</div>`;
+  } else if (isRenewalRejected) {
     pendingBanner = `<div class="doc-rejected-banner">Renouvellement rejeté.
       <span class="doc-reject-reason">${escapeHtml(doc.pending.rejection_reason || "Motif non précisé")}</span>
     </div>`;
@@ -980,13 +996,27 @@ function renderDocumentCard(key, meta, doc) {
     pendingBanner = `<div class="doc-pending-banner"><i class="ti ti-clock" aria-hidden="true"></i> Document manquant : veuillez compléter ce document pour finaliser votre KYC.</div>`;
   }
 
-  // Bouton "Modifier" masqué tant qu'un renouvellement est déjà en
-  // attente, pour éviter les doublons de soumission (cf. rapport KYC §2.4).
-  const editBtn = hasPending
-    ? ""
-    : `<button class="doc-btn-edit" type="button" data-doc-edit="${key}">
-         <i class="ti ti-edit" aria-hidden="true"></i> ${isRejected ? "Resoumettre" : "Modifier"}
+  // Bouton "Modifier"/"Resoumettre" :
+  //   - masqué si un renouvellement est déjà en attente (doublon)
+  //   - masqué si l'examen initial est encore 'pending' (rien à corriger
+  //     tant qu'il n'a pas été examiné une première fois — demande
+  //     explicite : pas de resoumission avant un premier rejet)
+  //   - "Resoumettre" (-> resubmit_initial_document.php) si l'examen
+  //     initial est 'rejected'
+  //   - sinon comportement normal (renouvellement, "Modifier"/"Resoumettre"
+  //     selon isRenewalRejected)
+  let editBtn = "";
+  if (hasPending || isInitialPending) {
+    editBtn = "";
+  } else if (isInitialRejected) {
+    editBtn = `<button class="doc-btn-edit" type="button" data-doc-edit="${key}" data-doc-edit-mode="initial">
+         <i class="ti ti-edit" aria-hidden="true"></i> Resoumettre
        </button>`;
+  } else {
+    editBtn = `<button class="doc-btn-edit" type="button" data-doc-edit="${key}" data-doc-edit-mode="renewal">
+         <i class="ti ti-edit" aria-hidden="true"></i> ${isRenewalRejected ? "Resoumettre" : "Modifier"}
+       </button>`;
+  }
 
   return `
     <div class="doc-card">
@@ -1025,12 +1055,18 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-// ── Modale de renouvellement ──────────────────
-function openRenewalModal(docKey, doc) {
+// ── Modale de renouvellement (réutilisée aussi pour la resoumission d'un
+//    document rejeté à l'examen initial — voir renewalModalMode) ──────
+let renewalModalMode = "renewal"; // "renewal" | "initial"
+
+function openRenewalModal(docKey, doc, mode = "renewal") {
   const meta = DOCUMENT_GROUPS[docKey];
   if (!meta) return;
 
-  document.getElementById("renewalModalTitle").textContent = `Renouveler — ${meta.label}`;
+  renewalModalMode = mode;
+  document.getElementById("renewalModalTitle").textContent = mode === "initial"
+    ? `Corriger — ${meta.label}`
+    : `Renouveler — ${meta.label}`;
   document.getElementById("renewalDocumentGroup").value = docKey;
   document.getElementById("renewalNumberLabel").textContent = meta.numberLabel;
   document.getElementById("renewalNumber").value = doc?.number || "";
@@ -1068,9 +1104,18 @@ async function submitDocumentRenewalForm(event) {
 
   try {
     const formData = new FormData(form);
-    const res = await submitDocumentRenewal(formData);
+    // "initial" : correction d'un document rejeté à l'examen initial
+    // (resubmit_initial_document.php) — "renewal" : renouvellement normal
+    // d'un document déjà approuvé (submit_document_renewal.php). Même
+    // formulaire, deux endpoints séparés (voir renewalModalMode).
+    const res = renewalModalMode === "initial"
+      ? await resubmitInitialDocument(formData)
+      : await submitDocumentRenewal(formData);
     if (res.status === "success") {
-      showToast("Document envoyé, en attente de vérification.", "success");
+      showToast(
+        renewalModalMode === "initial" ? "Document corrigé, en attente de vérification." : "Document envoyé, en attente de vérification.",
+        "success"
+      );
       closeRenewalModal();
       loadMyDocuments();
     } else {

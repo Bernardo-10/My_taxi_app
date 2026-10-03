@@ -642,3 +642,19 @@ async function submitDocumentRenewal(formData) {
   }
   return res.json();
 }
+
+// Jumelle de submitDocumentRenewal(), mais pour la correction d'un
+// document REJETÉ lors de l'examen KYC initial (système séparé — voir
+// resubmit_initial_document.php). Même forme de FormData (document_group,
+// number, expiration, photo_recto, photo_verso), endpoint différent.
+async function resubmitInitialDocument(formData) {
+  const res = await fetch(`${DRIVER_API_BASE}/chauffeur/resubmit_initial_document.php`, {
+    method: 'POST',
+    body: formData
+  });
+  if (res.status === 401) {
+    window.location.href = '/chauffeur/login';
+    throw new Error('Session expirée');
+  }
+  return res.json();
+}

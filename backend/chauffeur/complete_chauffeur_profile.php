@@ -17,12 +17,18 @@ require_once __DIR__ . "/../config/auth.php";
 //   - à la fin, kyc_status passe de 'incomplete' à 'pending' : c'est
 //     précisément le moment où le dossier doit apparaître dans la file
 //     d'attente admin (list_pending_kyc.php filtre déjà sur ce statut,
-//     aucun changement nécessaire côté admin).
+//     aucun changement nécessaire côté admin), et 5 lignes 'pending'
+//     sont créées dans chauffeur_document_reviews (une par groupe) pour
+//     l'examen document par document — voir review_kyc_document.php.
 //
-// Un chauffeur dont le kyc_status n'est plus 'incomplete' (déjà pending,
-// approved, ou rejected) doit passer par submit_document_renewal.php
-// pour corriger un document précis — pas par ce point d'entrée, qui
-// exige le dossier complet.
+// Un chauffeur dont le kyc_status n'est plus 'incomplete' doit passer
+// par un autre point d'entrée pour corriger un document :
+//   - document rejeté et dossier jamais encore approuvé une première
+//     fois -> resubmit_initial_document.php (corrige la ligne
+//     chauffeur_document_reviews correspondante)
+//   - document déjà approuvé, dossier globalement 'approved' ->
+//     submit_document_renewal.php (renouvellement, système séparé et
+//     indépendant, ne touche jamais kyc_status)
 
 require_once __DIR__ . "/../config/auth.php";
 require_once __DIR__ . "/../common/send_push.php";
@@ -263,6 +269,24 @@ if (!$updateStmt->execute()) {
     json_response(["status" => "error", "message" => "Echec de l'enregistrement du profil"], 500);
 }
 $updateStmt->close();
+
+// Validation KYC initiale PAR DOCUMENT (voir échanges "validation kyc
+// initiale par document") : une ligne 'pending' par groupe, indépendante
+// de chauffeur_document_renewals. ON DUPLICATE KEY : ce point d'entrée
+// exige kyc_status='incomplete' (vérifié plus haut), donc en pratique
+// aucune ligne ne devrait déjà exister ici — le ON DUPLICATE est une
+// sécurité, pas un cas attendu.
+$groups = ["cni", "carte_grise", "permit", "capacity", "license"];
+$reviewStmt = $conn->prepare("
+    INSERT INTO chauffeur_document_reviews (chauffeur_id, document_group, status, rejection_reason, reviewed_at)
+    VALUES (?, ?, 'pending', NULL, NULL)
+    ON DUPLICATE KEY UPDATE status = 'pending', rejection_reason = NULL, reviewed_at = NULL
+");
+foreach ($groups as $group) {
+    $reviewStmt->bind_param("is", $driverId, $group);
+    $reviewStmt->execute();
+}
+$reviewStmt->close();
 
 // Alerte admin (son+vibration si onglet ouvert, push sinon) — best-effort,
 // ne doit jamais faire échouer la complétion du profil elle-même.

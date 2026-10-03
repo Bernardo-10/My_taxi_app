@@ -81,6 +81,27 @@ while ($r = $renewalResult->fetch_assoc()) {
     ];
 }
 
+// ── Examen KYC INITIAL par document (chauffeur_document_reviews) ────
+// Système séparé des renouvellements ci-dessus (voir migration
+// 2026_08_30_chauffeur_document_reviews.sql) : une ligne par (chauffeur,
+// groupe), toujours exactement 5 par chauffeur une fois initialisées.
+// Chargé pour tous les chauffeurs en une seule requête (même logique
+// anti-N+1 que les renouvellements ci-dessus).
+$initialReviewsByChauffeur = [];
+$reviewResult = $conn->query("
+    SELECT chauffeur_id, document_group, status, rejection_reason, reviewed_at
+    FROM chauffeur_document_reviews
+");
+while ($r = $reviewResult->fetch_assoc()) {
+    $cid = (int) $r["chauffeur_id"];
+    $initialReviewsByChauffeur[$cid] = $initialReviewsByChauffeur[$cid] ?? [];
+    $initialReviewsByChauffeur[$cid][$r["document_group"]] = [
+        "status" => $r["status"],
+        "rejection_reason" => $r["rejection_reason"],
+        "reviewed_at" => $r["reviewed_at"]
+    ];
+}
+
 $chauffeurs = [];
 while ($row = $result->fetch_assoc()) {
     $row["id"] = (int) $row["id"];
@@ -105,6 +126,7 @@ while ($row = $result->fetch_assoc()) {
     }
 
     $row["pending_renewals"] = $renewalsByChauffeur[$row["id"]] ?? [];
+    $row["document_reviews"] = $initialReviewsByChauffeur[$row["id"]] ?? [];
 
     $chauffeurs[] = $row;
 }

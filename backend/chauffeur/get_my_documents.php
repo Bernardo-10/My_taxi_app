@@ -17,6 +17,7 @@ $conn = db_connect();
 // ── 1. Documents live ────────────────────────────────────────────
 $stmt = $conn->prepare("
     SELECT
+        kyc_status,
         cni_number, cni_expiration, cni_photo_recto, cni_photo_verso,
         carte_grise_immat, carte_grise_expiration, carte_grise_photo,
         permit_number, permit_expiration, permit_photo_recto, permit_photo_verso,
@@ -108,6 +109,30 @@ while ($r = $renewalResult->fetch_assoc()) {
 }
 $renewalStmt->close();
 
+// ── 2bis. Examen KYC INITIAL par document (chauffeur_document_reviews) ──
+// Système totalement séparé des renouvellements ci-dessus (voir migration
+// 2026_08_30_chauffeur_document_reviews.sql) — n'existe que pour un
+// dossier qui n'a jamais encore été approuvé une première fois. Une fois
+// tous les documents 'approved', ces lignes restent en base pour
+// historique mais ne pilotent plus rien (le renouvellement prend le relai).
+$reviewStmt = $conn->prepare("
+    SELECT document_group, status, rejection_reason, reviewed_at
+    FROM chauffeur_document_reviews
+    WHERE chauffeur_id = ?
+");
+$reviewStmt->bind_param("i", $driverId);
+$reviewStmt->execute();
+$reviewResult = $reviewStmt->get_result();
+$reviewsByGroup = [];
+while ($r = $reviewResult->fetch_assoc()) {
+    $reviewsByGroup[$r["document_group"]] = [
+        "status" => $r["status"],
+        "rejection_reason" => $r["rejection_reason"],
+        "reviewed_at" => $r["reviewed_at"]
+    ];
+}
+$reviewStmt->close();
+
 // ── 3. Assemblage final ──────────────────────────────────────────
 $documents = [];
 foreach ($liveMap as $group => $live) {
@@ -117,10 +142,20 @@ foreach ($liveMap as $group => $live) {
         "photo_recto" => $live["photo_recto"],
         "photo_verso" => $live["photo_verso"],
         "days_until_expiration" => days_until($live["expiration"]),
-        "pending" => $renewalsByGroup[$group] ?? null
+        "pending" => $renewalsByGroup[$group] ?? null,
+        // "initial_review" pilote le bouton "Corriger" tant que le dossier
+        // n'a jamais été approuvé une première fois. Le frontend
+        // n'autorise la resoumission QUE si status === 'rejected' (pas
+        // 'pending', pas 'approved') — voir resubmit_initial_document.php
+        // qui applique la même règle côté serveur.
+        "initial_review" => $reviewsByGroup[$group] ?? null
     ];
 }
 
 $conn->close();
-json_response(["status" => "success", "documents" => $documents]);
+json_response([
+    "status" => "success",
+    "kyc_status" => $row["kyc_status"] ?? null,
+    "documents" => $documents
+]);
 ?>

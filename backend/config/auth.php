@@ -282,4 +282,49 @@ function require_admin_id() {
     }
     return (int) $_SESSION["admin_id"];
 }
+
+/**
+ * Recalcule et écrit kyc_status à partir des 5 lignes de
+ * chauffeur_document_reviews (examen KYC INITIAL uniquement — ne
+ * touche jamais rien lié aux renouvellements, voir migration
+ * 2026_08_30_chauffeur_document_reviews.sql pour le détail de la
+ * séparation).
+ *
+ * Règle (voir échanges "validation kyc initiale par document") :
+ *   - au moins 1 document encore 'pending'  -> dossier 'pending'
+ *   - les 5 'approved'                      -> dossier 'approved'
+ *   - les 5 traités, au moins 1 'rejected'  -> dossier 'rejected'
+ *     (même un seul rejeté sur 5 suffit — pas de verdict "mixte")
+ *
+ * Appelée après CHAQUE action qui change le statut d'un document
+ * (review_kyc_document.php, resubmit_initial_document.php) — jamais
+ * appelée par le flux de renouvellement, qui reste indépendant.
+ */
+function recompute_kyc_status(mysqli $conn, int $driverId): string {
+    $stmt = $conn->prepare("SELECT status FROM chauffeur_document_reviews WHERE chauffeur_id = ?");
+    $stmt->bind_param("i", $driverId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $statuses = [];
+    while ($row = $res->fetch_assoc()) {
+        $statuses[] = $row["status"];
+    }
+    $stmt->close();
+
+    if (in_array("pending", $statuses, true) || empty($statuses)) {
+        $newStatus = "pending";
+    } elseif (in_array("rejected", $statuses, true)) {
+        $newStatus = "rejected";
+    } else {
+        $newStatus = "approved";
+    }
+
+    $reviewedAt = in_array($newStatus, ["approved", "rejected"], true) ? "NOW()" : "NULL";
+    $upd = $conn->prepare("UPDATE chauffeur SET kyc_status = ?, kyc_reviewed_at = $reviewedAt WHERE id = ?");
+    $upd->bind_param("si", $newStatus, $driverId);
+    $upd->execute();
+    $upd->close();
+
+    return $newStatus;
+}
 ?>
