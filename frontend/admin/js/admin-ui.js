@@ -32,6 +32,8 @@ const AdminState = {
     walletsBadgeInterval: null, // badge sidebar (navWalletsBadge), indépendant de la section active
     shownRechargeIds: new Set(), // recharges déjà signalées (son+vibration) — évite de re-notifier à chaque poll de 30s
     rechargeWatchStarted: false, // évite de notifier pour des recharges déjà en attente au premier chargement
+    walletsCache: [],            // dernière liste de portefeuilles reçue (re-rendu sans refetch)
+    walletsDetailCache: {},      // historique déjà chargé, par chauffeur_id (évite le spinner au poll de 30 s)
 
     // Vérification chauffeur (KYC) — mêmes principe que shownProblemIds :
     // ne notifier (son+vibration) qu'une fois par élément réellement nouveau.
@@ -777,32 +779,17 @@ function renderClientsTable(list) {
 async function loadWallets() {
     const section = document.getElementById("section-wallets");
     const wrap = section.querySelector("#wallets-table-wrap");
-    const historyWrap = section.querySelector("#wallets-history-wrap");
     if (!wrap) return;
 
+    // À chaque entrée dans la section : aucune ligne dépliée, cache vidé
+    AdminState.walletsFilter.chauffeur_id = 0;
+    AdminState.walletsDetailCache = {};
+
     wrap.innerHTML = `<div class="empty-state"><div class="spinner"></div></div>`;
-    if (historyWrap) {
-        historyWrap.innerHTML = '';
-        historyWrap.style.display = 'none';
-    }
 
     try {
-        // 1. Charger la liste des portefeuilles
         const wallets = await fetchWallets();
-        wrap.innerHTML = renderWalletsTable(wallets);
-
-        // 2. Si un filtre chauffeur_id est actif, charger l'historique
-        const chauffeurId = AdminState.walletsFilter.chauffeur_id;
-        if (chauffeurId > 0 && historyWrap) {
-            try {
-                const data = await fetchWalletTransactions({ chauffeur_id: chauffeurId, limit: 20 });
-                historyWrap.innerHTML = renderTransactionHistory(data.transactions, chauffeurId);
-                historyWrap.style.display = 'block';
-            } catch (e) {
-                historyWrap.innerHTML = '<p class="text-danger">Erreur chargement historique</p>';
-                historyWrap.style.display = 'block';
-            }
-        }
+        renderAndWireWalletsTable(wallets);
     } catch (e) {
         wrap.innerHTML = `<p style="color:var(--c-red);padding:20px">Erreur de chargement.</p>`;
     }
@@ -811,15 +798,30 @@ async function loadWallets() {
     AdminState.walletsInterval = setInterval(refreshWallets, 30000);
 }
 
+// Poll toutes les 30 s : met à jour le tableau ET le détail ouvert.
+// Le détail est réaffiché depuis le cache (pas de spinner, pas de clignotement),
+// puis remplacé par les données fraîches dès qu'elles arrivent.
 async function refreshWallets() {
     const section = document.getElementById("section-wallets");
     if (!section || !section.classList.contains("active")) return;
 
     try {
         const wallets = await fetchWallets();
-        const wrap = section.querySelector("#wallets-table-wrap");
-        if (wrap) wrap.innerHTML = renderWalletsTable(wallets);
+        renderAndWireWalletsTable(wallets);
+
+        const openId = AdminState.walletsFilter.chauffeur_id;
+        if (openId > 0) await loadWalletRowDetail(openId);
     } catch (e) {}
+}
+
+// Affiche le tableau puis branche les clics sur les lignes.
+// Point unique utilisé par loadWallets, refreshWallets, toggleWalletRow et handleRecharge.
+function renderAndWireWalletsTable(wallets) {
+    const wrap = document.querySelector("#section-wallets #wallets-table-wrap");
+    if (!wrap) return;
+    AdminState.walletsCache = wallets;
+    wrap.innerHTML = renderWalletsTable(wallets);
+    wireWalletRowClicks(wrap);
 }
 
 function renderWalletsTable(wallets) {
@@ -827,11 +829,21 @@ function renderWalletsTable(wallets) {
         return `<div class="empty-state"><div class="empty-state-icon">💰</div><div class="empty-state-text">Aucun portefeuille</div></div>`;
     }
 
+    const openId = AdminState.walletsFilter.chauffeur_id; // 0 = aucune ligne ouverte
+
     const rows = wallets.map(w => {
         const balance = w.wallet_balance_fcfa;
         const balanceClass = balance < 0 ? 'text-danger' : 'text-success';
-        return `<tr>
-            <td><strong>${w.name}</strong><div class="ride-detail">${w.phone || ''}</div></td>
+        const isOpen = openId === w.id;
+
+        // Contenu du détail : cache s'il existe, sinon spinner en attendant le chargement
+        const cached = AdminState.walletsDetailCache[w.id];
+        const detailHtml = !isOpen ? ''
+            : (cached ? renderTransactionHistory(cached, w.id)
+                      : '<div class="empty-state"><div class="spinner"></div></div>');
+
+        return `<tr class="wallet-row" data-wallet-row="${w.id}" tabindex="0" role="button" aria-expanded="${isOpen}">
+            <td><strong>${escapeHtml(w.name)}</strong><div class="ride-detail">${escapeHtml(w.phone || '')}</div></td>
             <td class="${balanceClass}">${formatFcfa(balance)}</td>
             <td>${formatFcfa(w.total_commissions_fcfa)}</td>
             <td>${formatFcfa(w.total_recharges_fcfa)}</td>
@@ -844,13 +856,14 @@ function renderWalletsTable(wallets) {
             <td>
                 ${w.derniere_transaction_at
                     ? `<span title="${formatDate(w.derniere_transaction_at)}">${formatDateShort(w.derniere_transaction_at)}</span>
-                       <div class="ride-detail">${w.derniere_transaction_type || ''}</div>`
+                       <div class="ride-detail">${escapeHtml(w.derniere_transaction_type || '')}</div>`
                     : '—'
                 }
             </td>
-            <td>
-                <button class="btn btn-sm btn-outline" onclick="showWalletHistory(${w.id})">Historique</button>
-            </td>
+            <td><i class="ti ti-chevron-right wallet-row-chevron${isOpen ? ' open' : ''}"></i></td>
+        </tr>
+        <tr class="wallet-detail-row" data-wallet-detail="${w.id}" style="display:${isOpen ? 'table-row' : 'none'}">
+            <td colspan="7" id="wallet-detail-content-${w.id}">${detailHtml}</td>
         </tr>`;
     }).join('');
 
@@ -862,26 +875,72 @@ function renderWalletsTable(wallets) {
             <th>Recharges</th>
             <th>Recharges en attente</th>
             <th>Dernière activité</th>
-            <th>Action</th>
+            <th></th>
         </tr></thead>
         <tbody>${rows}</tbody>
     </table></div>`;
 }
 
-function showWalletHistory(chauffeurId) {
-    if (!chauffeurId) return;
-    AdminState.walletsFilter.chauffeur_id = chauffeurId;
-    loadWallets();
+// Branche le clic (souris) et Entrée/Espace (clavier) sur chaque ligne principale.
+// À rappeler après chaque réécriture du tableau.
+function wireWalletRowClicks(container) {
+    container.querySelectorAll('[data-wallet-row]').forEach(tr => {
+        const id = Number(tr.dataset.walletRow);
+        tr.addEventListener('click', () => toggleWalletRow(id));
+        tr.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                toggleWalletRow(id);
+            }
+        });
+    });
 }
 
-function clearWalletFilter() {
-    AdminState.walletsFilter.chauffeur_id = 0;
-    loadWallets();
+// Ouvre la ligne cliquée (et ferme l'autre), ou la ferme si elle était déjà ouverte.
+async function toggleWalletRow(chauffeurId) {
+    const wasOpen = AdminState.walletsFilter.chauffeur_id === chauffeurId;
+    AdminState.walletsFilter.chauffeur_id = wasOpen ? 0 : chauffeurId;
+
+    renderAndWireWalletsTable(AdminState.walletsCache);
+
+    if (!wasOpen) await loadWalletRowDetail(chauffeurId);
+}
+
+// Croix ✕ du panneau déplié
+function closeWalletRow() {
+    const chauffeurId = AdminState.walletsFilter.chauffeur_id;
+    if (chauffeurId) toggleWalletRow(chauffeurId);
+}
+
+// Charge l'historique d'un chauffeur, le met en cache et l'affiche dans sa ligne de détail.
+async function loadWalletRowDetail(chauffeurId) {
+    try {
+        const data = await fetchWalletTransactions({ chauffeur_id: chauffeurId, limit: 20 });
+        if (data.status !== 'success') throw new Error('api');
+        AdminState.walletsDetailCache[chauffeurId] = data.transactions || [];
+    } catch (e) {
+        // On garde l'ancien affichage s'il existe ; sinon message d'erreur
+        if (!AdminState.walletsDetailCache[chauffeurId]) {
+            const errCell = document.getElementById(`wallet-detail-content-${chauffeurId}`);
+            if (errCell) errCell.innerHTML = '<p class="text-danger">Erreur chargement historique</p>';
+        }
+        return;
+    }
+
+    // La ligne a été refermée (ou une autre ouverte) pendant le chargement : rien à afficher
+    if (AdminState.walletsFilter.chauffeur_id !== chauffeurId) return;
+
+    const cell = document.getElementById(`wallet-detail-content-${chauffeurId}`);
+    if (cell) cell.innerHTML = renderTransactionHistory(AdminState.walletsDetailCache[chauffeurId], chauffeurId);
 }
 
 function renderTransactionHistory(transactions, chauffeurId) {
     if (!transactions || !transactions.length) {
-        return `<div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">Aucune transaction pour ce chauffeur</div></div>`;
+        return `<div class="wallet-detail-head">
+                <h4>Historique des transactions</h4>
+                <button class="wallet-detail-close" onclick="closeWalletRow()" aria-label="Fermer"><i class="ti ti-x"></i></button>
+            </div>
+            <div class="empty-state"><div class="empty-state-icon">📭</div><div class="empty-state-text">Aucune transaction pour ce chauffeur</div></div>`;
     }
 
     const rows = transactions.map(t => {
@@ -903,35 +962,34 @@ function renderTransactionHistory(transactions, chauffeurId) {
             `;
         }
 
+        // escapeHtml : operator / reference sont saisis par le chauffeur
         return `<tr>
-            <td>${t.type}</td>
+            <td>${escapeHtml(t.type)}</td>
             <td class="${amountClass}">${sign}${formatFcfa(Math.abs(amount))}</td>
-            <td><span class="topbar-badge ${statusBadge}">${t.status}</span></td>
-            <td>${t.operator || '—'}</td>
-            <td>${t.reference || '—'}</td>
-            <td>${t.description || '—'}</td>
+            <td><span class="topbar-badge ${statusBadge}">${escapeHtml(t.status)}</span></td>
+            <td>${escapeHtml(t.operator || '—')}</td>
+            <td>${escapeHtml(t.reference || '—')}</td>
+            <td>${escapeHtml(t.description || '—')}</td>
             <td>${formatDate(t.created_at)}</td>
             <td>${actions}</td>
         </tr>`;
     }).join('');
 
     return `
-        <div style="margin-top:20px;border-top:1px solid var(--c-border);padding-top:16px;">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-                <h4 style="margin:0">Historique des transactions</h4>
-                <button class="btn btn-sm btn-outline" onclick="clearWalletFilter()">Fermer</button>
-            </div>
-            <div class="table-wrap">
-                <table>
-                    <thead><tr><th>Type</th><th>Montant</th><th>Statut</th><th>Opérateur</th><th>Référence</th><th>Description</th><th>Date</th><th>Actions</th></tr></thead>
-                    <tbody>${rows}</tbody>
-                </table>
-            </div>
+        <div class="wallet-detail-head">
+            <h4>Historique des transactions</h4>
+            <button class="wallet-detail-close" onclick="closeWalletRow()" aria-label="Fermer"><i class="ti ti-x"></i></button>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>Type</th><th>Montant</th><th>Statut</th><th>Opérateur</th><th>Référence</th><th>Description</th><th>Date</th><th>Actions</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
         </div>
     `;
 }
 
-// Nouvelle fonction pour gérer la validation/rejet
+// Validation / rejet d'une recharge
 async function handleRecharge(transactionId, action) {
     const actionLabel = action === 'approve' ? 'valider' : 'rejeter';
     const ok = await confirmAction({
@@ -943,25 +1001,18 @@ async function handleRecharge(transactionId, action) {
     });
     if (!ok) return;
 
-    // Désactiver les boutons de cette ligne (optionnel)
-    // On peut simplement appeler l'API et recharger
-
     try {
         const result = await validateRecharge(transactionId, action);
         if (result.status === 'success') {
             showToast(result.message, 'success');
-            // Recharger l'historique actuel
+
+            // 1. Tableau (badge "en attente" + solde de la ligne), sans refermer le détail
+            const wallets = await fetchWallets();
+            renderAndWireWalletsTable(wallets);
+
+            // 2. Détail ouvert : historique rechargé
             const chauffeurId = AdminState.walletsFilter.chauffeur_id;
-            if (chauffeurId > 0) {
-                const data = await fetchWalletTransactions({ chauffeur_id: chauffeurId, limit: 20 });
-                const historyWrap = document.getElementById("wallets-history-wrap");
-                if (historyWrap) {
-                    historyWrap.innerHTML = renderTransactionHistory(data.transactions, chauffeurId);
-                    historyWrap.style.display = 'block';
-                }
-                // Rafraîchir aussi le tableau des portefeuilles pour mettre à jour le solde
-                loadWallets();
-            }
+            if (chauffeurId > 0) await loadWalletRowDetail(chauffeurId);
         } else {
             showToast(result.message || 'Erreur', 'error');
         }

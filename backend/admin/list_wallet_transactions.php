@@ -56,7 +56,7 @@ $sql = "
     FROM wallet_transactions wt
     JOIN chauffeur c ON c.id = wt.chauffeur_id
     $whereSql
-    ORDER BY wt.created_at DESC
+    ORDER BY (wt.status = 'pending') DESC, wt.created_at DESC
     LIMIT ? OFFSET ?
 ";
 $stmt = $conn->prepare($sql);

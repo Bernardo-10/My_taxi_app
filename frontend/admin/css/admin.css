@@ -995,6 +995,44 @@ tbody tr:hover td { background: var(--c-bg); }
 }
 .kyc-list-item:hover .kyc-chevron { color: var(--c-amber-d); }
 
+/* ── Portefeuille : ligne dépliable (accordéon) ───────── */
+.wallet-row { cursor: pointer; transition: var(--transition); }
+.wallet-row:hover td { background: var(--c-surface2); }
+.wallet-row:focus-visible { outline: 2px solid var(--c-amber); outline-offset: -2px; }
+
+.wallet-row-chevron {
+  color: var(--c-text-4);
+  transition: transform 0.15s ease;
+}
+.wallet-row-chevron.open { transform: rotate(90deg); }
+.wallet-row:hover .wallet-row-chevron { color: var(--c-amber-d); }
+
+/* Ligne de détail : pas de surbrillance au survol (la règle globale
+   "tbody tr:hover td" s'appliquerait sinon à tout le tableau imbriqué) */
+.wallet-detail-row > td,
+.wallet-detail-row:hover > td { background: var(--c-surface2); padding: 0 16px 16px; }
+.wallet-detail-row:hover td td { background: transparent; }
+.wallet-detail-row tbody tr:hover td { background: var(--c-bg); }
+
+.wallet-detail-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 12px 0;
+}
+.wallet-detail-head h4 { margin: 0; }
+
+.wallet-detail-close {
+  background: none;
+  border: none;
+  color: var(--c-text-3);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+}
+.wallet-detail-close:hover { color: var(--c-text); }
+
 /* ── Vue détail plein espace ──────────────────────────── */
 .kyc-detail-wrap {
   padding: 18px 20px;
