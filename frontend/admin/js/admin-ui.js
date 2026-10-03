@@ -22,9 +22,10 @@ const AdminState = {
 
     // Chantier 4 (v3) — polling global des signalements client
     problemsInterval: null,
-    shownProblemIds: new Set(),
+    problemLastShownAt: new Map(), // ride.id -> timestamp (ms) du dernier affichage (sert au rappel toutes les 5 min)
     problemAlertQueue: [],
-    problemAlertShowing: false,
+    problemAlertShowingId: null,   // id du signalement actuellement affiché (null = aucune modale)
+    unresolvedProblems: [],        // derniers signalements non traités reçus (alimente le bouton de rappel de la barre du haut)
 
     // Portefeuille
     walletsFilter: { chauffeur_id: 0, type: '', status: '' },
@@ -35,7 +36,7 @@ const AdminState = {
     walletsCache: [],            // dernière liste de portefeuilles reçue (re-rendu sans refetch)
     walletsDetailCache: {},      // historique déjà chargé, par chauffeur_id (évite le spinner au poll de 30 s)
 
-    // Vérification chauffeur (KYC) — mêmes principe que shownProblemIds :
+    // Vérification chauffeur (KYC) — même principe que shownRechargeIds :
     // ne notifier (son+vibration) qu'une fois par élément réellement nouveau.
     shownKycPendingIds: new Set(),  // ids chauffeurs vus en kyc_status='pending'
     shownRenewalIds: new Set(),     // ids de renouvellements de documents déjà signalés
@@ -224,13 +225,22 @@ async function refreshWalletsBadge() {
         // Au tout premier chargement (arrivée sur le dashboard), on ne
         // notifie pas pour des recharges déjà en attente depuis avant —
         // seulement pour celles qui arrivent APRÈS, pendant que l'admin
-        // est connecté. Même logique que shownProblemIds pour les
-        // signalements client.
+        // est connecté. (Les signalements client suivent une autre
+        // logique : rappel toutes les 5 min, voir checkClientProblems.)
         if (!isFirstCheck && newOnes.length > 0 && window.notifyFeedback) {
             window.notifyFeedback({ sound: "admin_alert", vibrate: [80, 40, 80] });
         }
     } catch (e) {
         // silencieux — prochain cycle réessaiera
+    }
+}
+
+const PROBLEM_ALERT_REPEAT_MS = 5 * 60 * 1000; // un signalement non résolu revient toutes les 5 minutes
+
+// Son + vibration d'alerte (premier affichage ET rappels)
+function playProblemAlertFeedback() {
+    if (window.notifyFeedback) {
+        window.notifyFeedback({ sound: "admin_alert", vibrate: [80, 40, 80] });
     }
 }
 
@@ -244,10 +254,32 @@ async function checkClientProblems() {
     );
 
     updateProblemsBadge(unresolved.length);
+    AdminState.unresolvedProblems = unresolved;
+    updateProblemsReminder(unresolved.length);
+
+    // Nettoyage : un signalement résolu ailleurs (ex. section Signalements)
+    // ne doit ni rester en file d'attente ni garder un minuteur de rappel.
+    const unresolvedIds = new Set(unresolved.map(p => p.id));
+    AdminState.problemAlertQueue = AdminState.problemAlertQueue.filter(r => unresolvedIds.has(r.id));
+    for (const id of AdminState.problemLastShownAt.keys()) {
+        if (!unresolvedIds.has(id)) AdminState.problemLastShownAt.delete(id);
+    }
 
     unresolved.forEach(ride => {
-        if (AdminState.shownProblemIds.has(ride.id)) return;
-        AdminState.shownProblemIds.add(ride.id);
+        const lastShown = AdminState.problemLastShownAt.get(ride.id);
+        const isDue = lastShown === undefined || (Date.now() - lastShown >= PROBLEM_ALERT_REPEAT_MS);
+        if (!isDue) return;
+
+        // Déjà à l'écran depuis 5 min sans réaction : inutile de la rouvrir,
+        // on rejoue seulement le son + la vibration pour la rendre perceptible.
+        if (AdminState.problemAlertShowingId === ride.id) {
+            AdminState.problemLastShownAt.set(ride.id, Date.now());
+            playProblemAlertFeedback();
+            return;
+        }
+        // Déjà dans la file d'attente : elle s'affichera à son tour
+        if (AdminState.problemAlertQueue.some(r => r.id === ride.id)) return;
+
         enqueueProblemAlert(ride);
     });
 }
@@ -259,19 +291,66 @@ function updateProblemsBadge(count) {
     badge.style.display = count > 0 ? "inline-block" : "none";
 }
 
+// Bouton "N signalements à traiter" dans la barre du haut, visible depuis toutes les sections
+// tant qu'il reste des signalements non traités : permet de rouvrir la fenêtre et de
+// cliquer "Marquer comme traité" SANS attendre le prochain rappel de 5 minutes.
+function updateProblemsReminder(count) {
+    let btn = document.getElementById("problemsReminder");
+    if (count === 0) {
+        if (btn) btn.remove();
+        return;
+    }
+    if (!btn) {
+        const topbar = document.querySelector(".topbar");
+        if (!topbar) return;
+        btn = document.createElement("button");
+        btn.id = "problemsReminder";
+        btn.type = "button";
+        btn.className = "problems-reminder";
+        btn.addEventListener("click", reopenUnresolvedProblems);
+        topbar.appendChild(btn);
+    }
+    btn.textContent = count === 1
+        ? "🚨 1 signalement à traiter"
+        : `🚨 ${count} signalements à traiter`;
+}
+
+// Réouvre (silencieusement) tous les signalements non traités, un par un via la file.
+function reopenUnresolvedProblems() {
+    AdminState.unresolvedProblems.forEach(ride => {
+        if (AdminState.problemAlertShowingId === ride.id) return;
+        if (AdminState.problemAlertQueue.some(r => r.id === ride.id)) return;
+        AdminState.problemAlertQueue.push({ ...ride, _manual: true }); // _manual : pas de son
+    });
+    processProblemAlertQueue();
+}
+
 function enqueueProblemAlert(ride) {
     AdminState.problemAlertQueue.push(ride);
     processProblemAlertQueue();
 }
 
 function processProblemAlertQueue() {
-    if (AdminState.problemAlertShowing || AdminState.problemAlertQueue.length === 0) return;
+    if (AdminState.problemAlertShowingId !== null || AdminState.problemAlertQueue.length === 0) return;
     const ride = AdminState.problemAlertQueue.shift();
-    AdminState.problemAlertShowing = true;
+    AdminState.problemAlertShowingId = ride.id;
     openAdminClientProblemAlert(ride);
 }
 
+// Ferme la modale SANS résoudre le signalement (croix ✕ ou clic sur le fond).
+// problemLastShownAt n'est pas touché : c'est lui qui déclenche le rappel dans 5 min.
+function dismissProblemAlert() {
+    const overlay = document.getElementById("clientProblemAlert");
+    if (overlay) overlay.remove();
+    AdminState.problemAlertShowingId = null;
+    processProblemAlertQueue(); // affiche la suivante en file, s'il y en a
+}
+
 function openAdminClientProblemAlert(ride) {
+    // À chaque affichage (premier ou rappel) : on note l'heure + son/vibration
+    AdminState.problemLastShownAt.set(ride.id, Date.now());
+    if (!ride._manual) playProblemAlertFeedback(); // ouverture demandée par l'admin : pas de son
+
     const existing = document.getElementById("clientProblemAlert");
     if (existing) existing.remove();
 
@@ -285,9 +364,22 @@ function openAdminClientProblemAlert(ride) {
     const box = document.createElement("div");
     box.className = "client-problem-box";
 
+    const titleRow = document.createElement("div");
+    titleRow.className = "client-problem-title-row";
+
     const title = document.createElement("div");
     title.className = "client-problem-title";
     title.textContent = "⚠ Signalement client";
+
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "client-problem-close";
+    closeBtn.setAttribute("aria-label", "Fermer (le signalement restera actif)");
+    closeBtn.innerHTML = '<i class="ti ti-x"></i>';
+    closeBtn.addEventListener("click", dismissProblemAlert);
+
+    titleRow.appendChild(title);
+    titleRow.appendChild(closeBtn);
 
     const warning = document.createElement("div");
     warning.className = "client-problem-warning";
@@ -329,12 +421,15 @@ function openAdminClientProblemAlert(ride) {
             return;
         }
         overlay.remove();
-        AdminState.problemAlertShowing = false;
+        AdminState.problemLastShownAt.delete(ride.id); // résolu -> plus de rappel
+        AdminState.unresolvedProblems = AdminState.unresolvedProblems.filter(r => r.id !== ride.id);
+        updateProblemsReminder(AdminState.unresolvedProblems.length);
+        AdminState.problemAlertShowingId = null;
         processProblemAlertQueue();
         checkClientProblems();
     });
 
-    box.appendChild(title);
+    box.appendChild(titleRow);
     box.appendChild(warning);
     box.appendChild(rideRef);
     box.appendChild(msg);
@@ -342,6 +437,12 @@ function openAdminClientProblemAlert(ride) {
     box.appendChild(action);
     overlay.appendChild(box);
     document.body.appendChild(overlay);
+
+    // Clic sur le fond sombre = fermer sans résoudre
+    overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) dismissProblemAlert();
+    });
+
     action.focus();
 }
 
@@ -611,9 +712,9 @@ function renderDriverAlertCell(r) {
 function renderClientAlertCell(r) {
     if (!r.client_problem_description) return "—";
     if (!r.client_problem_resolved_at) {
-        return `<span class="topbar-badge badge-red" title="${r.client_problem_description}">🚨 Signalement</span>`;
+        return `<span class="topbar-badge badge-red" title="${escapeHtml(r.client_problem_description)}">🚨 Signalement</span>`;
     }
-    return `<span class="topbar-badge badge-gray" title="${r.client_problem_description}\n(traité)">✓ Traité</span>`;
+    return `<span class="topbar-badge badge-gray" title="${escapeHtml(r.client_problem_description)}\n(traité)">✓ Traité</span>`;
 }
 
 function renderRidesTable(rides, compact) {

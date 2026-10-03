@@ -546,6 +546,45 @@ tbody tr:hover td { background: var(--c-bg); }
   text-transform: uppercase;
 }
 
+.client-problem-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.client-problem-close {
+  background: none;
+  border: none;
+  color: var(--c-text-3);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  font-size: 20px;
+}
+.client-problem-close:hover { color: var(--c-text); }
+
+/* Bouton de rappel dans la barre du haut : signalements non traités */
+.problems-reminder {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--c-red);
+  border-radius: 999px;
+  background: var(--c-red-bg);
+  color: var(--c-red);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.problems-reminder:hover { background: var(--c-red); color: #fff; }
+
 .client-problem-warning {
   margin-top: 10px;
   color: var(--c-text-2);
