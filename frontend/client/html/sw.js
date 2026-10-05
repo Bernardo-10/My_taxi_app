@@ -68,28 +68,40 @@ self.addEventListener("fetch", (event) => {
 // worker (pas la page) quand un push arrive, indépendamment de l'état de
 // l'onglet.
 // ---------------------------------------------------------------
-importScripts("https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js");
-importScripts("https://www.gstatic.com/firebasejs/10.13.2/firebase-messaging-compat.js");
-importScripts("/frontend/js/firebase-config.js");
+// Chargement Firebase protégé : si gstatic.com est injoignable au moment de
+// l'installation, un importScripts() non protégé fait échouer TOUT le service
+// worker (cache PWA compris, donc plus d'installation). Avec le try/catch, il
+// s'installe quand même, sans push ; le chargement est retenté à chaque
+// redémarrage du service worker (le navigateur le relance à chaque événement).
+let messaging = null;
+try {
+  importScripts("https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js");
+  importScripts("https://www.gstatic.com/firebasejs/10.13.2/firebase-messaging-compat.js");
+  importScripts("/frontend/js/firebase-config.js");
 
-firebase.initializeApp(FIREBASE_CONFIG);
-const messaging = firebase.messaging();
+  firebase.initializeApp(FIREBASE_CONFIG);
+  messaging = firebase.messaging();
+} catch (err) {
+  console.warn("[sw client] Firebase indisponible, push désactivé pour ce démarrage :", err);
+}
 
 // Déclenché uniquement quand la page n'a pas le focus (app fermée, autre
 // onglet actif, écran verrouillé) — c'est le cas qui nous intéresse ici.
 // Quand la page EST au premier plan, c'est onMessage() côté client-ui.js
 // qui prend le relais (pas ce fichier) pour éviter une notification
 // système redondante avec ce qui est déjà visible à l'écran.
-messaging.onBackgroundMessage((payload) => {
-  const title = payload.notification?.title || "TaxiGo";
-  const options = {
-    body: payload.notification?.body || "",
-    icon: "/client/icons/client-192.png",
-    badge: "/client/icons/client-192.png",
-    data: payload.data || {},
-  };
-  self.registration.showNotification(title, options);
-});
+if (messaging) {
+  messaging.onBackgroundMessage((payload) => {
+    const title = payload.notification?.title || "TaxiGo";
+    const options = {
+      body: payload.notification?.body || "",
+      icon: "/client/icons/client-192.png",
+      badge: "/client/icons/client-192.png",
+      data: payload.data || {},
+    };
+    self.registration.showNotification(title, options);
+  });
+}
 
 // Au clic sur la notification : ramène l'app au premier plan si un onglet
 // est déjà ouvert, sinon en ouvre un nouveau sur la page pertinente.

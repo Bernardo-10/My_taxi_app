@@ -167,7 +167,12 @@ CREATE TABLE IF NOT EXISTS rides (
 ALTER TABLE rides
   ADD INDEX IF NOT EXISTS idx_rides_user_status (user_id, status),
   ADD INDEX IF NOT EXISTS idx_rides_driver_status (driver_id, status),
-  ADD INDEX IF NOT EXISTS idx_rides_status_created (status, created_at),
+  ADD INDEX IF NOT EXISTS idx_rides_status_created (status, created_at);
+
+-- client_problem_resolved_at : lue/écrite par backend/admin/resolve_client_problem.php,
+-- list_problems.php et list_rides.php. Absente de ce fichier jusqu'au lot F1 ;
+-- le ADD COLUMN IF NOT EXISTS est sans effet sur une base qui l'a déjà.
+ALTER TABLE rides
   ADD COLUMN IF NOT EXISTS client_problem_resolved_at TIMESTAMP NULL DEFAULT NULL AFTER client_problem_at;
 
 
@@ -263,72 +268,3 @@ ON DUPLICATE KEY UPDATE username = VALUES(username);
 -- (vérifié dans l'export). Le reste du fichier (CREATE TABLE) sera
 -- ignoré puisque les tables existent déjà.
 -- ================================================================
-
--- ================================================================
--- TaxiGo — Migration Portefeuille chauffeur & commission 20%
--- Ajoute :
---   - wallet_balance_fcfa sur chauffeur
---   - table wallet_transactions
---
--- Réexécutable : toutes les instructions sont protégées par
--- IF NOT EXISTS / ADD COLUMN IF NOT EXISTS.
--- ================================================================
-
--- 1. Ajout du solde dénormalisé dans chauffeur
-ALTER TABLE chauffeur
-  ADD COLUMN IF NOT EXISTS wallet_balance_fcfa BIGINT NOT NULL DEFAULT 0
-  COMMENT 'Solde actuel du portefeuille (dénormalisé)';
-
--- 2. Table des transactions du portefeuille
-CREATE TABLE IF NOT EXISTS wallet_transactions (
-  id            INT AUTO_INCREMENT PRIMARY KEY,
-  chauffeur_id  INT NOT NULL,
-  type          VARCHAR(20) NOT NULL,          -- commission, recharge, ajustement
-  amount_fcfa   BIGINT SIGNED NOT NULL,        -- positif = crédit, négatif = débit
-  ride_id       INT NULL,                      -- lié à une course pour les commissions
-  status        VARCHAR(20) NOT NULL DEFAULT 'pending',  -- pending, completed, rejected
-  operator      VARCHAR(50) NULL,              -- opérateur mobile money (ex: Orange, MTN)
-  reference     VARCHAR(100) NULL,             -- référence de la transaction externe
-  description   TEXT NULL,                     -- commentaire libre
-  created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  validated_at  TIMESTAMP NULL,                -- date de validation (admin)
-  INDEX idx_wallet_chauffeur (chauffeur_id),
-  INDEX idx_wallet_status (status),
-  INDEX idx_wallet_created (created_at),
-  INDEX idx_wallet_chauffeur_created (chauffeur_id, created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- 3. (Optionnel) On peut ajouter des clés étrangères si souhaité,
---    mais elles ne sont pas obligatoires pour le fonctionnement.
---    Je les laisse en commentaire pour éviter des contraintes
---    bloquantes sur des bases existantes.
--- ALTER TABLE wallet_transactions
---   ADD CONSTRAINT fk_wallet_chauffeur FOREIGN KEY (chauffeur_id) REFERENCES chauffeur(id),
---   ADD CONSTRAINT fk_wallet_ride FOREIGN KEY (ride_id) REFERENCES rides(id);
--- ================================================================
--- TaxiGo — Table de renouvellement de documents chauffeur
--- Séparée de `chauffeur` volontairement : un renouvellement soumis
--- ne doit jamais écraser le document "live" tant qu'un admin ne l'a
--- pas approuvé (voir rapport-kyc-chauffeur.md, §2). L'ancien document
--- reste celui qui compte pour le blocage à la mise en ligne jusqu'à
--- validation explicite.
--- ================================================================
-CREATE TABLE IF NOT EXISTS chauffeur_document_renewals (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    chauffeur_id INT NOT NULL,
-    document_group ENUM('cni','carte_grise','permit','capacity','license') NOT NULL,
-    number VARCHAR(50) NOT NULL,
-    expiration DATE NOT NULL,
-    photo_recto VARCHAR(255) NULL,
-    photo_verso VARCHAR(255) NULL,  -- NULL pour carte_grise (photo unique)
-    status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
-    rejection_reason VARCHAR(255) NULL,
-    submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    reviewed_at TIMESTAMP NULL,
-    FOREIGN KEY (chauffeur_id) REFERENCES chauffeur(id),
-    INDEX idx_renewals_chauffeur_group (chauffeur_id, document_group),
-    INDEX idx_renewals_status (status)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-ALTER TABLE chauffeur
-  MODIFY kyc_status ENUM('incomplete', 'pending', 'approved', 'rejected')
-  NOT NULL DEFAULT 'pending';

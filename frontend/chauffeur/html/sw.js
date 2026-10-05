@@ -57,23 +57,34 @@ self.addEventListener("fetch", (event) => {
 // Voir les commentaires détaillés dans frontend/client/html/sw.js,
 // même logique ici côté chauffeur.
 // ---------------------------------------------------------------
-importScripts("https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js");
-importScripts("https://www.gstatic.com/firebasejs/10.13.2/firebase-messaging-compat.js");
-importScripts("/frontend/js/firebase-config.js");
+// Chargement Firebase protégé : si gstatic.com est injoignable, un
+// importScripts() non protégé ferait échouer TOUT le service worker (cache
+// PWA compris). Avec le try/catch, il s'installe quand même, sans push ;
+// le chargement est retenté à chaque redémarrage du service worker.
+let messaging = null;
+try {
+  importScripts("https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js");
+  importScripts("https://www.gstatic.com/firebasejs/10.13.2/firebase-messaging-compat.js");
+  importScripts("/frontend/js/firebase-config.js");
 
-firebase.initializeApp(FIREBASE_CONFIG);
-const messaging = firebase.messaging();
+  firebase.initializeApp(FIREBASE_CONFIG);
+  messaging = firebase.messaging();
+} catch (err) {
+  console.warn("[sw chauffeur] Firebase indisponible, push désactivé pour ce démarrage :", err);
+}
 
-messaging.onBackgroundMessage((payload) => {
-  const title = payload.notification?.title || "TaxiGo Chauffeur";
-  const options = {
-    body: payload.notification?.body || "",
-    icon: "/chauffeur/icons/chauffeur-192.png",
-    badge: "/chauffeur/icons/chauffeur-192.png",
-    data: payload.data || {},
-  };
-  self.registration.showNotification(title, options);
-});
+if (messaging) {
+  messaging.onBackgroundMessage((payload) => {
+    const title = payload.notification?.title || "TaxiGo Chauffeur";
+    const options = {
+      body: payload.notification?.body || "",
+      icon: "/chauffeur/icons/chauffeur-192.png",
+      badge: "/chauffeur/icons/chauffeur-192.png",
+      data: payload.data || {},
+    };
+    self.registration.showNotification(title, options);
+  });
+}
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
