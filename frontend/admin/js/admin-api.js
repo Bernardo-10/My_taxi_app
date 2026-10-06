@@ -156,7 +156,8 @@ function statusBadge(status) {
         "completed":        ["badge-green",   "Terminée"],
         "cancelled":        ["badge-gray",    "Annulée (chauffeur)"],
         "cancelled_client": ["badge-red",     "Annulée (client)"],
-        "reported":         ["badge-red",     "Signalée"]
+        "reported":         ["badge-red",     "Signalée"],
+        "expired":          ["badge-gray",    "Expirée"]
     };
     const [cls, label] = map[status] || ["badge-gray", status];
     return `<span class="topbar-badge ${cls}">${label}</span>`;

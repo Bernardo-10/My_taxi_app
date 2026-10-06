@@ -1,8 +1,12 @@
 <?php
 require_once __DIR__ . "/../config/auth.php";
+require_once __DIR__ . "/../common/ride_expiry.php";
 
 $driverId = require_driver_id();
 $conn = db_connect();
+// Les courses 'pending' périmées sont expirées avant la lecture : le chauffeur
+// ne voit plus de demandes que plus personne n'attend.
+expire_stale_pending_rides($conn);
 
 // ── Correctif §4.1 du rapport KYC ────────────────────────────────
 // current_user.php ne vérifie l'expiration des documents qu'au chargement

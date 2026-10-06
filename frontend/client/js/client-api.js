@@ -531,6 +531,13 @@ async function checkRideStatus(forceRefresh = false) {
             clearTimeout(rideStatusCheckInterval); rideStatusCheckInterval = null;
             if (typeof onRideReported === "function") onRideReported();
         }
+        else if (rideData.status === "expired") {
+            // 'expired' = aucun chauffeur n'a accepté la course au bout de 30 min
+            // (backend/common/ride_expiry.php, lot F3b). Sans cette branche le
+            // polling tournerait sans fin sur "En attente d'acceptation...".
+            clearTimeout(rideStatusCheckInterval); rideStatusCheckInterval = null;
+            if (typeof onRideExpired === "function") onRideExpired();
+        }
         else if (rideData.status === "cancelled") {
             // Chantier son/vibration (06/07/2026) : "cancelled" est mis par
             // backend/chauffeur/cancel_ride.php — c'est le CHAUFFEUR qui a

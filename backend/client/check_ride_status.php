@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . "/../config/auth.php";
+require_once __DIR__ . "/../common/ride_expiry.php";
 
 $userId = require_client_id();
 $rideId = isset($_GET["ride_id"]) ? (int) $_GET["ride_id"] : 0;
@@ -9,6 +10,9 @@ if (!$rideId) {
 }
 
 $conn = db_connect();
+// Une course 'pending' de plus de 30 min passe en 'expired' ici même (voir
+// common/ride_expiry.php) : le client qui interroge sa course reçoit 'expired'.
+expire_stale_pending_rides($conn);
 $stmt = $conn->prepare("
     SELECT r.status, r.driver_name, r.driver_plate, r.driver_id, r.driver_lat, r.driver_lng,
            r.pickup_lat, r.pickup_lng, r.destination_lat, r.destination_lng,

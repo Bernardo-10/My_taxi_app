@@ -141,7 +141,7 @@ CREATE TABLE IF NOT EXISTS rides (
   duration_min                  INT DEFAULT NULL,
   price_fcfa                    INT DEFAULT NULL,
   passengers                    INT DEFAULT 1,
-  status                        ENUM('pending','accepted','arrived','started','completed','cancelled','cancelled_client','reported') NOT NULL DEFAULT 'pending',
+  status                        ENUM('pending','accepted','arrived','started','completed','cancelled','cancelled_client','reported','expired') NOT NULL DEFAULT 'pending',
   driver_id                     INT DEFAULT NULL,
   driver_name                   VARCHAR(100) DEFAULT NULL,
   driver_plate                  VARCHAR(50)  DEFAULT NULL,
@@ -174,6 +174,13 @@ ALTER TABLE rides
 -- le ADD COLUMN IF NOT EXISTS est sans effet sur une base qui l'a déjà.
 ALTER TABLE rides
   ADD COLUMN IF NOT EXISTS client_problem_resolved_at TIMESTAMP NULL DEFAULT NULL AFTER client_problem_at;
+
+-- Statut 'expired' (lot F3b) : course 'pending' sans chauffeur au bout de 30 min
+-- (voir backend/common/ride_expiry.php). Pour une base existante, vérifier la
+-- liste actuelle avec SHOW COLUMNS FROM rides LIKE 'status' avant d'exécuter
+-- (voir database/migration_lot_f3b.sql). Sans effet si 'expired' est déjà là.
+ALTER TABLE rides
+  MODIFY COLUMN status ENUM('pending','accepted','arrived','started','completed','cancelled','cancelled_client','reported','expired') NOT NULL DEFAULT 'pending';
 
 
 -- ----------------------------------------------------------------

@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . "/../config/auth.php";
 require_once __DIR__ . "/../common/send_push.php";
+require_once __DIR__ . "/../common/ride_expiry.php";
 
 $driverId = require_driver_id();
 $data = json_decode(file_get_contents("php://input"), true);
@@ -23,6 +24,9 @@ if ($driverLat === null || $driverLng === null) {
 }
 
 $conn = db_connect();
+// Une course 'pending' périmée est expirée AVANT la tentative d'acceptation :
+// le UPDATE plus bas (WHERE status = 'pending') la refuse alors avec le 409 habituel.
+expire_stale_pending_rides($conn);
 
 $driverStmt = $conn->prepare("SELECT name, plate, wallet_balance_fcfa FROM chauffeur WHERE id = ? AND status = 'active' AND is_online = 1");
 $driverStmt->bind_param("i", $driverId);

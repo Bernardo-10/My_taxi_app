@@ -960,6 +960,46 @@ function onRideReported() {
   }
 }
 
+// Course restée sans chauffeur pendant 30 min (statut 'expired', voir
+// checkRideStatus dans client-api.js et backend/common/ride_expiry.php).
+// Même remise à zéro que onRideReported, avec un message qui invite à
+// relancer une course.
+function onRideExpired() {
+  // Garde : éviter une double exécution (polling + appels async en vol)
+  if (AppState.rideState === "idle") return;
+  AppState.rideState = "idle";
+
+  if (rideStatusCheckInterval) { clearInterval(rideStatusCheckInterval); rideStatusCheckInterval = null; }
+  if (etaUpdateInterval)       { clearInterval(etaUpdateInterval);       etaUpdateInterval = null; }
+
+  currentRideId = null;
+  rideAccepted = false;
+  AppState.currentDriver = null;
+
+  $navBtns.ride.disabled = true;
+  syncAppMode();
+  switchTab("map");
+  resetMapPanel();
+  startNearbyDriversPolling();
+
+  if (typeof window.notifyFeedback === "function") {
+    window.notifyFeedback({
+      vibrate: [100, 60, 100],
+      notify: { title: "Aucun chauffeur disponible", body: "Personne n'a accepté votre course. Vous pouvez la relancer.", tag: "taxigo-ride" }
+    });
+  }
+  if (typeof window.confirmAction === "function") {
+    window.confirmAction({
+      title: "Aucun chauffeur disponible",
+      message: "Personne n'a accepté votre course. Vous pouvez la relancer maintenant.",
+      confirmLabel: "Compris",
+      hideCancel: true
+    });
+  } else {
+    showToast("Aucun chauffeur disponible, réessayez.");
+  }
+}
+
 function resetMapPanel() {
   // Déconnecter l'observer AVANT de toucher au DOM pour éviter qu'il
   // se retrigger sur la mise à "-" et réaffiche l'ancien fare strip
@@ -1231,7 +1271,7 @@ function displayRides() {
   if (!container) return;
 
   const history = userRides.filter(r =>
-    ["completed", "cancelled", "cancelled_client", "reported"].includes(r.status)
+    ["completed", "cancelled", "cancelled_client", "reported", "expired"].includes(r.status)
   );
 
   if (history.length === 0) {
@@ -1239,7 +1279,7 @@ function displayRides() {
     return;
   }
 
-  const labelMap = { completed: "Terminée", cancelled_client: "Annulée (client)", cancelled: "Annulée (chauffeur)", reported: "Signalée" };
+  const labelMap = { completed: "Terminée", cancelled_client: "Annulée (client)", cancelled: "Annulée (chauffeur)", reported: "Signalée", expired: "Expirée" };
 
   container.innerHTML = history.map(ride => `
     <div class="ride-item" onclick="viewRideOnMap(${ride.id})">
@@ -1330,7 +1370,7 @@ function showRideDetailModal(ride) {
   const existing = document.getElementById("tg-ride-detail-overlay");
   if (existing) existing.remove();
 
-  const labelMap = { completed: "Terminée", cancelled_client: "Annulée (client)", cancelled: "Annulée (chauffeur)", reported: "Signalée" };
+  const labelMap = { completed: "Terminée", cancelled_client: "Annulée (client)", cancelled: "Annulée (chauffeur)", reported: "Signalée", expired: "Expirée" };
 
   const overlay = document.createElement("div");
   overlay.id = "tg-ride-detail-overlay";

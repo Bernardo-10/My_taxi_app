@@ -1,8 +1,11 @@
 <?php
 require_once __DIR__ . "/../config/auth.php";
+require_once __DIR__ . "/../common/ride_expiry.php";
 require_admin_id();
 
 $conn = db_connect();
+// Statuts à jour dans la liste (une course périmée apparaît 'expired', pas 'pending').
+expire_stale_pending_rides($conn);
 
 $status    = isset($_GET["status"])    ? trim($_GET["status"])    : "";
 $search    = isset($_GET["q"])         ? trim($_GET["q"])         : "";
@@ -11,7 +14,7 @@ $date_to   = isset($_GET["date_to"])   ? trim($_GET["date_to"])   : "";
 $limit     = isset($_GET["limit"])     ? (int)$_GET["limit"]      : 100;
 $offset    = isset($_GET["offset"])    ? (int)$_GET["offset"]     : 0;
 
-$valid_statuses = ["pending","accepted","arrived","started","completed","cancelled","cancelled_client","reported"];
+$valid_statuses = ["pending","accepted","arrived","started","completed","cancelled","cancelled_client","reported","expired"];
 
 $where  = [];
 $params = [];

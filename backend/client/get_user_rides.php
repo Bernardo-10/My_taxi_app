@@ -12,12 +12,13 @@ $conn = db_connect();
 // 'reported' (course signalée par le chauffeur) est inclus pour qu'elle apparaisse
 // dans l'historique avec le libellé « Signalée » ; problem_description, lui,
 // reste volontairement jamais renvoyé au client.
+// 'expired' (aucun chauffeur au bout de 30 min) est inclus pour la même raison.
 $stmt = $conn->prepare("
     SELECT id, status, pickup, destination,
            distance_km, price_fcfa, passengers, created_at
     FROM rides
     WHERE user_id = ?
-      AND status IN ('pending', 'accepted', 'arrived', 'completed', 'cancelled', 'cancelled_client', 'started', 'reported')
+      AND status IN ('pending', 'accepted', 'arrived', 'completed', 'cancelled', 'cancelled_client', 'started', 'reported', 'expired')
     ORDER BY created_at DESC
 ");
 $stmt->bind_param("i", $userId);

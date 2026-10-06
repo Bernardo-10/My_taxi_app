@@ -1,8 +1,11 @@
 <?php
 require_once __DIR__ . "/../config/auth.php";
+require_once __DIR__ . "/../common/ride_expiry.php";
 require_admin_id();
 
 $conn = db_connect();
+// Compteurs à jour : 'courses_pending' ne compte pas les courses périmées.
+expire_stale_pending_rides($conn);
 sync_stale_drivers_offline($conn);
 
 // Totaux globaux

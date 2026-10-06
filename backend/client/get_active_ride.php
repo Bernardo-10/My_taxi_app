@@ -1,9 +1,13 @@
 <?php
 require_once __DIR__ . "/../config/auth.php";
+require_once __DIR__ . "/../common/ride_expiry.php";
 
 $userId = require_client_id();
 
 $conn = db_connect();
+// Une course 'pending' périmée est expirée avant la lecture : un client qui
+// revient après une longue absence ne retrouve pas une recherche fantôme.
+expire_stale_pending_rides($conn);
 
 // En théorie une seule course active par client (voir le garde-fou ajouté
 // dans backend.php), mais en défense en profondeur pour les lignes créées
