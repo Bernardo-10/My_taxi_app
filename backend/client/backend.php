@@ -80,8 +80,12 @@ $stmt = $conn->prepare("
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ");
 
+// Types, dans l'ordre des ? : user_id=i, pickup=s, destination=s,
+// 4 coordonnées=dddd, distance_km=d, duration_min=i, price_fcfa=i, passengers=i.
+// distance_km DOIT être "d" : avec "i", 4.37 km était tronqué à 4 en base
+// (le prix, lui, était juste car calculé avant l'insertion).
 $stmt->bind_param(
-    "issddddiiii",
+    "issdddddiii",
     $user_id,
     $pickup,
     $destination,

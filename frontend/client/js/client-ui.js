@@ -16,7 +16,6 @@ let pickupCoords      = null;
 let destinationCoords = null;
 let currentRideId     = null;
 let rideStatusCheckInterval = null;
-let driverStatusInterval    = null;
 let rideAccepted      = false;
 let lastDriverLat     = null;
 let lastDriverLng     = null;
@@ -429,7 +428,7 @@ function initPassengerCounter() {
     if (AppState.passengers > 1) { AppState.passengers--; update(); }
   });
   increase.addEventListener("click", () => {
-    if (AppState.passengers < 4) { AppState.passengers++; update(); }
+    if (AppState.passengers < 5) { AppState.passengers++; update(); }
   });
 }
 
@@ -792,7 +791,7 @@ async function initActiveRideRecovery() {
     const routePrice    = document.getElementById("routePrice");
     const routeDistance = document.getElementById("routeDistance");
     if (routeDuration) routeDuration.textContent = `${durationMin} min`;
-    if (routePrice)    routePrice.textContent    = `${priceFcfa} FCFA (${passengers} passagers)`;
+    if (routePrice)    routePrice.textContent    = `${priceFcfa} FCFA (${formatPassengers(passengers)})`;
     if (routeDistance) routeDistance.textContent = `${distanceKm.toFixed(2)} km`;
   }
 
@@ -885,13 +884,53 @@ function onRideCancelled() {
   rideAccepted = false;
   AppState.currentDriver = null;
   if (rideStatusCheckInterval) clearInterval(rideStatusCheckInterval);
-  if (driverStatusInterval) clearInterval(driverStatusInterval);
   if (etaUpdateInterval) clearInterval(etaUpdateInterval);
   $navBtns.ride.disabled = true;
   syncAppMode();
   switchTab("map");
   resetMapPanel();
   startNearbyDriversPolling(); // chantier 3 (v4)
+}
+
+// Course signalée par le chauffeur (statut 'reported', voir checkRideStatus dans
+// client-api.js). Même nettoyage que onRideCompleted/onRideCancelled, puis un
+// message qui reste affiché jusqu'à ce que le client le ferme (il doit pouvoir
+// le lire, contrairement au bandeau de 3 s de fin de course). On n'affiche
+// JAMAIS le texte du signalement : seul l'admin le voit.
+function onRideReported() {
+  // Garde : éviter une double exécution (polling + appels async en vol)
+  if (AppState.rideState === "idle") return;
+  AppState.rideState = "idle";
+
+  if (rideStatusCheckInterval) { clearInterval(rideStatusCheckInterval); rideStatusCheckInterval = null; }
+  if (etaUpdateInterval)       { clearInterval(etaUpdateInterval);       etaUpdateInterval = null; }
+
+  currentRideId = null;
+  rideAccepted = false;
+  AppState.currentDriver = null;
+
+  $navBtns.ride.disabled = true;
+  syncAppMode();
+  switchTab("map");
+  resetMapPanel();
+  startNearbyDriversPolling();
+
+  if (typeof window.notifyFeedback === "function") {
+    window.notifyFeedback({
+      vibrate: [100, 60, 100],
+      notify: { title: "Course signalée", body: "Le chauffeur a signalé un problème. Notre équipe vous contactera.", tag: "taxigo-ride" }
+    });
+  }
+  if (typeof window.confirmAction === "function") {
+    window.confirmAction({
+      title: "Course signalée",
+      message: "Course signalée par le chauffeur, notre équipe vous contactera.",
+      confirmLabel: "Compris",
+      hideCancel: true
+    });
+  } else {
+    showToast("Course signalée par le chauffeur, notre équipe vous contactera.");
+  }
 }
 
 function resetMapPanel() {
@@ -1019,7 +1058,6 @@ async function cancelCurrentRide() {
       currentRideId = null;
       rideAccepted  = false;
       if (rideStatusCheckInterval) clearInterval(rideStatusCheckInterval);
-      if (driverStatusInterval)    clearInterval(driverStatusInterval);
 
       onRideCancelled();
       showToast("Course annulée");
@@ -1162,7 +1200,7 @@ function displayRides() {
   if (!container) return;
 
   const history = userRides.filter(r =>
-    ["completed", "cancelled", "cancelled_client"].includes(r.status)
+    ["completed", "cancelled", "cancelled_client", "reported"].includes(r.status)
   );
 
   if (history.length === 0) {
@@ -1170,13 +1208,13 @@ function displayRides() {
     return;
   }
 
-  const labelMap = { completed: "Terminée", cancelled_client: "Annulée (client)", cancelled: "Annulée (chauffeur)" };
+  const labelMap = { completed: "Terminée", cancelled_client: "Annulée (client)", cancelled: "Annulée (chauffeur)", reported: "Signalée" };
 
   container.innerHTML = history.map(ride => `
     <div class="ride-item" onclick="viewRideOnMap(${ride.id})">
       <div class="details">
         <strong>${ride.pickup} -> ${ride.destination}</strong>
-        <div>${ride.distance_km} km · ${ride.price_fcfa} FCFA · ${ride.passengers} passager(s)</div>
+        <div>${ride.distance_km} km · ${ride.price_fcfa} FCFA · ${formatPassengers(ride.passengers)}</div>
         <div>${new Date(ride.created_at).toLocaleString("fr-FR")}</div>
       </div>
       <span class="status ${ride.status}">${labelMap[ride.status] || ride.status}</span>
@@ -1261,7 +1299,7 @@ function showRideDetailModal(ride) {
   const existing = document.getElementById("tg-ride-detail-overlay");
   if (existing) existing.remove();
 
-  const labelMap = { completed: "Terminée", cancelled_client: "Annulée (client)", cancelled: "Annulée (chauffeur)" };
+  const labelMap = { completed: "Terminée", cancelled_client: "Annulée (client)", cancelled: "Annulée (chauffeur)", reported: "Signalée" };
 
   const overlay = document.createElement("div");
   overlay.id = "tg-ride-detail-overlay";
@@ -1601,7 +1639,6 @@ function onRideCompleted() {
     // Stopper TOUS les intervalles et nullifier les références
     // pour éviter qu'un updateDriverPosition en vol recrée des calques après le nettoyage
     if (rideStatusCheckInterval) { clearInterval(rideStatusCheckInterval); rideStatusCheckInterval = null; }
-    if (driverStatusInterval)    { clearInterval(driverStatusInterval);    driverStatusInterval = null; }
     if (etaUpdateInterval)       { clearInterval(etaUpdateInterval);       etaUpdateInterval = null; }
 
     currentRideId = null;
@@ -1746,14 +1783,25 @@ function onRideAccepted(driverData) {
 function initReportProblem() {
     const btn = document.getElementById("reportProblemBtn");
     if (!btn) return;
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
         if (!currentRideId) return;
-        const problem = prompt("Décrivez le problème rencontré :");
+        // Modal stylisé (confirm-modal.js) à la place de prompt() : le prompt()
+        // natif est bloqué ou mal rendu dans les PWA installées et sur mobile.
+        // La course peut se terminer pendant que la fenêtre est ouverte :
+        // on mémorise donc l'id AVANT l'attente.
+        const rideIdAtClick = currentRideId;
+        const problem = await window.promptAction({
+            title: "Signaler un problème",
+            message: "Décrivez le problème rencontré. Votre message sera transmis au chauffeur et à notre équipe.",
+            placeholder: "Ex. : le chauffeur prend un autre itinéraire…",
+            confirmLabel: "Envoyer",
+            maxLength: 500
+        });
         if (!problem) return;
         fetch(`${CLIENT_API_BASE}/client/report_problem.php`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ride_id: currentRideId, problem: problem })
+            body: JSON.stringify({ ride_id: rideIdAtClick, problem: problem })
         })
         .then(res => res.json())
         .then(data => {

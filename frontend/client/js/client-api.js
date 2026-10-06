@@ -27,54 +27,10 @@ function getRidePollDelay() {
     return delay !== undefined ? delay : RIDE_POLL_DEFAULT_INTERVAL_MS;
 }
 
-async function initUserHeader(loginPage) {
-    const currentUserName = document.getElementById("currentUserName");
-    const logoutBtn = document.getElementById("logoutBtn");
-
-    try {
-        const response = await fetch(`${CLIENT_API_BASE}/common/current_user.php`);
-        const result = await response.json();
-
-        if (response.status === 401) {
-            window.location.href = loginPage;
-            return;
-        }
-
-        if (result.status === "success" && currentUserName) {
-            currentUserName.textContent = result.user.name || "Utilisateur";
-        }
-    } catch (error) {
-        console.error("Erreur chargement utilisateur:", error);
-    }
-
-    if (logoutBtn) {
-        logoutBtn.addEventListener("click", async () => {
-            try {
-                await fetch(`${CLIENT_API_BASE}/common/logout.php`, { method: "POST" });
-            } finally {
-                window.location.href = loginPage;
-            }
-        });
-    }
-}
-
-async function loadAutocompleteSuggestions(inputId, query) {
-    try {
-        const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=5&lat=5.5&lon=12.3`;
-        const response = await fetch(url);
-        const data = await response.json();
-
-        let features = data.features || [];
-        features = features.filter(f => {
-            const country = (f.properties.country || "").toLowerCase();
-            const countryCode = (f.properties.country_code || "").toLowerCase();
-            return country.includes("cam") || countryCode === "cm" || !country;
-        });
-
-        renderSuggestions(inputId, features);
-    } catch (error) {
-        console.error("Erreur autocomplete :", error);
-    }
+// Libellé "1 passager" / "3 passagers" (le pluriel n'était pas géré : "1 passagers").
+function formatPassengers(n) {
+    const count = parseInt(n, 10) || 1;
+    return `${count} passager${count > 1 ? "s" : ""}`;
 }
 
 async function findRoute() {
@@ -135,7 +91,7 @@ async function findRoute() {
 
         document.getElementById("routeDistance").textContent = `${distanceKm.toFixed(2)} km`;
         document.getElementById("routeDuration").textContent = `${durationMin} min`;
-        document.getElementById("routePrice").textContent = `${priceFcfa} FCFA (${passengers} passagers)`;
+        document.getElementById("routePrice").textContent = `${priceFcfa} FCFA (${formatPassengers(passengers)})`;
 
         sendToBackend({
             pickup: pickupText,
@@ -213,7 +169,7 @@ async function sendToBackend(data) {
             const routePrice    = document.getElementById("routePrice");
             if (routeDistance) routeDistance.textContent = `${result.distance_km.toFixed(2)} km`;
             if (routeDuration) routeDuration.textContent = `${result.duration_min} min`;
-            if (routePrice)    routePrice.textContent    = `${result.price_fcfa} FCFA (${data.passengers} passagers)`;
+            if (routePrice)    routePrice.textContent    = `${result.price_fcfa} FCFA (${formatPassengers(data.passengers)})`;
 
             showWaitingMessage();
             startRideTracking();
@@ -382,6 +338,16 @@ async function checkRideStatus(forceRefresh = false) {
         else if (rideData.status === "completed") {
             clearTimeout(rideStatusCheckInterval); rideStatusCheckInterval = null;
             if (typeof onRideCompleted === "function") onRideCompleted();
+        }
+        else if (rideData.status === "reported") {
+            // 'reported' = le chauffeur a signalé un problème en cours de course
+            // (backend/chauffeur/report_problem.php). Avant ce correctif, ce
+            // statut n'avait aucune branche ici : le polling tournait sans fin
+            // et le client restait bloqué sur "Course en cours" (l'annulation
+            // renvoyait 409). La course est terminée de son point de vue :
+            // on arrête le suivi, on remet l'interface à zéro et on l'informe.
+            clearTimeout(rideStatusCheckInterval); rideStatusCheckInterval = null;
+            if (typeof onRideReported === "function") onRideReported();
         }
         else if (rideData.status === "cancelled") {
             // Chantier son/vibration (06/07/2026) : "cancelled" est mis par

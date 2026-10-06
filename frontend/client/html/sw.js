@@ -11,7 +11,7 @@
 // l'ancien cache (voir "activate" ci-dessous) et active la mise à jour
 // immédiatement (skipWaiting + clients.claim) sans attendre que l'utilisateur
 // ferme complètement l'app.
-const CACHE_NAME = "taxigo-client-shell-v2";
+const CACHE_NAME = "taxigo-client-shell-v3";
 
 const APP_SHELL = [
   "/client/",

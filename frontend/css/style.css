@@ -979,6 +979,7 @@ body {
 .ride-item .status.completed { background: #d1fae5; color: #065f46; }
 .ride-item .status.cancelled, .ride-item .status.cancelled_client { background: #fee2e2; color: #991b1b; }
 .ride-item .status.pending { background: #fef3c7; color: #92400e; }
+.ride-item .status.reported { background: #ffedd5; color: #9a3412; }
 .ride-item .status.accepted { background: #dbeafe; color: #1e40af; }
 
 /* ── PROFILE SHEET ───────────────────────────────── */
