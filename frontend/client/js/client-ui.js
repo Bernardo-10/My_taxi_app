@@ -335,6 +335,7 @@ function getUserLocation() {
       map.setView([lat, lng], 16);
       updateMarker("pickup", lat, lng);
       pickupMarker.bindPopup(`Vous êtes ici (+/-${Math.round(accuracy)} m)`).openPopup();
+      if (typeof refreshQuote === "function") refreshQuote({ fromGps: true });
 
       try {
         const addr = await reverseGeocode(lat, lng);
@@ -379,6 +380,9 @@ function watchUserPosition() {
       pickupCoords = { lat, lng };
       if (pickupMarker) pickupMarker.setLatLng([lat, lng]);
       else updateMarker("pickup", lat, lng);
+      // Lot F3a : recalcul du prix seulement au premier signal ou après un
+      // déplacement de plus de 100 m (voir maybeRequoteFromGps).
+      if (AppState.rideState === "idle" && typeof maybeRequoteFromGps === "function") maybeRequoteFromGps();
     },
     (err) => console.error("Watch:", err),
     { enableHighAccuracy: true, maximumAge: 0 }
@@ -423,6 +427,9 @@ function initPassengerCounter() {
   function update() {
     display.textContent = AppState.passengers;
     hidden.value = AppState.passengers;
+    // Le prix dépend du nombre de passagers : recalcul immédiat (sans nouvel
+    // appel OSRM si l'itinéraire est déjà connu). Voir refreshQuote().
+    if (typeof refreshQuote === "function") refreshQuote();
   }
   decrease.addEventListener("click", () => {
     if (AppState.passengers > 1) { AppState.passengers--; update(); }
@@ -520,6 +527,8 @@ function initSearchOverlay() {
       updateMarker("destination", lat, lng);
     }
     closeSearchOverlay();
+    // Lot F3a : le prix s'affiche dès que départ et destination sont connus.
+    if (typeof refreshQuote === "function") refreshQuote({ exactPickup: true });
   }
 
   async function fetchOverlayResults(query) {
@@ -632,6 +641,7 @@ async function useCurrentPositionAsPickup(closeSearchOverlay, overlayInput) {
       } catch {}
 
       closeSearchOverlay();
+      if (typeof refreshQuote === "function") refreshQuote({ exactPickup: true });
     },
     () => {
       showToast("Impossible de récupérer votre position");
@@ -679,8 +689,25 @@ function initFindRideBtn() {
     document.getElementById("summaryPickup").textContent      = AppState.pickupText || "-";
     document.getElementById("summaryDest").textContent = AppState.destinationText || "-";
 
-    await findRoute(); // fonction de client-api.js
+    await confirmRide(); // client-api.js : confirme le prix affiché et crée la course
   });
+  updateFindRideBtn();
+}
+
+// État du bouton « Trouver une course » (lot F3a) : grisé pendant le calcul du
+// prix et pendant l'envoi de la course, pour qu'on ne puisse jamais confirmer
+// un prix périmé ni envoyer deux fois. quoteState et rideSubmitting viennent
+// de client-api.js.
+function updateFindRideBtn() {
+  const btn = document.getElementById("findRideBtn");
+  if (!btn) return;
+  let text = "Trouver une course";
+  let disabled = false;
+  if (rideSubmitting)              { text = "Envoi de la demande…"; disabled = true; }
+  else if (quoteState === "loading") { text = "Calcul du prix…";      disabled = true; }
+  const label = btn.querySelector("span");
+  if (label) label.textContent = text;
+  btn.disabled = disabled;
 }
 
 // â”€â”€ SUIVI DE COURSE (hooks sur client-api) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -985,12 +1012,16 @@ function resetMapPanel() {
     if (el) fareObserver.observe(el, { childList: true, characterData: true, subtree: true });
   }
 
+  // Lot F3a : l'ancien prix n'a plus de sens, et le bouton redevient normal.
+  if (typeof clearQuote === "function") clearQuote();
+
   getUserLocation();
 }
 
 // Hook pour afficher le chip et fare-row aprÃ¨s calcul d'itinÃ©raire
-// findRoute() de client-api.js met Ã  jour directement les spans
-// On surcharge la fin de findRoute via un MutationObserver sur #routeDistance
+// renderQuote() de client-api.js met à jour directement les spans (et
+// sendToBackend les réécrit avec les valeurs du serveur) : un MutationObserver
+// sur #routeDistance se charge d'afficher le bloc.
 let fareObserver = null;
 (function observeFareUpdate() {
   fareObserver = new MutationObserver(() => {

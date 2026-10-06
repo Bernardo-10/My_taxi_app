@@ -423,8 +423,17 @@ body {
 
 .btn-primary:active { background: var(--green-dark); transform: scale(.98); }
 
-#app.ride-accepted.tab-map #findRideBtn {
+/* Bouton caché dès qu'une course existe (recherche en cours comprise : en
+   revenant sur l'onglet carte, un 2e clic ne ferait que provoquer un 409). */
+#app.ride-accepted.tab-map #findRideBtn,
+#app.ride-searching.tab-map #findRideBtn {
   display: none;
+}
+
+.btn-primary:disabled {
+  opacity: .65;
+  cursor: not-allowed;
+  transform: none;
 }
 
 #app.ride-accepted.tab-map #sheet-map {

@@ -33,7 +33,219 @@ function formatPassengers(n) {
     return `${count} passager${count > 1 ? "s" : ""}`;
 }
 
-async function findRoute() {
+// ═════════════════════════════════════════════════════════════════════
+// PRIX AVANT CONFIRMATION (lot F3a)
+//
+// Avant ce lot, findRoute() calculait l'itinéraire PUIS créait la course dans
+// la foulée : le client ne voyait le prix qu'une fraction de seconde, sans
+// pouvoir refuser. Désormais :
+//   1. refreshQuote() calcule l'itinéraire dès que départ + destination sont
+//      connus (choix d'un lieu, changement de passagers, déplacement > 100 m)
+//      et remplit le bloc Distance / Temps / Prix de l'onglet carte ;
+//   2. le bouton « Trouver une course » CONFIRME : confirmRide() envoie à
+//      backend.php exactement les coordonnées et le prix affichés.
+// Le serveur reste l'autorité : il recalcule tout (backend.php) et c'est sa
+// réponse qui s'affiche ensuite (voir sendToBackend).
+// ═════════════════════════════════════════════════════════════════════
+
+// Doit rester identique à PRICE_PER_KM_FCFA dans backend/common/pricing.php.
+const QUOTE_PRICE_PER_KM_FCFA = 75;
+// Un déplacement GPS plus petit que ça ne refait PAS le calcul (le GPS "bouge"
+// de quelques mètres en permanence même à l'arrêt).
+const QUOTE_PICKUP_TOLERANCE_M = 100;
+
+let currentQuote = null;      // { pickup:{lat,lng}, destination:{lat,lng}, distanceKm, durationMin }
+let quoteState = "idle";      // 'idle' | 'loading' | 'ready' | 'error'
+let quoteSeq = 0;             // numéro de la demande en cours : ignore les réponses périmées
+let quoteGpsTimer = null;
+let quoteInflightKey = null; // trajet dont le calcul est en cours (évite un 2e appel OSRM identique)
+let rideSubmitting = false;   // true pendant l'envoi de la course (anti double clic)
+const quoteRouteCache = new Map(); // itinéraires déjà calculés (évite de re-solliciter OSRM)
+
+// Distance à vol d'oiseau entre deux points {lat,lng}, en mètres.
+function haversineMeters(a, b) {
+    const R = 6371000, rad = (x) => x * Math.PI / 180;
+    const dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function currentPassengers() {
+    return parseInt(document.getElementById("passengers")?.value, 10) || 1;
+}
+
+// Même formule que compute_price() côté serveur : distance arrondie à 2
+// décimales, puis x 75 x passagers, arrondi. Calcul en centièmes entiers pour
+// éviter les erreurs d'arrondi des nombres décimaux.
+function computeQuotePrice(distanceKm, passengers) {
+    return Math.round(Math.round(distanceKm * 100) * QUOTE_PRICE_PER_KM_FCFA * passengers / 100);
+}
+
+function quoteRouteKey(from, to) {
+    const r = (n) => n.toFixed(5); // ~1 m
+    return `${r(from.lat)},${r(from.lng)}>${r(to.lat)},${r(to.lng)}`;
+}
+
+function sameDestination(quote, dest) {
+    return !!quote && haversineMeters(quote.destination, dest) <= 1;
+}
+
+// Itinéraire OSRM (distance + durée seulement : la géométrie n'était de toute
+// façon pas utilisée, overview=false est plus léger et identique au serveur).
+// Renvoie { distanceKm, durationMin }, { tooClose:true } ou null en cas d'échec.
+async function fetchQuoteRoute(from, to) {
+    const key = quoteRouteKey(from, to);
+    if (quoteRouteCache.has(key)) return quoteRouteCache.get(key);
+
+    const url = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=false`;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    try {
+        const response = await fetch(url, { signal: ctrl.signal });
+        const data = await response.json();
+        const r = data.routes && data.routes[0];
+        if (!r) return null;
+
+        const route = {
+            distanceKm: Math.round(r.distance / 10) / 100, // = round(m / 1000, 2)
+            durationMin: Math.round(r.duration / 60)
+        };
+        if (route.distanceKm <= 0) return { tooClose: true };
+
+        if (quoteRouteCache.size >= 20) quoteRouteCache.delete(quoteRouteCache.keys().next().value);
+        quoteRouteCache.set(key, route);
+        return route;
+    } catch (error) {
+        console.error("Erreur itinéraire :", error);
+        return null;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+// Remplit le bloc Distance / Temps / Prix. #routeDistance est écrit EN DERNIER :
+// c'est lui qu'observe fareObserver (client-ui.js), qui affiche le bloc et
+// recopie les valeurs dans le panneau Course.
+function renderQuote(fitMap) {
+    const q = currentQuote;
+    if (!q) return;
+    const pax = currentPassengers();
+    const price = computeQuotePrice(q.distanceKm, pax);
+
+    if (fitMap && typeof map !== "undefined" && map) {
+        map.fitBounds(L.latLngBounds(
+            [q.pickup.lat, q.pickup.lng],
+            [q.destination.lat, q.destination.lng]
+        ), { padding: [40, 40] });
+    }
+    document.getElementById("routeDuration").textContent = `${q.durationMin} min`;
+    document.getElementById("routePrice").textContent = `${price} FCFA (${formatPassengers(pax)})`;
+    document.getElementById("routeDistance").textContent = `${q.distanceKm.toFixed(2)} km`;
+}
+
+// Cache le bloc. Les textes passent à "-" (ASCII) : fareObserver ignore cette
+// valeur, il ne sait que MONTRER le bloc — le masquer est à faire ici.
+function hideFare() {
+    const strip = document.getElementById("fareStrip");
+    if (strip) strip.style.display = "none";
+    ["routeDuration", "routePrice", "routeDistance"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = "-";
+    });
+}
+
+// Oublie le prix (changement d'état de la course, retour à zéro) et invalide
+// tout calcul encore en vol.
+function clearQuote() {
+    quoteSeq++;
+    quoteInflightKey = null;
+    clearTimeout(quoteGpsTimer);
+    currentQuote = null;
+    quoteState = "idle";
+    hideFare();
+    if (typeof updateFindRideBtn === "function") updateFindRideBtn();
+}
+
+// (Re)calcule le prix si nécessaire.
+//   exactPickup : le départ vient d'être choisi explicitement -> pas de tolérance
+//   fromGps     : déclenché par le GPS -> pas de recadrage de la carte, pas de message d'erreur
+async function refreshQuote(opts = {}) {
+    const { exactPickup = false, fromGps = false } = opts;
+    if (typeof AppState !== "undefined" && AppState.rideState !== "idle") return;
+    if (!pickupCoords || !destinationCoords) { clearQuote(); return; }
+
+    // Même destination et départ quasi inchangé : on garde l'itinéraire, seul
+    // le prix peut avoir changé (passagers).
+    const keepDestination = sameDestination(currentQuote, destinationCoords);
+    const tolerance = exactPickup ? 1 : QUOTE_PICKUP_TOLERANCE_M;
+    if (keepDestination && quoteState === "ready" &&
+        haversineMeters(pickupCoords, currentQuote.pickup) <= tolerance) {
+        renderQuote(false);
+        return;
+    }
+
+    const pickup = { lat: pickupCoords.lat, lng: pickupCoords.lng };
+    const destination = { lat: destinationCoords.lat, lng: destinationCoords.lng };
+    // Même trajet déjà en cours de calcul (ex. passagers changés pendant
+    // l'attente) : la réponse affichera le prix avec les passagers du moment.
+    const routeKey = quoteRouteKey(pickup, destination);
+    if (quoteState === "loading" && quoteInflightKey === routeKey) return;
+
+    const seq = ++quoteSeq;
+    quoteInflightKey = routeKey;
+    if (!keepDestination) { currentQuote = null; hideFare(); } // jamais l'ancien prix pour un autre trajet
+    quoteState = "loading";
+    if (typeof updateFindRideBtn === "function") updateFindRideBtn();
+
+    const route = await fetchQuoteRoute(pickup, destination);
+    if (seq !== quoteSeq) return;                               // une demande plus récente a pris le relais
+    quoteInflightKey = null;
+    if (typeof AppState !== "undefined" && AppState.rideState !== "idle") return;
+
+    if (!route || route.tooClose) {
+        currentQuote = null;
+        hideFare();
+        quoteState = "error";
+        if (typeof updateFindRideBtn === "function") updateFindRideBtn();
+        if (!fromGps && typeof showToast === "function") {
+            showToast(route && route.tooClose
+                ? "Le départ et la destination sont identiques."
+                : "Prix indisponible pour le moment, réessayez.");
+        }
+        return;
+    }
+
+    currentQuote = { pickup, destination, distanceKm: route.distanceKm, durationMin: route.durationMin };
+    quoteState = "ready";
+    renderQuote(!fromGps);
+    if (typeof updateFindRideBtn === "function") updateFindRideBtn();
+}
+
+// Appelée à chaque position GPS reçue (client-ui.js, watchUserPosition) :
+// recalcule seulement au premier signal GPS (si la destination est déjà
+// choisie) ou si le client s'est déplacé de plus de 100 m.
+function maybeRequoteFromGps() {
+    if (!pickupCoords || !destinationCoords || quoteState === "loading") return;
+    const needFirst = !currentQuote && quoteState === "idle";
+    const moved = !!currentQuote &&
+        haversineMeters(pickupCoords, currentQuote.pickup) > QUOTE_PICKUP_TOLERANCE_M;
+    if (!needFirst && !moved) return;
+
+    clearTimeout(quoteGpsTimer);
+    quoteGpsTimer = setTimeout(() => refreshQuote({ fromGps: true }), 1500);
+}
+
+// Le prix affiché correspond-il encore aux points actuels ?
+function quoteIsCurrent() {
+    return quoteState === "ready" && !!currentQuote && !!pickupCoords && !!destinationCoords &&
+        sameDestination(currentQuote, destinationCoords) &&
+        haversineMeters(pickupCoords, currentQuote.pickup) <= QUOTE_PICKUP_TOLERANCE_M;
+}
+
+// Clic sur « Trouver une course » = confirmation du prix affiché.
+async function confirmRide() {
+    if (rideSubmitting || quoteState === "loading") return;
+
     const pickupText = document.getElementById("pickup").value.trim();
     const destinationText = document.getElementById("destination").value.trim();
 
@@ -41,92 +253,62 @@ async function findRoute() {
         alert("Veuillez choisir votre position de départ.");
         return;
     }
-
-    if (!destinationText) {
+    if (!destinationCoords || !destinationText) {
         alert("Veuillez entrer une destination.");
         return;
     }
 
-    if (!destinationCoords) {
-        destinationCoords = await geocodeAddress(destinationText);
-
-        if (!destinationCoords) {
-            alert("Destination introuvable.");
-            return;
+    // Aucun prix valide à l'écran (calcul échoué, ou départ très éloigné) :
+    // on le recalcule et on laisse le client le voir avant de confirmer.
+    if (!quoteIsCurrent()) {
+        await refreshQuote({ exactPickup: true });
+        if (quoteState === "ready" && typeof showToast === "function") {
+            showToast("Vérifiez le prix, puis appuyez de nouveau pour confirmer.");
         }
-
-        updateMarker("destination", destinationCoords.lat, destinationCoords.lng);
+        return;
     }
 
-    const url = `https://router.project-osrm.org/route/v1/driving/${pickupCoords.lng},${pickupCoords.lat};${destinationCoords.lng},${destinationCoords.lat}?overview=full&geometries=geojson`;
+    const q = currentQuote;
+    const passengers = currentPassengers();
 
+    // La course part du point utilisé pour le prix (le chauffeur ira là où le
+    // prix a été calculé). Le GPS est gelé le temps de l'envoi : sinon une
+    // mise à jour de position pourrait réécrire pickupCoords entre-temps.
+    const previousLock = AppState.pickupLocked;
+    rideSubmitting = true;
+    if (typeof updateFindRideBtn === "function") updateFindRideBtn();
+    AppState.pickupLocked = true;
+    if (haversineMeters(pickupCoords, q.pickup) > 1) {
+        pickupCoords = { lat: q.pickup.lat, lng: q.pickup.lng };
+        updateMarker("pickup", pickupCoords.lat, pickupCoords.lng);
+    }
+
+    let result = null;
     try {
-        const response = await fetch(url);
-        const data = await response.json();
-
-        if (!data.routes || !data.routes.length) {
-            alert("Impossible de calculer l'itinéraire.");
-            return;
-        }
-
-        const route = data.routes[0];
-        const distanceKm = route.distance / 1000;
-        const durationMin = Math.round(route.duration / 60);
-        const passengers = parseInt(document.getElementById("passengers")?.value, 10) || 1;
-        const basePrice = distanceKm * 75;
-        const totalPrice = basePrice * passengers;
-        const priceFcfa = Math.round(totalPrice);
-
-        // Stocker la géométrie sans tracer sur la carte (le tracé vert
-        // n'apparaîtra que pendant la course — état "started")
-        if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
-
-        // Ajuster la vue sur pickup ↔ destination sans tracer de ligne
-        if (pickupCoords && destinationCoords) {
-            map.fitBounds(L.latLngBounds(
-                [pickupCoords.lat, pickupCoords.lng],
-                [destinationCoords.lat, destinationCoords.lng]
-            ), { padding: [40, 40] });
-        }
-
-        document.getElementById("routeDistance").textContent = `${distanceKm.toFixed(2)} km`;
-        document.getElementById("routeDuration").textContent = `${durationMin} min`;
-        document.getElementById("routePrice").textContent = `${priceFcfa} FCFA (${formatPassengers(passengers)})`;
-
-        sendToBackend({
+        result = await sendToBackend({
             pickup: pickupText,
             destination: destinationText,
-            pickup_lat: pickupCoords.lat,
-            pickup_lng: pickupCoords.lng,
-            destination_lat: destinationCoords.lat,
-            destination_lng: destinationCoords.lng,
-            distance_km: distanceKm,
-            duration_min: durationMin,
-            price_fcfa: priceFcfa,
+            pickup_lat: q.pickup.lat,
+            pickup_lng: q.pickup.lng,
+            destination_lat: q.destination.lat,
+            destination_lng: q.destination.lng,
+            distance_km: q.distanceKm,
+            duration_min: q.durationMin,
+            price_fcfa: computeQuotePrice(q.distanceKm, passengers),
             passengers: passengers
         });
-    } catch (error) {
-        console.error("Erreur itinéraire :", error);
-        alert("Erreur lors du calcul.");
+    } finally {
+        AppState.pickupLocked = previousLock;
+        rideSubmitting = false;
+        if (typeof updateFindRideBtn === "function") updateFindRideBtn();
     }
-}
 
-async function geocodeAddress(query) {
-    try {
-        const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1`;
-        const response = await fetch(url);
-        const data = await response.json();
-
-        if (!data.features || !data.features.length) return null;
-
-        const feature = data.features[0];
-        return {
-            lat: feature.geometry.coordinates[1],
-            lng: feature.geometry.coordinates[0]
-        };
-    } catch (error) {
-        console.error("Erreur géocodage :", error);
-        return null;
+    // Avant ce lot, un refus du serveur (ex. "Itinéraire introuvable") ne
+    // montrait rien au client. 409 = course déjà en cours : déjà géré dans
+    // sendToBackend (toast + reprise de course).
+    if (result && result.status !== "success" && !result.existing_ride_id &&
+        typeof showToast === "function") {
+        showToast(result.message || "Impossible de créer la course, réessayez.");
     }
 }
 
