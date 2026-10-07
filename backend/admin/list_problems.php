@@ -10,6 +10,8 @@ $result = $conn->query("
         r.id, r.status, r.pickup, r.destination,
         r.price_fcfa, r.created_at, r.updated_at,
         r.problem_description,
+        r.problem_at,
+        r.problem_resolved_at,
         r.client_problem_description,
         r.client_problem_at,
         r.client_problem_resolved_at,

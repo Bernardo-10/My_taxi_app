@@ -3,7 +3,7 @@
 // Même rôle et même logique de mise à jour que la version client
 // (voir les commentaires dans frontend/client/html/sw.js) : incrémenter
 // CACHE_NAME à chaque déploiement qui touche un fichier de APP_SHELL.
-const CACHE_NAME = "taxigo-chauffeur-shell-v3";
+const CACHE_NAME = "taxigo-chauffeur-shell-v4";
 
 const APP_SHELL = [
   "/chauffeur/",
@@ -57,10 +57,10 @@ self.addEventListener("fetch", (event) => {
 // Voir les commentaires détaillés dans frontend/client/html/sw.js,
 // même logique ici côté chauffeur.
 // ---------------------------------------------------------------
-// Chargement Firebase protégé : si gstatic.com est injoignable, un
-// importScripts() non protégé ferait échouer TOUT le service worker (cache
-// PWA compris). Avec le try/catch, il s'installe quand même, sans push ;
-// le chargement est retenté à chaque redémarrage du service worker.
+// Chargement Firebase protégé : si gstatic.com est injoignable au moment de
+// l'installation, un importScripts() non protégé fait échouer TOUT le service
+// worker (cache PWA compris). Avec le try/catch, il s'installe quand même,
+// sans push ; le chargement est retenté à chaque redémarrage du service worker.
 let messaging = null;
 try {
   importScripts("https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js");

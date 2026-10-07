@@ -83,7 +83,7 @@ $stmt = $conn->prepare("
         driver_id, driver_name, driver_plate, driver_lat, driver_lng,
         update_position_driver, created_at, updated_at,
         accepted_at, arrived_at, started_at, completed_at, cancelled_at,
-        problem_description
+        problem_description, problem_at, problem_resolved_at
     FROM rides
     WHERE $pendingClause
        OR (driver_id = ? AND status IN ('accepted', 'arrived', 'started', 'completed'))

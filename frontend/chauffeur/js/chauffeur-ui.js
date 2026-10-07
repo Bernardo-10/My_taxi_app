@@ -1657,7 +1657,15 @@ function createRideCard(ride) {
         actions.appendChild(makeActionBtn("btn-cancel", "✕ Annuler",   btn => cancelRide(ride.id, btn)));
     } else if (status === "started") {
         actions.appendChild(makeActionBtn("btn-complete", "✅ Terminer",  btn => completeRide(ride.id, btn)));
-        actions.appendChild(makeActionBtn("btn-problem",  "⚠ Problème", () => reportProblem(ride.id)));
+        const problemBtn = makeActionBtn("btn-problem", "⚠ Problème", () => reportProblem(ride.id));
+        // Signalement déjà envoyé et pas encore traité par l'admin (lot F4) : la course
+        // continue, mais on évite que le chauffeur renvoie le même signalement.
+        if (ride.problem_description && !ride.problem_resolved_at) {
+            problemBtn.textContent = "⚠ Signalé";
+            problemBtn.disabled    = true;
+            problemBtn.title       = "L'administrateur a été alerté";
+        }
+        actions.appendChild(problemBtn);
     }
 
     card.appendChild(header);

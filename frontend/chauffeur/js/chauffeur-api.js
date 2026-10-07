@@ -542,7 +542,7 @@ async function submitReportAPI(id, problem, btn) {
         });
         const result = await res.json();
         if (result.status === "success") {
-            showToast("Problème signalé. Merci. ⚠️", "success");
+            showToast("Problème signalé : l'administrateur est alerté. La course continue. ⚠️", "success");
             closeReportModal();
             await checkNewRides();
         } else {

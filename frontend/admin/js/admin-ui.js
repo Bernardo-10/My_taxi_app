@@ -22,7 +22,7 @@ const AdminState = {
 
     // Chantier 4 (v3) — polling global des signalements client
     problemsInterval: null,
-    problemLastShownAt: new Map(), // ride.id -> timestamp (ms) du dernier affichage (sert au rappel toutes les 5 min)
+    problemLastShownAt: new Map(), // alertKey ("client-12" / "driver-12") -> timestamp (ms) du dernier affichage (sert au rappel toutes les 5 min)
     problemAlertQueue: [],
     problemAlertShowingId: null,   // id du signalement actuellement affiché (null = aucune modale)
     unresolvedProblems: [],        // derniers signalements non traités reçus (alimente le bouton de rappel de la barre du haut)
@@ -249,9 +249,18 @@ async function checkClientProblems() {
     try { problems = await fetchProblems(); }
     catch (e) { return; }
 
-    const unresolved = (problems || []).filter(
-        p => p.client_problem_description && !p.client_problem_resolved_at
-    );
+    // Une même course peut avoir un signalement client ET un signalement chauffeur :
+    // chacun devient une alerte à part, identifiée par alertKey ("client-12", "driver-12")
+    // et non plus par l'id de la course seul.
+    const unresolved = [];
+    (problems || []).forEach(p => {
+        if (p.client_problem_description && !p.client_problem_resolved_at) {
+            unresolved.push({ ...p, kind: "client", alertKey: `client-${p.id}` });
+        }
+        if (p.problem_description && !p.problem_resolved_at) {
+            unresolved.push({ ...p, kind: "driver", alertKey: `driver-${p.id}` });
+        }
+    });
 
     updateProblemsBadge(unresolved.length);
     AdminState.unresolvedProblems = unresolved;
@@ -259,26 +268,26 @@ async function checkClientProblems() {
 
     // Nettoyage : un signalement résolu ailleurs (ex. section Signalements)
     // ne doit ni rester en file d'attente ni garder un minuteur de rappel.
-    const unresolvedIds = new Set(unresolved.map(p => p.id));
-    AdminState.problemAlertQueue = AdminState.problemAlertQueue.filter(r => unresolvedIds.has(r.id));
+    const unresolvedIds = new Set(unresolved.map(p => p.alertKey));
+    AdminState.problemAlertQueue = AdminState.problemAlertQueue.filter(r => unresolvedIds.has(r.alertKey));
     for (const id of AdminState.problemLastShownAt.keys()) {
         if (!unresolvedIds.has(id)) AdminState.problemLastShownAt.delete(id);
     }
 
     unresolved.forEach(ride => {
-        const lastShown = AdminState.problemLastShownAt.get(ride.id);
+        const lastShown = AdminState.problemLastShownAt.get(ride.alertKey);
         const isDue = lastShown === undefined || (Date.now() - lastShown >= PROBLEM_ALERT_REPEAT_MS);
         if (!isDue) return;
 
         // Déjà à l'écran depuis 5 min sans réaction : inutile de la rouvrir,
         // on rejoue seulement le son + la vibration pour la rendre perceptible.
-        if (AdminState.problemAlertShowingId === ride.id) {
-            AdminState.problemLastShownAt.set(ride.id, Date.now());
+        if (AdminState.problemAlertShowingId === ride.alertKey) {
+            AdminState.problemLastShownAt.set(ride.alertKey, Date.now());
             playProblemAlertFeedback();
             return;
         }
         // Déjà dans la file d'attente : elle s'affichera à son tour
-        if (AdminState.problemAlertQueue.some(r => r.id === ride.id)) return;
+        if (AdminState.problemAlertQueue.some(r => r.alertKey === ride.alertKey)) return;
 
         enqueueProblemAlert(ride);
     });
@@ -318,8 +327,8 @@ function updateProblemsReminder(count) {
 // Réouvre (silencieusement) tous les signalements non traités, un par un via la file.
 function reopenUnresolvedProblems() {
     AdminState.unresolvedProblems.forEach(ride => {
-        if (AdminState.problemAlertShowingId === ride.id) return;
-        if (AdminState.problemAlertQueue.some(r => r.id === ride.id)) return;
+        if (AdminState.problemAlertShowingId === ride.alertKey) return;
+        if (AdminState.problemAlertQueue.some(r => r.alertKey === ride.alertKey)) return;
         AdminState.problemAlertQueue.push({ ...ride, _manual: true }); // _manual : pas de son
     });
     processProblemAlertQueue();
@@ -333,7 +342,7 @@ function enqueueProblemAlert(ride) {
 function processProblemAlertQueue() {
     if (AdminState.problemAlertShowingId !== null || AdminState.problemAlertQueue.length === 0) return;
     const ride = AdminState.problemAlertQueue.shift();
-    AdminState.problemAlertShowingId = ride.id;
+    AdminState.problemAlertShowingId = ride.alertKey;
     openAdminClientProblemAlert(ride);
 }
 
@@ -346,9 +355,12 @@ function dismissProblemAlert() {
     processProblemAlertQueue(); // affiche la suivante en file, s'il y en a
 }
 
+// Affiche une alerte de signalement. ride.kind vaut "client" ou "driver" (lot F4) :
+// le texte, la date et l'action « traité » changent selon l'auteur du signalement.
 function openAdminClientProblemAlert(ride) {
+    const isDriver = ride.kind === "driver";
     // À chaque affichage (premier ou rappel) : on note l'heure + son/vibration
-    AdminState.problemLastShownAt.set(ride.id, Date.now());
+    AdminState.problemLastShownAt.set(ride.alertKey, Date.now());
     if (!ride._manual) playProblemAlertFeedback(); // ouverture demandée par l'admin : pas de son
 
     const existing = document.getElementById("clientProblemAlert");
@@ -359,7 +371,7 @@ function openAdminClientProblemAlert(ride) {
     overlay.className = "client-problem-alert";
     overlay.setAttribute("role", "alertdialog");
     overlay.setAttribute("aria-modal", "true");
-    overlay.setAttribute("aria-label", "Signalement client");
+    overlay.setAttribute("aria-label", isDriver ? "Signalement chauffeur" : "Signalement client");
 
     const box = document.createElement("div");
     box.className = "client-problem-box";
@@ -369,7 +381,7 @@ function openAdminClientProblemAlert(ride) {
 
     const title = document.createElement("div");
     title.className = "client-problem-title";
-    title.textContent = "⚠ Signalement client";
+    title.textContent = isDriver ? "⚠ Signalement chauffeur" : "⚠ Signalement client";
 
     const closeBtn = document.createElement("button");
     closeBtn.type = "button";
@@ -383,21 +395,25 @@ function openAdminClientProblemAlert(ride) {
 
     const warning = document.createElement("div");
     warning.className = "client-problem-warning";
-    warning.textContent = "Un client a signalé un problème pendant une course. Vérifiez la situation avant de marquer ce signalement comme traité.";
+    warning.textContent = isDriver
+        ? "Un chauffeur a signalé un problème pendant une course. La course continue d'être suivie. Contactez le client et le chauffeur avant de marquer ce signalement comme traité."
+        : "Un client a signalé un problème pendant une course. Vérifiez la situation avant de marquer ce signalement comme traité.";
 
     const rideRef = document.createElement("div");
     rideRef.className = "client-problem-ride";
     rideRef.textContent = `Course #${ride.id}` +
         (ride.client_name ? ` — ${ride.client_name}` : "") +
-        (ride.driver_name ? ` · Chauffeur : ${ride.driver_name}` : "");
+        (isDriver && ride.client_phone ? ` (${ride.client_phone})` : "") +
+        (ride.driver_name ? ` · Chauffeur : ${ride.driver_name}` : "") +
+        (isDriver && ride.driver_phone ? ` (${ride.driver_phone})` : "");
 
     const msg = document.createElement("div");
     msg.className = "client-problem-message";
-    msg.textContent = ride.client_problem_description;
+    msg.textContent = isDriver ? ride.problem_description : ride.client_problem_description;
 
     const meta = document.createElement("div");
     meta.className = "client-problem-meta";
-    meta.textContent = `Signalé le ${formatDate(ride.client_problem_at)}`;
+    meta.textContent = `Signalé le ${formatDate(isDriver ? ride.problem_at : ride.client_problem_at)}`;
 
     const action = document.createElement("button");
     action.className = "client-problem-action";
@@ -407,7 +423,7 @@ function openAdminClientProblemAlert(ride) {
         action.disabled = true;
         action.textContent = "…";
         try {
-            const res = await resolveClientProblem(ride.id);
+            const res = isDriver ? await resolveDriverProblem(ride.id) : await resolveClientProblem(ride.id);
             if (res.status !== "success") {
                 showToast(res.message || "Erreur", "error");
                 action.disabled = false;
@@ -421,8 +437,8 @@ function openAdminClientProblemAlert(ride) {
             return;
         }
         overlay.remove();
-        AdminState.problemLastShownAt.delete(ride.id); // résolu -> plus de rappel
-        AdminState.unresolvedProblems = AdminState.unresolvedProblems.filter(r => r.id !== ride.id);
+        AdminState.problemLastShownAt.delete(ride.alertKey); // résolu -> plus de rappel
+        AdminState.unresolvedProblems = AdminState.unresolvedProblems.filter(r => r.alertKey !== ride.alertKey);
         updateProblemsReminder(AdminState.unresolvedProblems.length);
         AdminState.problemAlertShowingId = null;
         processProblemAlertQueue();
@@ -704,9 +720,21 @@ async function refreshRides() {
     } catch (e) {}
 }
 
+// Échappe un texte destiné à un ATTRIBUT HTML (title="..."). escapeHtml() de
+// admin-kyc.js laisse passer les guillemets, ce qui permettrait de « sortir » de
+// l'attribut ; ce texte vient d'un chauffeur, donc on échappe aussi " et '.
+function escapeAttr(str) {
+    return String(str ?? "")
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
 function renderDriverAlertCell(r) {
     if (!r.problem_description) return "—";
-    return `<span class="topbar-badge badge-red" title="${r.problem_description}">⚠ Problème</span>`;
+    if (!r.problem_resolved_at) {
+        return `<span class="topbar-badge badge-red" title="${escapeAttr(r.problem_description)}">⚠ Problème</span>`;
+    }
+    return `<span class="topbar-badge badge-gray" title="${escapeAttr(r.problem_description)}\n(traité)">✓ Traité</span>`;
 }
 
 function renderClientAlertCell(r) {

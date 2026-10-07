@@ -1,28 +1,28 @@
 -- ================================================================
---  TaxiGo — schéma de base de données CENTRAL
+--  TaxiGo — schéma de base de données CENTRAL (structure seulement)
 --  Source de vérité unique, à committer sur GitHub
 --
---  Généré le 2026-07-01 en réconciliant :
---    - l'export réel de production (taxi_bd.sql, sql103.infinityfree.com)
---    - database/bd.sql, admin_migration.sql, add_*.sql du repo
---    - le code PHP réel (backend/) pour vérifier ce qui est utilisé
+--  Mis à jour le 2026-10-06 à partir de l'export RÉEL de production
+--  (if0_42292648_taxi_app, MariaDB 11.4, export du 2026-10-05) : les 11
+--  tables, colonnes et index ci-dessous ont été comparés un par un à cet
+--  export (information_schema) — aucun écart.
 --
---  Contenu :
---    - Les 5 tables réelles (admin, chauffeur, client, rides, sessions)
---    - Toutes les colonnes constatées en prod, y compris celles qui
---      n'existaient dans AUCUN fichier du repo (rides.accepted_at
---      -> cancelled_at, table sessions)
---    - Les UNIQUE KEY / INDEX prévus à l'origine mais jamais appliqués
---      en prod (voir section "SITUATION ACTUELLE EN PROD" plus bas)
---    - AUCUNE donnée réelle : seulement les 2 comptes de test
---      (id=1 client / id=1 chauffeur) + le compte admin de bootstrap
---    - PAS de triggers : accept_ride.php et complete_ride.php mettent
---      déjà à jour les totaux chauffeur manuellement en PHP (vérifié
---      dans le code). Des triggers dupliqueraient ces totaux.
+--  Tables : admin, chauffeur, client, rides, ride_refusals,
+--           chauffeur_document_reviews, chauffeur_document_renewals,
+--           wallet_transactions, push_subscriptions, fcm_oauth_cache,
+--           sessions
 --
---  Réexécutable : toutes les instructions utilisent IF NOT EXISTS,
---  donc ce script peut tourner sans risque sur une base vierge ou
---  sur la prod actuelle.
+--  Ce fichier ne contient AUCUNE donnée. Les comptes de test
+--  (client/chauffeur de démonstration, mot de passe « password ») sont
+--  dans database/seed_dev.sql : à n'utiliser qu'en local, jamais en prod.
+--  PAS de triggers : accept_ride.php et complete_ride.php mettent déjà à
+--  jour les totaux chauffeur en PHP.
+--
+--  Réexécutable : CREATE TABLE IF NOT EXISTS partout, donc sans risque
+--  sur une base vierge comme sur la prod actuelle (qui est à jour).
+--  Une base plus ancienne que celle de prod (colonnes KYC/wallet de
+--  `chauffeur` absentes) ne serait PAS complétée par ce fichier : le
+--  CREATE TABLE IF NOT EXISTS ignore une table qui existe déjà.
 --
 --  IMPORTANT — nom de la base de données :
 --  Sur InfinityFree (et la plupart des mutualisés), le nom de la base
@@ -35,6 +35,7 @@
 --    4. Mettre à jour backend/config/db.php ET backend/config/auth.php
 --       (la classe DbSessionHandler a SES PROPRES identifiants de connexion,
 --       distincts de db.php — les deux doivent être mis à jour)
+--    5. Créer le compte admin (password_hash('VotreMotDePasse', PASSWORD_BCRYPT))
 -- ================================================================
 
 
@@ -84,15 +85,47 @@ CREATE TABLE IF NOT EXISTS chauffeur (
   driver_lat                    DOUBLE DEFAULT NULL,
   driver_lng                    DOUBLE DEFAULT NULL,
   update_position_driver        TIMESTAMP NULL DEFAULT NULL,
+  -- Portefeuille (dénormalisé : le détail est dans wallet_transactions)
+  wallet_balance_fcfa           BIGINT NOT NULL DEFAULT 0 COMMENT 'Solde actuel du portefeuille (dénormalisé)',
+  -- Vérification d'identité (KYC). 'incomplete' = compte créé sans documents
+  kyc_status                    ENUM('incomplete','pending','approved','rejected') NOT NULL DEFAULT 'pending',
+  kyc_rejection_reason          VARCHAR(255) DEFAULT NULL,
+  kyc_reviewed_at               TIMESTAMP NULL DEFAULT NULL,
+  -- Documents : numéro, date d'expiration, photos (chemins de fichiers)
+  cni_number                    VARCHAR(50)  DEFAULT NULL,
+  cni_expiration                DATE DEFAULT NULL,
+  cni_photo_recto               VARCHAR(255) DEFAULT NULL,
+  cni_photo_verso               VARCHAR(255) DEFAULT NULL,
+  carte_grise_immat             VARCHAR(50)  DEFAULT NULL,
+  carte_grise_expiration        DATE DEFAULT NULL,
+  carte_grise_photo             VARCHAR(255) DEFAULT NULL,
+  permit_number                 VARCHAR(50)  DEFAULT NULL,
+  permit_expiration             DATE DEFAULT NULL,
+  permit_photo_recto            VARCHAR(255) DEFAULT NULL,
+  permit_photo_verso            VARCHAR(255) DEFAULT NULL,
+  capacity_number               VARCHAR(50)  DEFAULT NULL,
+  capacity_expiration           DATE DEFAULT NULL,
+  capacity_photo_recto          VARCHAR(255) DEFAULT NULL,
+  capacity_photo_verso          VARCHAR(255) DEFAULT NULL,
+  license_number                VARCHAR(50)  DEFAULT NULL,
+  license_expiration            DATE DEFAULT NULL,
+  license_photo_recto           VARCHAR(255) DEFAULT NULL,
+  license_photo_verso           VARCHAR(255) DEFAULT NULL,
+  -- Colonne présente en prod mais lue/écrite par aucun fichier du code
+  -- (c'est kyc_status qui porte l'état « incomplet »). Gardée pour rester
+  -- identique à la prod ; à supprimer lors d'un nettoyage.
+  incomplete                    TINYINT(1) NOT NULL DEFAULT 0,
   UNIQUE KEY uniq_chauffeur_email (email),
   UNIQUE KEY uniq_chauffeur_phone (phone),
-  UNIQUE KEY uniq_chauffeur_plate (plate)
+  UNIQUE KEY uniq_chauffeur_plate (plate),
+  KEY idx_chauffeur_kyc_status (kyc_status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 ALTER TABLE chauffeur
   ADD UNIQUE KEY IF NOT EXISTS uniq_chauffeur_email (email),
   ADD UNIQUE KEY IF NOT EXISTS uniq_chauffeur_phone (phone),
-  ADD UNIQUE KEY IF NOT EXISTS uniq_chauffeur_plate (plate);
+  ADD UNIQUE KEY IF NOT EXISTS uniq_chauffeur_plate (plate),
+  ADD KEY IF NOT EXISTS idx_chauffeur_kyc_status (kyc_status);
 
 
 -- ----------------------------------------------------------------
@@ -158,7 +191,9 @@ CREATE TABLE IF NOT EXISTS rides (
   client_problem_description    TEXT DEFAULT NULL,
   client_problem_at             TIMESTAMP NULL DEFAULT NULL,
   client_problem_resolved_at    TIMESTAMP NULL DEFAULT NULL,
-  problem_description            TEXT DEFAULT NULL,
+  problem_description           TEXT DEFAULT NULL,
+  problem_at                    TIMESTAMP NULL DEFAULT NULL,
+  problem_resolved_at           TIMESTAMP NULL DEFAULT NULL,
   INDEX idx_rides_user_status (user_id, status),
   INDEX idx_rides_driver_status (driver_id, status),
   INDEX idx_rides_status_created (status, created_at)
@@ -175,6 +210,13 @@ ALTER TABLE rides
 ALTER TABLE rides
   ADD COLUMN IF NOT EXISTS client_problem_resolved_at TIMESTAMP NULL DEFAULT NULL AFTER client_problem_at;
 
+-- problem_at / problem_resolved_at (lot F4) : signalement du CHAUFFEUR, non terminal
+-- (la course garde son statut ; l'admin est alerté puis marque « traité »).
+-- Voir database/migration_lot_f4.sql pour une base existante.
+ALTER TABLE rides
+  ADD COLUMN IF NOT EXISTS problem_at          TIMESTAMP NULL DEFAULT NULL AFTER problem_description,
+  ADD COLUMN IF NOT EXISTS problem_resolved_at TIMESTAMP NULL DEFAULT NULL AFTER problem_at;
+
 -- Statut 'expired' (lot F3b) : course 'pending' sans chauffeur au bout de 30 min
 -- (voir backend/common/ride_expiry.php). Pour une base existante, vérifier la
 -- liste actuelle avec SHOW COLUMNS FROM rides LIKE 'status' avant d'exécuter
@@ -190,8 +232,9 @@ ALTER TABLE rides
 -- 'cancelled' pour TOUT LE MONDE, alors qu'un seul chauffeur avait
 -- refusé. Un refus est maintenant local à un chauffeur : on
 -- l'enregistre ici, la course reste 'pending' pour les autres.
--- Pas de limite de temps sur pending : si personne n'accepte,
--- c'est au client d'annuler (cancelled_client), pas au système.
+-- Une course pending que personne n'accepte expire au bout de 30 min
+-- (statut 'expired', voir backend/common/ride_expiry.php) ; le client
+-- peut aussi l'annuler avant (cancelled_client).
 -- ----------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS ride_refusals (
   ride_id     INT NOT NULL,
@@ -199,6 +242,95 @@ CREATE TABLE IF NOT EXISTS ride_refusals (
   refused_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (ride_id, driver_id),
   INDEX idx_refusals_driver (driver_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+-- ----------------------------------------------------------------
+-- Table `chauffeur_document_reviews`
+-- Décision admin par document (cni, carte_grise, permit, capacity, license),
+-- une ligne par chauffeur et par document. MyISAM/latin1 conservés comme en prod.
+-- ----------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `chauffeur_document_reviews` (
+  `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `chauffeur_id` int(10) UNSIGNED NOT NULL,
+  `document_group` enum('cni','carte_grise','permit','capacity','license') NOT NULL,
+  `status` enum('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+  `rejection_reason` text DEFAULT NULL,
+  `reviewed_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_chauffeur_document` (`chauffeur_id`,`document_group`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+
+-- ----------------------------------------------------------------
+-- Table `chauffeur_document_renewals`
+-- Renouvellement d'un document arrivé à expiration, soumis par le chauffeur
+-- puis validé ou rejeté par l'admin. MyISAM/latin1 conservés comme en prod.
+-- ----------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `chauffeur_document_renewals` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `chauffeur_id` int(11) NOT NULL,
+  `document_group` enum('cni','carte_grise','permit','capacity','license') NOT NULL,
+  `number` varchar(50) NOT NULL,
+  `expiration` date NOT NULL,
+  `photo_recto` varchar(255) DEFAULT NULL,
+  `photo_verso` varchar(255) DEFAULT NULL,
+  `status` enum('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+  `rejection_reason` varchar(255) DEFAULT NULL,
+  `submitted_at` timestamp NULL DEFAULT current_timestamp(),
+  `reviewed_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_renewals_pending` (`chauffeur_id`,`document_group`,`status`)
+) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+
+-- ----------------------------------------------------------------
+-- Table `wallet_transactions`
+-- Mouvements du portefeuille chauffeur (recharges, commissions...).
+-- ----------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `wallet_transactions` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `chauffeur_id` int(11) NOT NULL,
+  `type` varchar(20) NOT NULL,
+  `amount_fcfa` bigint(20) NOT NULL,
+  `ride_id` int(11) DEFAULT NULL,
+  `status` varchar(20) NOT NULL DEFAULT 'pending',
+  `operator` varchar(50) DEFAULT NULL,
+  `reference` varchar(100) DEFAULT NULL,
+  `description` text DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `validated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_wallet_chauffeur` (`chauffeur_id`),
+  KEY `idx_wallet_status` (`status`),
+  KEY `idx_wallet_created` (`created_at`),
+  KEY `idx_wallet_chauffeur_created` (`chauffeur_id`,`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- ----------------------------------------------------------------
+-- Table `push_subscriptions`
+-- Jetons FCM des appareils (un compte peut en avoir plusieurs).
+-- ----------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `push_subscriptions` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_type` enum('client','chauffeur') NOT NULL,
+  `user_id` int(11) NOT NULL,
+  `fcm_token` varchar(255) NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_token` (`fcm_token`),
+  KEY `idx_user` (`user_type`,`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- ----------------------------------------------------------------
+-- Table `fcm_oauth_cache`
+-- Cache du jeton d'accès OAuth de Firebase (une seule ligne, id = 1).
+-- ----------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `fcm_oauth_cache` (
+  `id` int(11) NOT NULL DEFAULT 1,
+  `access_token` text NOT NULL,
+  `expires_at` datetime NOT NULL,
+  PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 
@@ -215,63 +347,3 @@ CREATE TABLE IF NOT EXISTS sessions (
   data           TEXT NOT NULL,
   last_activity  INT(11) NOT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
-
-
--- ----------------------------------------------------------------
--- Comptes de bootstrap / test — mot de passe en clair : password
--- (sauf admin, voir note). Aucune autre donnée utilisateur incluse.
--- ----------------------------------------------------------------
-
--- Client de test (id=1)
--- Correction appliquée : le hash en prod avait 2 espaces en préfixe,
--- ce qui cassait password_verify() — corrigé ici.
-INSERT INTO client (id, full_name, phone, email, password_hash, status)
-VALUES (1, 'Client Test', '690000001', 'client@test.com',
-        '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llCImXi4qAtV.i.U4tGFG', 'active')
-ON DUPLICATE KEY UPDATE
-  full_name = VALUES(full_name),
-  phone = VALUES(phone),
-  email = VALUES(email),
-  password_hash = VALUES(password_hash),
-  status = VALUES(status);
-
--- Chauffeur de test (id=1)
-INSERT INTO chauffeur (id, name, phone, email, password_hash, plate, car_brand, car_color, status)
-VALUES (1, 'Test Driver', '690000002', 'chauffeur@test.com',
-        '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llCImXi4qAtV.i.U4tGFG',
-        'LT 000 BD', 'Toyota', 'Jaune', 'active')
-ON DUPLICATE KEY UPDATE
-  name = VALUES(name),
-  phone = VALUES(phone),
-  email = VALUES(email),
-  password_hash = VALUES(password_hash),
-  plate = VALUES(plate),
-  car_brand = VALUES(car_brand),
-  car_color = VALUES(car_color),
-  status = VALUES(status);
-
--- Compte admin de bootstrap (mot de passe : à changer en prod via
--- password_hash('VotreMotDePasse', PASSWORD_BCRYPT))
-INSERT INTO admin (username, email, password_hash)
-VALUES ('admin', 'admin@taxigo.cm',
-        '$2y$10$sR5k8wY/bNJI2p5eMJgX2OQqz1J4yiRXFhlm8qpDd9OB3jtjW3SiO')
-ON DUPLICATE KEY UPDATE username = VALUES(username);
-
-
--- ================================================================
--- SITUATION ACTUELLE EN PROD (au 2026-07-01) — à appliquer une fois
--- ================================================================
--- L'export live confirme qu'aucune des contraintes UNIQUE ni des
--- index ci-dessus n'existe réellement sur sql103.infinityfree.com
--- (seules les clés primaires sont présentes). Conséquence concrète :
--- rien n'empêche aujourd'hui deux clients d'avoir le même email, ou
--- deux chauffeurs la même plaque.
---
--- Pour combler cet écart sur LA PROD ACTUELLE uniquement (une seule
--- fois, via phpMyAdmin), il suffit d'exécuter les blocs
--- "ALTER TABLE ... ADD ... IF NOT EXISTS" de ce fichier : ils sont
--- sans danger même si les tables contiennent déjà des données,
--- puisqu'aucun doublon d'email/téléphone/plaque n'existe actuellement
--- (vérifié dans l'export). Le reste du fichier (CREATE TABLE) sera
--- ignoré puisque les tables existent déjà.
--- ================================================================

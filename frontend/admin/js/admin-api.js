@@ -111,6 +111,16 @@ async function resolveClientProblem(rideId) {
     return await res.json();
 }
 
+// Signalement fait par le CHAUFFEUR (lot F4) : même principe que ci-dessus
+async function resolveDriverProblem(rideId) {
+    const res  = await fetch(`${ADMIN_API}/resolve_driver_problem.php`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ ride_id: rideId })
+    });
+    return await res.json();
+}
+
 /* ──────────────────────────────────────────────
    GESTION DES UTILISATEURS
 ────────────────────────────────────────────── */

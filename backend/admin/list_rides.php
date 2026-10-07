@@ -51,7 +51,7 @@ $sql = "
            r.driver_name, r.driver_plate,
            c.full_name AS client_name, c.phone AS client_phone,
            ch.phone AS driver_phone,
-           r.problem_description,
+           r.problem_description, r.problem_at, r.problem_resolved_at,
            r.client_problem_description, r.client_problem_at, r.client_problem_resolved_at
     FROM rides r
     LEFT JOIN client c ON c.id = r.user_id
