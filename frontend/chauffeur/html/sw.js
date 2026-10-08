@@ -3,7 +3,7 @@
 // Même rôle et même logique de mise à jour que la version client
 // (voir les commentaires dans frontend/client/html/sw.js) : incrémenter
 // CACHE_NAME à chaque déploiement qui touche un fichier de APP_SHELL.
-const CACHE_NAME = "taxigo-chauffeur-shell-v6";
+const CACHE_NAME = "taxigo-chauffeur-shell-v9";
 
 const APP_SHELL = [
   "/chauffeur/",

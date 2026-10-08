@@ -861,21 +861,39 @@ function renderTransactions(transactions, container) {
 }
 
 // ── Modale de recharge ────────────────────────
+let rechargeModalReturnFocus = null;
+
+function restoreFocusBeforeModalClose(modal, returnFocus) {
+  const active = document.activeElement;
+  if (!modal?.contains(active)) return;
+
+  if (returnFocus?.isConnected && !modal.contains(returnFocus)) {
+    returnFocus.focus({ preventScroll: true });
+  } else if (active instanceof HTMLElement) {
+    active.blur();
+  }
+}
+
 function openRechargeModal() {
   const modal = document.getElementById('rechargeModal');
   if (modal) {
+    rechargeModalReturnFocus = document.activeElement;
+    modal.removeAttribute('inert');
     modal.classList.add('open');
     modal.setAttribute('aria-hidden', 'false');
-    document.getElementById('rechargeAmount')?.focus();
+    document.getElementById('rechargeAmount')?.focus({ preventScroll: true });
   }
 }
 
 function closeRechargeModal() {
   const modal = document.getElementById('rechargeModal');
   if (modal) {
+    restoreFocusBeforeModalClose(modal, rechargeModalReturnFocus);
     modal.classList.remove('open');
     modal.setAttribute('aria-hidden', 'true');
+    modal.setAttribute('inert', '');
   }
+  rechargeModalReturnFocus = null;
 }
 
 async function submitRechargeRequest(event) {
@@ -1172,6 +1190,7 @@ function escapeHtml(str) {
 // ── Modale de renouvellement (réutilisée aussi pour la resoumission d'un
 //    document rejeté à l'examen initial — voir renewalModalMode) ──────
 let renewalModalMode = "renewal"; // "renewal" | "initial"
+let renewalModalReturnFocus = null;
 
 function openRenewalModal(docKey, doc, mode = "renewal") {
   const meta = DOCUMENT_GROUPS[docKey];
@@ -1196,6 +1215,8 @@ function openRenewalModal(docKey, doc, mode = "renewal") {
 
   const modal = document.getElementById("documentRenewalModal");
   if (modal) {
+    renewalModalReturnFocus = document.activeElement;
+    modal.removeAttribute("inert");
     modal.classList.add("open");
     modal.setAttribute("aria-hidden", "false");
   }
@@ -1204,9 +1225,12 @@ function openRenewalModal(docKey, doc, mode = "renewal") {
 function closeRenewalModal() {
   const modal = document.getElementById("documentRenewalModal");
   if (modal) {
+    restoreFocusBeforeModalClose(modal, renewalModalReturnFocus);
     modal.classList.remove("open");
     modal.setAttribute("aria-hidden", "true");
+    modal.setAttribute("inert", "");
   }
+  renewalModalReturnFocus = null;
   document.getElementById("documentRenewalForm")?.reset();
 }
 
