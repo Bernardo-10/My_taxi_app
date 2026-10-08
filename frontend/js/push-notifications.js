@@ -69,8 +69,12 @@ async function initPushNotifications(userType) {
     // c'est ici qu'il faudrait afficher quelque chose si besoin. Pour
     // l'instant, le son/toast existant (notify-feedback.js), déjà déclenché
     // par le polling, couvre ce cas -- pas de doublon nécessaire.
+    // On émet en revanche un évènement : l'interface chauffeur l'écoute pour
+    // rafraîchir la carte immédiatement (ex. annulation par le client) au lieu
+    // d'attendre le prochain poll. Sans écouteur (client, admin), aucun effet.
     messaging.onMessage((payload) => {
       console.log("[push] Message reçu (app au premier plan) :", payload);
+      window.dispatchEvent(new CustomEvent("taxigo:push-foreground", { detail: payload }));
     });
 
   } catch (e) {

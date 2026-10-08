@@ -71,24 +71,26 @@ if ($balanceBlocked) {
 
 $pendingClause = $balanceBlocked
     ? "(1 = 0)" // solde insuffisant : aucune nouvelle course pending envoyée
-    : "(status = 'pending' AND id NOT IN (
+    : "(rides.status = 'pending' AND rides.id NOT IN (
               SELECT ride_id FROM ride_refusals WHERE driver_id = ?
           ))";
 
 $stmt = $conn->prepare("
     SELECT
-        id, user_id, pickup, destination,
-        pickup_lat, pickup_lng, destination_lat, destination_lng,
-        distance_km, duration_min, price_fcfa, passengers, status,
-        driver_id, driver_name, driver_plate, driver_lat, driver_lng,
-        update_position_driver, created_at, updated_at,
-        accepted_at, arrived_at, started_at, completed_at, cancelled_at,
-        problem_description, problem_at, problem_resolved_at
+        rides.id, rides.user_id, rides.pickup, rides.destination,
+        rides.pickup_lat, rides.pickup_lng, rides.destination_lat, rides.destination_lng,
+        rides.distance_km, rides.duration_min, rides.price_fcfa, rides.passengers, rides.status,
+        rides.driver_id, rides.driver_name, rides.driver_plate, rides.driver_lat, rides.driver_lng,
+        rides.update_position_driver, rides.created_at, rides.updated_at,
+        rides.accepted_at, rides.arrived_at, rides.started_at, rides.completed_at, rides.cancelled_at,
+        rides.problem_description, rides.problem_at, rides.problem_resolved_at,
+        CASE WHEN rides.status = 'pending' THEN NULL ELSE client.full_name END AS client_name
     FROM rides
+    LEFT JOIN client ON client.id = rides.user_id
     WHERE $pendingClause
-       OR (driver_id = ? AND status IN ('accepted', 'arrived', 'started', 'completed'))
-       OR (driver_id = ? AND status = 'cancelled_client' AND cancelled_at >= NOW() - INTERVAL 1 DAY)
-    ORDER BY created_at DESC
+       OR (rides.driver_id = ? AND rides.status IN ('accepted', 'arrived', 'started', 'completed'))
+       OR (rides.driver_id = ? AND rides.status = 'cancelled_client' AND rides.cancelled_at >= NOW() - INTERVAL 1 DAY)
+    ORDER BY rides.created_at DESC
 ");
 
 if ($balanceBlocked) {

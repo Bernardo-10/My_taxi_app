@@ -1,6 +1,38 @@
 /**
  * chauffeur-ui.js — TaxiGo Interface Chauffeur
  *
+ * CHANTIER SUIVI DE LA CARTE (recentrage) :
+ *
+ *  ✅ La carte ne revient plus de force sur le chauffeur dès qu'on la déplace.
+ *     CAUSE  : le garde-fou userMovedMap s'appuyait sur "movestart" + e.originalEvent,
+ *              or cet évènement Leaflet n'expose pas originalEvent : le drapeau ne
+ *              passait jamais à true et chaque position GPS recentrait la carte.
+ *     FIX    : "dragstart" (déplacement au doigt/souris) et "zoomstart" (pincement,
+ *              boutons + / −) coupent le suivi ; les déplacements décidés par le code
+ *              passent par moveMapProgrammatically() et sont ignorés.
+ *  ✅ Bouton "Recentrer" sous les boutons + / − (à droite de la carte) : réactive le
+ *     suivi et recentre sur le chauffeur. Bleu = suivi actif, orange = suivi coupé.
+ *
+ * CHANTIER ITINÉRAIRE UNIQUE (refonte de la carte chauffeur) :
+ *
+ *  ✅ Un SEUL tracé pour toutes les courses actives (au lieu de 2 tracés par
+ *     course : vers le client puis vers la destination). Le meilleur ordre de
+ *     passage (distance totale la plus courte) est calculé par route-planner.js
+ *     (2 requêtes OSRM par calcul quel que soit le nombre de courses).
+ *  ✅ Deux familles de panneaux : "À récupérer" (orange) et "Fin de course"
+ *     (vert), numérotés dans l'ordre de passage ; bandeau "Prochain arrêt".
+ *  ✅ Décharge immédiate : les repères d'une course terminée/annulée/démarrée
+ *     sont retirés de façon synchrone (état local), sans attendre le réseau ;
+ *     la partie déjà parcourue du tracé est rognée localement ; un résultat de
+ *     calcul périmé est jeté (plus de tracé fantôme).
+ *  ✅ Recalcul uniquement sur événement (course acceptée/annulée/démarrée/
+ *     arrivée/terminée) ou si le chauffeur s'écarte du tracé (plus de recalcul
+ *     "toutes les 100 m"). Corrige aussi le cache de tracés qui était vidé à
+ *     chaque cycle (clés texte vs identifiants numériques).
+ *  ✅ Supprimé : calculateRoute(), routeCache, routeLayers, rideMarkers,
+ *     destinationMarkers, destinationMap, isUpdatingRoutes, marqueur rouge
+ *     chargé depuis raw.githubusercontent.com.
+ *
  * CORRECTIONS CETTE SESSION :
  *
  *  ✅ BUG #1 — Poll concurrent lors du toggle statut
@@ -93,19 +125,41 @@ let map;
 let driverMarker        = null;
 let allRides            = [];
 let dashboardHistory    = loadDashboardCache();
-let rideMarkers         = [];
-let destinationMarkers  = [];
-let destinationMap      = new Map();
-let routeLayers         = [];
-let routeCache          = new Map();
+
+// Itinéraire unique (voir section "MAP — ITINÉRAIRE UNIQUE")
+const ROUTE_DEVIATION_M     = 70;      // écart max au tracé avant de parler de déviation
+const ROUTE_DEVIATION_HOLD  = 5000;    // durée (ms) d'écart continu avant recalcul
+const ROUTE_RECALC_COOLDOWN = 15000;   // délai mini (ms) entre deux recalculs sur déviation
+const ROUTE_TRIM_THROTTLE   = 1000;    // rognage du tracé au plus 1 fois / seconde
+const ROUTE_MAX_ACCURACY_M  = 60;      // GPS plus imprécis : on ne conclut pas à une déviation
+const ROUTE_VEHICLE_CAPACITY = 5;      // passagers max à bord (aligné sur client/backend.php)
+const LOCAL_STATUS_TTL_MS   = 10000;   // validité d'un statut appliqué localement avant confirmation serveur
+
+const localRideStatus   = new Map();   // id -> { status, ts } : effet immédiat des actions du chauffeur
+const stopMarkers       = new Map();   // coordKey -> L.marker (un panneau par point, arrêts fusionnés)
+let routeCasing         = null;        // contour blanc du tracé
+let routeMain           = null;        // tracé principal
+let routePlan           = null;        // dernier plan appliqué (voir RoutePlanner.computePlan)
+let currentStops        = [];          // arrêts attendus d'après l'état local (synchrone)
+let currentSignature    = "";
+let computingSignature  = "";
+let routeSeq            = 0;           // numéro du calcul valide (dernier gagnant)
+let routeBusy           = false;
+let routeDirty          = false;
+let routeAbort          = null;
+let offRouteSince       = null;
+let lastRecalcAt        = 0;
+let lastTrimAt          = 0;
+let routeBanner         = null;
 
 // Flags concurrence
-let isUpdatingRoutes    = false;
 let isCheckingRides     = false;
 
 // GPS
 let gpsWatchId          = null;
-let userMovedMap        = false;
+let userMovedMap        = false;   // true = suivi du chauffeur coupé (l'utilisateur a pris la main)
+let programmaticMove    = false;   // true pendant un setView décidé par le code (à ignorer)
+let recenterBtnEl       = null;
 let initialGpsDone      = false;
 
 // Polling
@@ -340,11 +394,11 @@ function initMap() {
     }).addTo(map);
 
     L.control.zoom({ position: "topright" }).addTo(map);
+    initRecenterControl();           // ajouté après le zoom : s'affiche juste en dessous
 
-    map.on("movestart", (e) => {
-        if (!e.originalEvent) return;
-        userMovedMap = true;
-    });
+    // L'utilisateur prend la main sur la carte : on arrête de la recentrer.
+    map.on("dragstart", () => setFollowMode(false));
+    map.on("zoomstart", () => { if (!programmaticMove) setFollowMode(false); });
 
     if (!navigator.geolocation) {
         showToast("La géolocalisation n'est pas disponible", "error");
@@ -356,6 +410,68 @@ function initMap() {
         (err) => console.warn("GPS watch error:", err.message),
         { enableHighAccuracy: true, maximumAge: 0 }
     );
+}
+
+/* ── Suivi du chauffeur / bouton "Recentrer" ─── */
+
+const RECENTER_ICON_SVG =
+    '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" aria-hidden="true">' +
+    '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/>' +
+    '<path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>';
+
+/** Active/coupe le suivi automatique et met à jour l'aspect du bouton. */
+function setFollowMode(follow) {
+    userMovedMap = !follow;
+    if (recenterBtnEl) {
+        recenterBtnEl.classList.toggle("is-following", follow);
+        recenterBtnEl.setAttribute("aria-pressed", follow ? "true" : "false");
+    }
+}
+
+/** setView décidé par le code : ne doit jamais être pris pour une action de l'utilisateur. */
+function moveMapProgrammatically(latlng, zoom) {
+    programmaticMove = true;
+    try {
+        map.setView(latlng, zoom);      // les évènements zoomstart/movestart partent de façon synchrone
+    } finally {
+        programmaticMove = false;
+    }
+}
+
+function recenterOnDriver() {
+    if (!driverMarker) {
+        showToast("Position GPS en cours de recherche…", "info");
+        return;
+    }
+    setFollowMode(true);
+    moveMapProgrammatically(driverMarker.getLatLng(), Math.max(map.getZoom(), 15));
+}
+
+function initRecenterControl() {
+    const RecenterControl = L.Control.extend({
+        options: { position: "topright" },
+        onAdd() {
+            const bar = L.DomUtil.create("div", "leaflet-bar recenter-control");
+            const btn = L.DomUtil.create("a", "recenter-btn", bar);
+            btn.href = "#";
+            btn.setAttribute("role", "button");
+            btn.setAttribute("title", "Recentrer sur ma position");
+            btn.setAttribute("aria-label", "Recentrer sur ma position");
+            btn.innerHTML = RECENTER_ICON_SVG;      // SVG statique, aucune donnée externe
+
+            L.DomEvent.disableClickPropagation(bar);
+            L.DomEvent.on(btn, "click", (e) => {
+                L.DomEvent.preventDefault(e);
+                recenterOnDriver();
+            });
+
+            recenterBtnEl = btn;
+            return bar;
+        }
+    });
+    new RecenterControl().addTo(map);
+    setFollowMode(!userMovedMap);
 }
 
 function onGpsPosition(pos) {
@@ -375,16 +491,20 @@ function onGpsPosition(pos) {
         driverMarker = L.marker([lat, lng], { icon }).addTo(map);
 
         if (!initialGpsDone) {
-            map.setView([lat, lng], 15);
+            moveMapProgrammatically([lat, lng], 15);
             initialGpsDone = true;
         }
     } else {
         driverMarker.setLatLng([lat, lng]);
 
         if (!userMovedMap) {
-            map.setView([lat, lng], map.getZoom());
+            moveMapProgrammatically([lat, lng], map.getZoom());
         }
     }
+
+    // Itinéraire unique : rognage local du tracé, détection de déviation
+    // (aucun appel réseau tant que le chauffeur suit le tracé).
+    onDriverMoved(lat, lng, pos.coords.accuracy);
 }
 
 /* ═══════════════════════════════════════════════
@@ -589,8 +709,7 @@ function onGoOffline() {
     // données live en mémoire pour éviter qu’un cache stale réapparaisse au
     // prochain render.
     allRides = [];
-    routeCache.clear();
-    destinationMap.clear();
+    localRideStatus.clear();
 
     renderPendingRides();
     if (activeTab === "courses") renderActiveCourses();
@@ -598,12 +717,7 @@ function onGoOffline() {
     updateFilterCounts();
     if (activeTab === "dashboard") updateDashboard();
 
-    rideMarkers.forEach(m => map.removeLayer(m));
-    rideMarkers = [];
-    destinationMarkers.forEach(m => map.removeLayer(m));
-    destinationMarkers = [];
-    routeLayers.forEach(l => map.removeLayer(l));
-    routeLayers = [];
+    clearRoute();
 }
 
 /* ═══════════════════════════════════════════════
@@ -1244,7 +1358,8 @@ function openReportModal(rideId) {
     const modal = document.getElementById("reportModal");
     const sub   = document.getElementById("reportModalSub");
     const ta    = document.getElementById("reportTextarea");
-    if (sub)   sub.textContent = `Course #${rideId}`;
+    const ride  = allRides.find(item => String(item.id) === String(rideId));
+    if (sub)   sub.textContent = getRideClientLabel(ride);
     if (ta)    ta.value = "";
     if (modal) {
         modal.classList.add("open");
@@ -1582,7 +1697,7 @@ function createRideCard(ride) {
 
     const idEl = document.createElement("span");
     idEl.className   = "ride-id";
-    idEl.textContent = `Course #${ride.id}`;
+    idEl.textContent = status === "pending" ? "Nouvelle demande" : getRideClientLabel(ride);
 
     const badge = document.createElement("span");
     badge.className   = `ride-status-badge ${badgeClass(status)}`;
@@ -1711,110 +1826,402 @@ function statusLabel(status) {
 }
 
 /* ═══════════════════════════════════════════════
-   MAP MARKERS & ROUTES
+   MAP — ITINÉRAIRE UNIQUE
+   Principe : la carte se met d'abord à jour depuis l'ÉTAT LOCAL (synchrone,
+   sans réseau), puis le réseau affine le tracé.
+     1. updateRideMarkers()  : appelée après chaque poll ET après chaque
+        action du chauffeur (via applyLocalRideStatus). Retire/ajoute les
+        panneaux immédiatement ; si l'ensemble d'arrêts a changé, demande un
+        recalcul de l'ordre et du tracé.
+     2. Un seul calcul à la fois, "dernier gagnant" : une demande arrivée
+        pendant un calcul interrompt celui-ci (AbortController) ; tout
+        résultat périmé est jeté, jamais dessiné.
+     3. onDriverMoved() : rogne localement la partie déjà parcourue du tracé ;
+        ne déclenche un recalcul que si le chauffeur s'écarte du tracé.
 ═══════════════════════════════════════════════ */
-async function updateRideMarkers() {
-    if (isUpdatingRoutes) return;
-    isUpdatingRoutes = true;
 
-    try {
-        const driverPos = driverMarker ? driverMarker.getLatLng() : null;
-        if (!driverPos) return;
+/** Statut effectif des courses : statut serveur, sauf action locale récente non encore confirmée. */
+function effectiveRides() {
+    const now = Date.now();
+    return allRides.map(r => {
+        const ov = localRideStatus.get(String(r.id));
+        if (!ov) return r;
+        if (r.status === ov.status || now - ov.ts > LOCAL_STATUS_TTL_MS) {
+            localRideStatus.delete(String(r.id));
+            return r;
+        }
+        return { ...r, status: ov.status };
+    });
+}
 
-        const { lat: driverLat, lng: driverLng } = driverPos;
-        const activeRides = allRides.filter(r => r.status === "accepted" || r.status === "arrived" || r.status === "started");
-        const activeIds   = new Set(activeRides.map(r => r.id));
+/**
+ * Applique tout de suite l'effet d'une action réussie du chauffeur (accepté,
+ * arrivé, démarré, terminé, annulé) sur la carte, sans attendre le poll.
+ * checkNewRides() réconcilie ensuite avec l'état serveur.
+ */
+function applyLocalRideStatus(id, status) {
+    localRideStatus.set(String(id), { status, ts: Date.now() });
+    updateRideMarkers();
+}
 
-        routeCache.forEach((_, id) => { if (!activeIds.has(id)) routeCache.delete(id); });
+/* ── Point d'entrée ─────────────────────────── */
 
-        rideMarkers.forEach(m => map.removeLayer(m));         rideMarkers = [];
-        destinationMarkers.forEach(m => map.removeLayer(m));  destinationMarkers = [];
-        routeLayers.forEach(l => map.removeLayer(l));          routeLayers = [];
-        destinationMap.clear();
+function updateRideMarkers() {
+    if (!map) return;
 
-        for (const ride of activeRides) {
-            const pickupLat = parseFloat(ride.pickup_lat);
-            const pickupLng = parseFloat(ride.pickup_lng);
-            const destLat   = parseFloat(ride.destination_lat);
-            const destLng   = parseFloat(ride.destination_lng);
+    const stops     = RoutePlanner.buildStops(effectiveRides());
+    const signature = RoutePlanner.signature(stops);
+    const changed   = signature !== currentSignature;
 
-            if ([pickupLat, pickupLng, destLat, destLng].some(isNaN)) continue;
+    currentStops     = stops;
+    currentSignature = signature;
 
-            if (ride.status === "accepted" || ride.status === "arrived") {
-                const pm = L.marker([pickupLat, pickupLng], {
-                    icon: L.divIcon({ html: "📍", className: "pickup-marker", iconSize: [30, 30], iconAnchor: [15, 30] })
-                }).addTo(map);
-                pm.bindPopup(createSafePopup(`Départ — Course #${ride.id}`, ride.pickup));
-                rideMarkers.push(pm);
-            }
+    // 1) Décharge / ajout immédiats des panneaux (aucun réseau)
+    syncStopMarkers(stops);
 
-            const destKey = `${destLat.toFixed(5)},${destLng.toFixed(5)}`;
-            if (!destinationMap.has(destKey)) {
-                const dm = L.marker([destLat, destLng], {
-                    icon: L.icon({
-                        iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
-                        shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png",
-                        iconSize: [25, 41], iconAnchor: [12, 41], shadowSize: [41, 41]
-                    })
-                }).addTo(map);
-                destinationMarkers.push(dm);
-                destinationMap.set(destKey, { marker: dm, rides: [ride.id], destination: ride.destination });
-            } else {
-                destinationMap.get(destKey).rides.push(ride.id);
-            }
+    // 2) Plus aucun arrêt : on vide tout de suite
+    if (!stops.length) {
+        clearRouteLine();
+        refreshRouteBanner();
+        return;
+    }
 
-            const cacheKey = String(ride.id);
-            const cached   = routeCache.get(cacheKey);
-            const moved    = !cached || getDistanceFromLatLng(driverLat, driverLng, cached.driverLat, cached.driverLng) >= 0.1;
+    // 3) Ensemble d'arrêts modifié : l'ancien tracé reste visible en grisé
+    //    ("Recalcul…") jusqu'à l'arrivée du nouveau, qui le remplace d'un coup.
+    if (changed) ghostRoute();
 
-            if (!moved && cached.layers) {
-                cached.layers.forEach(l => l.addTo(map));
-            } else {
-                const layers = [];
+    if (!routePlan || routePlan.signature !== signature) {
+        scheduleRouteRecompute();
+    }
+    refreshRouteBanner();
+}
 
-                if (ride.status === "accepted" || ride.status === "arrived") {
-                    const r1 = await calculateRoute(driverLng, driverLat, pickupLng, pickupLat);
-                    if (r1) {
-                        const l = L.geoJSON(r1, { style: { color: "#f59e0b", weight: 5, opacity: .85 } }).addTo(map);
-                        layers.push(l); routeLayers.push(l);
-                    }
-                    const r2 = await calculateRoute(pickupLng, pickupLat, destLng, destLat);
-                    if (r2) {
-                        const l = L.geoJSON(r2, { style: { color: "#10b981", weight: 5, opacity: .8, dashArray: "6,4" } }).addTo(map);
-                        layers.push(l); routeLayers.push(l);
-                    }
-                } else if (ride.status === "started") {
-                    const r = await calculateRoute(driverLng, driverLat, destLng, destLat);
-                    if (r) {
-                        const l = L.geoJSON(r, { style: { color: "#3b82f6", weight: 5, opacity: .85 } }).addTo(map);
-                        layers.push(l); routeLayers.push(l);
-                    }
-                }
+/* ── Panneaux (repères) ─────────────────────── */
 
-                routeCache.set(cacheKey, { driverLat, driverLng, layers, ts: Date.now() });
-            }
+function stopTypeLabel(type) {
+    return type === "pickup" ? "À récupérer" : "Fin de course";
+}
+
+function syncStopMarkers(stops) {
+    const groups = new Map();
+    for (const s of stops) {
+        if (!groups.has(s.coordKey)) groups.set(s.coordKey, []);
+        groups.get(s.coordKey).push(s);
+    }
+
+    // Retrait immédiat des panneaux qui n'ont plus lieu d'être
+    stopMarkers.forEach((m, k) => {
+        if (!groups.has(k)) { map.removeLayer(m); stopMarkers.delete(k); }
+    });
+
+    // Numéros d'ordre : rang parmi les arrêts encore attendus, selon le dernier plan
+    const keys      = new Set(stops.map(s => s.key));
+    const survivors = routePlan ? routePlan.order.filter(k => keys.has(k)) : [];
+    const rankOf    = new Map(survivors.map((k, i) => [k, i + 1]));
+    const nextKey   = survivors[0] || null;
+
+    groups.forEach((list, ck) => {
+        list.sort((a, b) => (rankOf.get(a.key) || 99) - (rankOf.get(b.key) || 99));
+
+        const isNext    = list.some(s => s.key === nextKey);
+        const symbols   = list.map(s => {
+            const shape = s.type === "pickup"
+                ? '<circle cx="12" cy="10" r="3.2" fill="#fff"/>'
+                : '<path d="M9 6.5v8M9.5 7h6l-1.8 2.4 1.8 2.4h-6" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>';
+            return `<span class="stop-symbol ${s.type}" role="img" aria-label="${stopTypeLabel(s.type)}">` +
+                     `<svg viewBox="0 0 24 26" aria-hidden="true">` +
+                       `<path class="stop-pin-body" d="M12 25s9-9.1 9-15a9 9 0 1 0-18 0c0 5.9 9 15 9 15Z"/>` +
+                       shape +
+                     `</svg>` +
+                   `</span>`;
+        }).join("");
+        const html = `<div class="stop-pin${isNext ? " is-next" : ""}">${symbols}</div>`;
+        const z    = isNext ? 1000 : 500 - (rankOf.get(list[0].key) || 50);
+
+        let m = stopMarkers.get(ck);
+        if (!m) {
+            m = L.marker([list[0].lat, list[0].lng], {
+                icon: L.divIcon({ html, className: "stop-marker-icon", iconSize: [0, 0], iconAnchor: [0, 0] }),
+                zIndexOffset: z
+            }).addTo(map);
+            m._iconHtml = html;
+            stopMarkers.set(ck, m);
+        } else if (m._iconHtml !== html) {
+            m.setIcon(L.divIcon({ html, className: "stop-marker-icon", iconSize: [0, 0], iconAnchor: [0, 0] }));
+            m._iconHtml = html;
+            m.setZIndexOffset(z);
         }
 
-        destinationMap.forEach(info => {
-            const popupEl  = document.createElement("div");
-            const titleEl  = document.createElement("strong");
-            titleEl.textContent = "Destination";
-            const locEl    = document.createElement("p");
-            locEl.style.margin  = "4px 0";
-            locEl.textContent   = info.destination;
-            const ridesEl  = document.createElement("p");
-            ridesEl.style.margin  = "0";
-            ridesEl.textContent   = info.rides.length > 1
-                ? `${info.rides.length} courses : #${info.rides.join(", #")}`
-                : `Course #${info.rides[0]}`;
-            popupEl.appendChild(titleEl);
-            popupEl.appendChild(locEl);
-            popupEl.appendChild(ridesEl);
-            info.marker.bindPopup(popupEl);
-        });
+        // Popup reconstruite seulement si le contenu change (sinon elle se fermerait à chaque poll)
+        const popupSig = list.map(s => `${s.key}:${s.clientName}`).join(",");
+        if (m._popupSig !== popupSig) {
+            const wrap = document.createElement("div");
+            list.forEach((s, i) => {
+                const pax  = s.pax > 1 ? ` — ${s.pax} passagers` : "";
+                const item = createSafePopup(
+                    `${stopTypeLabel(s.type)} — ${getRideClientLabel(s.clientName)}${pax}`,
+                    s.address
+                );
+                if (i > 0) item.style.marginTop = "8px";
+                wrap.appendChild(item);
+            });
+            m.unbindPopup();
+            m.bindPopup(wrap);
+            m._popupSig = popupSig;
+        }
+    });
+}
 
+/* ── Tracé ──────────────────────────────────── */
+
+const ROUTE_STYLE_CASING = { color: "#ffffff", weight: 10, opacity: 0.9, lineCap: "round", lineJoin: "round", interactive: false };
+const ROUTE_STYLE_MAIN   = { color: "#2563eb", weight: 6,  opacity: 0.95, lineCap: "round", lineJoin: "round", dashArray: null, interactive: false };
+const ROUTE_STYLE_GHOST  = { color: "#94a3b8", weight: 6,  opacity: 0.8,  lineCap: "round", lineJoin: "round", dashArray: "2 10" };
+
+function drawRouteLine(latlngs) {
+    if (!routeMain) {
+        routeCasing = L.polyline(latlngs, ROUTE_STYLE_CASING).addTo(map);
+        routeMain   = L.polyline(latlngs, ROUTE_STYLE_MAIN).addTo(map);
+    } else {
+        routeCasing.setLatLngs(latlngs);
+        routeMain.setLatLngs(latlngs);
+        routeMain.setStyle(ROUTE_STYLE_MAIN);
+    }
+}
+
+function ghostRoute() {
+    if (routeMain) routeMain.setStyle(ROUTE_STYLE_GHOST);
+}
+
+/** Retire le tracé, le plan et invalide tout calcul en cours (sans toucher aux panneaux). */
+function clearRouteLine() {
+    if (routeCasing) { map.removeLayer(routeCasing); routeCasing = null; }
+    if (routeMain)   { map.removeLayer(routeMain);   routeMain   = null; }
+    routePlan          = null;
+    computingSignature = "";
+    offRouteSince      = null;
+    routeSeq++;                                   // tout résultat en vol devient périmé
+    if (routeAbort) routeAbort.abort();
+}
+
+/** Décharge complète : tracé, panneaux, bandeau. */
+function clearRoute() {
+    clearRouteLine();
+    stopMarkers.forEach(m => map.removeLayer(m));
+    stopMarkers.clear();
+    currentStops     = [];
+    currentSignature = "";
+    refreshRouteBanner();
+}
+
+/* ── Calcul (un seul à la fois, dernier gagnant) ─ */
+
+function scheduleRouteRecompute() {
+    if (routeBusy) {
+        // Interrompre le calcul en cours seulement s'il porte sur un ensemble d'arrêts
+        // différent ; sinon (simple poll de 5 s) on le laisse finir.
+        if (computingSignature !== currentSignature) {
+            routeDirty = true;
+            if (routeAbort) routeAbort.abort();
+        }
+        return;
+    }
+    runRouteRecompute();
+}
+
+async function runRouteRecompute() {
+    routeBusy = true;
+    try {
+        do {
+            routeDirty = false;
+
+            const seq       = ++routeSeq;
+            const stops     = currentStops.slice();
+            const signature = currentSignature;
+            const pos       = driverMarker ? driverMarker.getLatLng() : null;
+            if (!stops.length || !pos) break;       // reprendra à la prochaine position GPS / au prochain poll
+
+            computingSignature = signature;
+            routeAbort         = new AbortController();
+
+            let plan = null;
+            try {
+                plan = await RoutePlanner.computePlan(
+                    { lat: pos.lat, lng: pos.lng }, stops,
+                    { capacity: ROUTE_VEHICLE_CAPACITY, signal: routeAbort.signal }
+                );
+            } catch (e) {
+                if (!e || e.name !== "AbortError") console.warn("computePlan:", e);
+            }
+            routeAbort = null;
+
+            // Résultat périmé (course changée / annulée / hors ligne entre-temps) : jeté
+            if (seq !== routeSeq || routeDirty || !plan) continue;
+
+            plan.signature = signature;
+            plan.driverArc = 0;
+            plan.cursor    = 0;
+            applyRoutePlan(plan);
+        } while (routeDirty);
     } finally {
-        isUpdatingRoutes = false;
+        routeBusy          = false;
+        routeAbort         = null;
+        computingSignature = "";
+    }
+}
+
+function applyRoutePlan(plan) {
+    routePlan     = plan;
+    lastRecalcAt  = Date.now();
+    offRouteSince = null;
+
+    drawRouteLine(plan.latlngs);
+    syncStopMarkers(currentStops);     // numéros d'ordre + prochain arrêt
+    refreshRouteBanner();
+}
+
+/* ── Suivi du chauffeur : rognage local + déviation ─ */
+
+function onDriverMoved(lat, lng, accuracy) {
+    if (!currentStops.length) return;
+
+    // Pas encore de plan (position GPS arrivée après les courses) : on le demande
+    if (!routePlan) {
+        if (!routeBusy) scheduleRouteRecompute();
+        return;
+    }
+    // Un recalcul est attendu ou en cours pour un autre ensemble d'arrêts
+    if (routePlan.signature !== currentSignature) return;
+
+    const proj = RoutePlanner.project(routePlan.coords, routePlan.cum, lat, lng, routePlan.cursor, ROUTE_DEVIATION_M / 2);
+
+    if (proj.dist <= ROUTE_DEVIATION_M) {
+        offRouteSince = null;
+        trimRoute(proj);
+        return;
+    }
+
+    // GPS trop imprécis : un écart apparent ne prouve rien
+    if (accuracy && accuracy > ROUTE_MAX_ACCURACY_M) return;
+
+    const now = Date.now();
+    if (offRouteSince === null) { offRouteSince = now; return; }
+
+    if (now - offRouteSince >= ROUTE_DEVIATION_HOLD &&
+        now - lastRecalcAt  >= ROUTE_RECALC_COOLDOWN &&
+        !routeBusy) {
+        offRouteSince = null;
+        ghostRoute();
+        scheduleRouteRecompute();
+        refreshRouteBanner();
+    }
+}
+
+/** Efface du tracé la partie déjà parcourue (calcul local, aucun réseau). */
+function trimRoute(proj) {
+    const now = Date.now();
+    if (now - lastTrimAt < ROUTE_TRIM_THROTTLE || !routeMain) return;
+    lastTrimAt = now;
+
+    routePlan.cursor    = proj.seg;
+    routePlan.driverArc = proj.arc;
+
+    const remaining = [[proj.lat, proj.lng]].concat(routePlan.latlngs.slice(proj.seg + 1));
+    routeCasing.setLatLngs(remaining);
+    routeMain.setLatLngs(remaining);
+
+    refreshRouteBanner();
+}
+
+/* ── Bandeau "Prochain arrêt" ───────────────── */
+
+function ensureRouteBanner() {
+    if (routeBanner) return routeBanner;
+    const el = document.createElement("div");
+    el.id        = "routeBanner";
+    el.className = "route-banner hidden";
+    el.setAttribute("role", "status");
+    document.getElementById("map").appendChild(el);   // masqué avec la carte quand on change d'onglet
+    L.DomEvent.disableClickPropagation(el);
+    routeBanner = el;
+    return el;
+}
+
+function formatRouteDistance(m) {
+    if (m < 1000) return `${Math.max(10, Math.round(m / 10) * 10)} m`;
+    return `${(m / 1000).toFixed(1)} km`;
+}
+
+function refreshRouteBanner() {
+    if (!map) return;
+    const el = ensureRouteBanner();
+
+    if (!currentStops.length) { el.classList.add("hidden"); return; }
+
+    const planValid = !!routePlan && routePlan.signature === currentSignature;
+    const keys      = new Set(currentStops.map(s => s.key));
+    const survivors = routePlan ? routePlan.order.filter(k => keys.has(k)) : [];
+    const next      = currentStops.find(s => s.key === survivors[0]) || null;
+
+    el.replaceChildren();
+    el.classList.remove("hidden");
+    el.classList.toggle("is-recalc", !planValid);
+
+    const ico  = document.createElement("div");
+    ico.className = "rb-ico";
+    const main = document.createElement("div");
+    main.className = "rb-main";
+    const title = document.createElement("div");
+    title.className = "rb-title";
+    const sub = document.createElement("div");
+    sub.className = "rb-sub";
+    main.appendChild(title);
+    main.appendChild(sub);
+    el.appendChild(ico);
+    el.appendChild(main);
+
+    if (!next) {
+        ico.textContent   = "🧭";
+        title.textContent = "Calcul de l'itinéraire…";
+        sub.textContent   = `${currentStops.length} arrêt${currentStops.length > 1 ? "s" : ""}`;
+        return;
+    }
+
+    ico.textContent   = next.type === "pickup" ? "👤" : "🏁";
+    title.textContent = `Prochain : ${stopTypeLabel(next.type)} · ${getRideClientLabel(next.clientName)}`;
+    sub.textContent   = next.address || "";
+
+    // Distance / durée jusqu'au prochain arrêt
+    let remM = null, approx = !!(routePlan && routePlan.approx), secPerM = 0.12;   // ~30 km/h par défaut
+    const idx = routePlan ? routePlan.order.indexOf(next.key) : -1;
+
+    if (planValid && idx >= 0 && routePlan.stopArcs) {
+        remM = Math.max(0, routePlan.stopArcs[idx] - (routePlan.driverArc || 0));
+        const leg = routePlan.legs[idx];
+        if (leg && leg.distance > 0) secPerM = leg.duration / leg.distance;
+    } else if (driverMarker) {
+        const pos = driverMarker.getLatLng();
+        remM   = RoutePlanner.haversineM(pos.lat, pos.lng, next.lat, next.lng) * 1.3;
+        approx = true;
+    }
+
+    if (remM !== null) {
+        const mins = Math.max(1, Math.round(remM * secPerM / 60));
+        const meta = document.createElement("div");
+        meta.className = "rb-meta";
+        meta.textContent = `${approx ? "≈ " : ""}${formatRouteDistance(remM)} · ${mins} min`;
+        if (currentStops.length > 1) {
+            const more = document.createElement("small");
+            more.textContent = `${currentStops.length} arrêts`;
+            meta.appendChild(more);
+        }
+        el.appendChild(meta);
+    }
+    if (!planValid) {
+        const rc = document.createElement("div");
+        rc.className = "rb-recalc";
+        rc.textContent = "Recalcul…";
+        main.appendChild(rc);
     }
 }
 
@@ -1863,6 +2270,13 @@ function updateDashboard() {
     completed.slice().reverse().forEach(ride => historyEl.appendChild(createRideCard(ride)));
 }
 
+function getRideClientLabel(rideOrName) {
+    const fullName = String(
+        typeof rideOrName === "string" ? rideOrName : rideOrName?.client_name || ""
+    ).trim();
+    return fullName.split(/\s+/)[0] || fullName || "Client";
+}
+
 function setText(id, val) {
     const el = document.getElementById(id);
     if (el) el.textContent = val;
@@ -1895,8 +2309,9 @@ function showClientCancellationAlerts() {
 // inchangée, seul l'affichage change. Le point de départ (ride.pickup) est
 // déjà renvoyé par get_rides.php, aucun changement backend nécessaire.
 function openClientCancellationAlert(ride) {
-    const pickup = ride.pickup || `course #${ride.id}`;
-    const body = `Course à ${pickup} annulée`;
+    const body = ride.pickup
+        ? `Course à ${ride.pickup} annulée`
+        : "Une course a été annulée";
     showToast(body, "warning", 5000);
 
     if (typeof window.notifyFeedback === "function") {
@@ -1920,3 +2335,19 @@ function getDistanceFromLatLng(lat1, lng1, lat2, lng2) {
                  Math.sin(dLng / 2) ** 2;
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
+
+/* ═══════════════════════════════════════════════
+   PUSH PREMIER PLAN → rafraîchissement immédiat
+   push-notifications.js émet cet évènement quand un message FCM arrive
+   alors que l'app est ouverte (ex. annulation par le client) : on
+   rafraîchit tout de suite au lieu d'attendre le prochain poll (≤ 5 s),
+   pour décharger la carte sans délai.
+═══════════════════════════════════════════════ */
+let lastPushRefreshAt = 0;
+window.addEventListener("taxigo:push-foreground", () => {
+    if (!isOnline || isCheckingRides) return;   // un poll en cours apportera l'état à jour
+    const now = Date.now();
+    if (now - lastPushRefreshAt < 1500) return;
+    lastPushRefreshAt = now;
+    checkNewRides();
+});

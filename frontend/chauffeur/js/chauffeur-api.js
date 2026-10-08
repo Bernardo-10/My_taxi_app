@@ -244,19 +244,8 @@ function getDistanceFromLatLng(lat1, lng1, lat2, lng2) {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-async function calculateRoute(startLng, startLat, endLng, endLat) {
-    const url = `https://router.project-osrm.org/route/v1/driving/` +
-                `${startLng},${startLat};${endLng},${endLat}` +
-                `?overview=full&geometries=geojson`;
-    try {
-        const res  = await fetch(url);
-        const data = await res.json();
-        if (data.routes?.length > 0) return data.routes[0].geometry;
-    } catch (e) {
-        console.error("Erreur calcul route:", e);
-    }
-    return null;
-}
+// calculateRoute() supprimée : le tracé est désormais calculé par RoutePlanner
+// (route-planner.js) — un seul itinéraire pour toutes les courses actives.
 
 /* ═══════════════════════════════════════════════
    POSITION CHAUFFEUR
@@ -298,8 +287,7 @@ async function updateDriverPositionInDB(lat, lng) {
 
         const payload = result.value;
         if (!payload || payload.status !== "success") {
-            const rideLabel = index < activeRides.length ? `#${activeRides[index].id}` : "chauffeur";
-            console.warn(`Position update ${rideLabel}:`, payload?.message || "unknown error");
+            console.warn("Position update failed:", payload?.message || "unknown error");
         }
     });
 }
@@ -337,6 +325,7 @@ async function acceptRide(id, btn) {
 
         if (result.status === "success" || result.status === "ok") {
             showToast("Course acceptée ! En route vers le départ. 🚕", "success");
+            applyLocalRideStatus(id, "accepted");      // carte mise à jour immédiatement
             await checkNewRides();
             if (typeof switchTab === "function") switchTab("courses");
         } else {
@@ -391,6 +380,7 @@ async function cancelRide(id, btn) {
         const result = await res.json();
         if (result.status === "success") {
             showToast("Course annulée", "info");
+            applyLocalRideStatus(id, "cancelled");     // repères retirés immédiatement
             await checkNewRides();
         } else {
             showToast(result.message || "Impossible d'annuler", "error");
@@ -413,6 +403,7 @@ async function startRide(id, btn) {
         const result = await res.json();
         if (result.status === "success") {
             showToast("Bonne route ! Course démarrée. 🚗", "success");
+            applyLocalRideStatus(id, "started");       // l'arrêt "À récupérer" disparaît immédiatement
             await checkNewRides();
             if (typeof setRideFilter === "function") setRideFilter("started");
         } else {
@@ -444,6 +435,7 @@ async function arriveRide(id, btn) {
         const result = await res.json();
         if (result.status === "success") {
             showToast("Arrivee confirmee. Le client est prevenu.", "success");
+            applyLocalRideStatus(id, "arrived");       // client présent : arrêt servi en premier
             await checkNewRides();
             if (typeof setRideFilter === "function") setRideFilter("arrived");
         } else {
@@ -461,6 +453,7 @@ async function completeRide(id, btn) {
     try {
         await performCompleteRide(id, false);
         showToast("Course terminée ! Bravo. ✅", "success");
+        applyLocalRideStatus(id, "completed");         // repère de fin retiré immédiatement
         await checkNewRides();
         updateDashboard();
     } catch (err) {
@@ -476,6 +469,7 @@ async function completeRide(id, btn) {
                 try {
                     await performCompleteRide(id, true);
                     showToast("Course terminée ! Bravo. ✅", "success");
+                    applyLocalRideStatus(id, "completed");
                     await checkNewRides();
                     updateDashboard();
                 } catch {
