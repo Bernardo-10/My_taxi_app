@@ -109,6 +109,13 @@
         <div class="panel-title">Tableau de bord</div>
         <div class="panel-subtitle" id="dashboardDate"></div>
       </div>
+      <!-- Filtre de période (discret) -->
+      <button class="date-btn" id="dateFilterBtn" type="button" aria-label="Filtrer par période" aria-haspopup="dialog" aria-expanded="false">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <rect x="3" y="4" width="18" height="18" rx="2" />
+          <path d="M16 2v4M8 2v4M3 10h18" />
+        </svg>
+      </button>
       <!-- Bouton Portefeuille (à droite) -->
       <button class="wallet-btn" id="walletHeaderBtn" aria-label="Portefeuille">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -117,6 +124,13 @@
         </svg>
         <span>Portefeuille</span>
       </button>
+    <!-- Pastille "filtre actif" : n'apparaît que si un filtre est appliqué -->
+      <div class="date-chip-row" id="dateChipRow">
+        <span class="date-chip">
+          <span id="dateChipLabel"></span>
+          <button type="button" id="dateChipReset" aria-label="Réinitialiser le filtre">&times;</button>
+        </span>
+      </div>
     </div>
     <div class="panel-scroll">
       <div class="stats-grid">
@@ -147,6 +161,25 @@
           <div class="empty-icon">📋</div>
           <div class="empty-title">Aucune course terminée</div>
         </div>
+      </div>
+    </div>
+      <!-- Mini-modale de choix de période (popover, pas de translation hors écran) -->
+    <div class="date-backdrop" id="dateBackdrop"></div>
+    <div class="date-pop" id="datePop" role="dialog" aria-label="Choisir une période" aria-hidden="true" inert>
+      <div class="date-pop-title">Période</div>
+      <div class="date-presets">
+        <button type="button" data-preset="today">Aujourd'hui</button>
+        <button type="button" data-preset="7">7 jours</button>
+        <button type="button" data-preset="30">30 jours</button>
+        <button type="button" data-preset="month">Ce mois</button>
+      </div>
+      <div class="date-fields">
+        <label>Du <input type="date" id="dateFrom"></label>
+        <label>Au <input type="date" id="dateTo"></label>
+      </div>
+      <div class="date-actions">
+        <button type="button" class="date-reset" id="dateResetBtn">Réinitialiser</button>
+        <button type="button" class="date-apply" id="dateApplyBtn">Appliquer</button>
       </div>
     </div>
   </section>

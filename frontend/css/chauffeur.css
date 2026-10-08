@@ -1264,3 +1264,106 @@ html, body {
   color: var(--c-text-3);
   flex-shrink: 0;
 }
+
+/* ═══════════════════════════════════════════════
+   FILTRE DE PÉRIODE (dashboard) — discret
+   Popover : animé par opacity + petite translation, jamais hors écran
+   (évite le décalage de .app dû au focus/scroll d'un élément caché).
+═══════════════════════════════════════════════ */
+.date-btn {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: var(--c-surface2);
+  color: var(--c-text-2);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  transition: background var(--transition), color var(--transition);
+}
+.date-btn.active { background: var(--c-amber-bg); color: var(--c-amber-d); }
+.date-btn.active::after {           /* petit point = un filtre est actif */
+  content: '';
+  position: absolute; top: 2px; right: 2px;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--c-amber);
+  border: 1.5px solid var(--c-bg);
+}
+
+.date-chip-row { flex-basis: 100%; display: none; }
+.date-chip-row.show { display: flex; }
+.date-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 4px 3px 10px;
+  border-radius: 20px;
+  background: var(--c-amber-bg);
+  color: var(--c-amber-d);
+  font-size: 12px; font-weight: 600;
+}
+.date-chip button {
+  width: 18px; height: 18px; border-radius: 50%;
+  border: none; background: rgba(234,88,12,.15); color: inherit;
+  font-size: 14px; line-height: 1; cursor: pointer;
+}
+
+.date-backdrop {                    /* zone transparente : clic dehors = fermer */
+  position: absolute; inset: 0; z-index: 25;
+  display: none;
+}
+.date-backdrop.open { display: block; }
+
+.date-pop {
+  position: absolute;
+  right: 16px;
+  top: calc(var(--safe-t) + 68px + 44px);
+  z-index: 26;
+  width: min(290px, calc(100% - 32px));
+  padding: 14px;
+  background: var(--c-surface);
+  border: .5px solid var(--c-border);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 30px rgba(17,24,39,.16);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-6px) scale(.98);
+  transform-origin: top right;
+  transition: opacity .15s ease, transform .15s ease, visibility 0s linear .15s;
+}
+.date-pop.open {
+  opacity: 1; visibility: visible; pointer-events: auto;
+  transform: none;
+  transition-delay: 0s;
+}
+.date-pop-title { font-size: 13px; font-weight: 700; margin-bottom: 10px; }
+.date-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.date-presets button {
+  padding: 5px 11px; border-radius: 20px;
+  border: .5px solid var(--c-border);
+  background: var(--c-surface2); color: var(--c-text-2);
+  font-family: var(--font); font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.date-presets button:active { background: var(--c-amber-bg); color: var(--c-amber-d); }
+.date-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.date-fields label { font-size: 11px; font-weight: 600; color: var(--c-text-3); }
+.date-fields input {
+  display: block; width: 100%; margin-top: 3px;
+  padding: 7px 6px;
+  border: .5px solid var(--c-border); border-radius: var(--radius-sm);
+  background: var(--c-surface); color: var(--c-text);
+  font-family: var(--font); font-size: 13px;
+}
+.date-fields input:focus { outline: none; border-color: var(--c-amber); }
+.date-actions { display: flex; gap: 8px; margin-top: 12px; }
+.date-reset {
+  padding: 9px 12px; border-radius: var(--radius-sm);
+  border: .5px solid var(--c-border); background: var(--c-surface2);
+  color: var(--c-text-2); font-family: var(--font); font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.date-reset:disabled { opacity: .45; cursor: not-allowed; }
+.date-apply {
+  flex: 1; padding: 9px; border: none; border-radius: var(--radius-sm);
+  background: var(--c-amber); color: #fff;
+  font-family: var(--font); font-size: 13px; font-weight: 700; cursor: pointer;
+}

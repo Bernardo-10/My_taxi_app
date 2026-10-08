@@ -244,6 +244,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     initReportModal();
     initFilterPills();
     initWallet();
+    initDateFilter();
     initDocuments();
 
     const dateEl = document.getElementById("dashboardDate");
@@ -2266,7 +2267,8 @@ function createSafePopup(title, body) {
 ═══════════════════════════════════════════════ */
 function updateDashboard() {
     const sourceRides = Array.isArray(dashboardHistory) && dashboardHistory.length > 0 ? dashboardHistory : allRides;
-    const completed = sourceRides.filter(r => r.status === "completed");
+    // Le filtre de période ne touche que les courses terminées ; "En cours" reste intact.
+    const completed = sourceRides.filter(r => r.status === "completed" && inDashboardRange(r));
     const active    = sourceRides.filter(r => r.status === "accepted" || r.status === "arrived" || r.status === "started");
     const total     = completed.reduce((s, r) => {
         const price      = parseInt(r.price_fcfa || 0);
@@ -2287,11 +2289,124 @@ function updateDashboard() {
     historyEl.innerHTML = "";
 
     if (completed.length === 0) {
-        historyEl.appendChild(emptyState("📋", "Aucune course terminée", ""));
+        historyEl.appendChild(emptyState("📋",
+            dashboardRange ? "Aucune course sur cette période" : "Aucune course terminée", ""));
         return;
     }
 
     completed.slice().reverse().forEach(ride => historyEl.appendChild(createRideCard(ride)));
+}
+
+/* ═══════════════════════════════════════════════
+   FILTRE DE PÉRIODE (dashboard)
+   - Inactif par défaut : le dashboard reste intact.
+   - Actif : filtre les courses terminées (stats + historique),
+     jamais "En cours". Réinitialisable (bouton ou pastille ×).
+   - Le popover n'utilise pas de focus() ni de translation hors écran.
+═══════════════════════════════════════════════ */
+let dashboardRange = null;   // { from: Date, to: Date } ou null = pas de filtre
+
+// Date d'une course : on essaie les champs usuels renvoyés par l'API.
+function getRideDate(ride) {
+    const raw = ride.completed_at || ride.finished_at || ride.updated_at || ride.created_at || ride.date;
+    if (!raw) return null;
+    const d = new Date(String(raw).replace(" ", "T"));   // "2026-10-07 21:54:00" → compatible Safari
+    return isNaN(d) ? null : d;
+}
+
+function inDashboardRange(ride) {
+    if (!dashboardRange) return true;
+    const d = getRideDate(ride);
+    return !!d && d >= dashboardRange.from && d <= dashboardRange.to;
+}
+
+const pad2 = n => String(n).padStart(2, "0");
+function toInputDate(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+function parseInputDate(v, endOfDay) {
+    if (!v) return null;
+    const [y, m, d] = v.split("-").map(Number);
+    return endOfDay ? new Date(y, m - 1, d, 23, 59, 59, 999) : new Date(y, m - 1, d, 0, 0, 0, 0);
+}
+function shortDate(d) { return d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" }); }
+
+function openDateFilter() {
+    const pop = document.getElementById("datePop");
+    if (!pop) return;
+    pop.removeAttribute("inert");
+    pop.classList.add("open");
+    pop.setAttribute("aria-hidden", "false");
+    document.getElementById("dateBackdrop")?.classList.add("open");
+    document.getElementById("dateFilterBtn")?.setAttribute("aria-expanded", "true");
+}
+
+function closeDateFilter() {
+    const pop = document.getElementById("datePop");
+    if (!pop) return;
+    if (pop.contains(document.activeElement)) document.activeElement.blur();
+    pop.classList.remove("open");
+    pop.setAttribute("aria-hidden", "true");
+    pop.setAttribute("inert", "");
+    document.getElementById("dateBackdrop")?.classList.remove("open");
+    document.getElementById("dateFilterBtn")?.setAttribute("aria-expanded", "false");
+}
+
+function applyDateFilter() {
+    let from = parseInputDate(document.getElementById("dateFrom")?.value, false);
+    let to   = parseInputDate(document.getElementById("dateTo")?.value, true);
+    if (!from && !to) { resetDateFilter(); return; }
+    if (!from) from = new Date(2000, 0, 1);
+    if (!to)   to   = new Date(2100, 0, 1);
+    if (from > to) [from, to] = [parseInputDate(toInputDate(to), false), parseInputDate(toInputDate(from), true)];
+    dashboardRange = { from, to };
+    renderDateFilterState();
+    updateDashboard();
+    closeDateFilter();
+}
+
+function resetDateFilter() {
+    dashboardRange = null;
+    const f = document.getElementById("dateFrom"), t = document.getElementById("dateTo");
+    if (f) f.value = "";
+    if (t) t.value = "";
+    renderDateFilterState();
+    updateDashboard();
+    closeDateFilter();
+}
+
+function setDatePreset(preset) {
+    const now = new Date();
+    let from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    if (preset === "7")  from.setDate(from.getDate() - 6);
+    if (preset === "30") from.setDate(from.getDate() - 29);
+    if (preset === "month") from = new Date(now.getFullYear(), now.getMonth(), 1);
+    document.getElementById("dateFrom").value = toInputDate(from);
+    document.getElementById("dateTo").value   = toInputDate(now);
+    applyDateFilter();
+}
+
+function renderDateFilterState() {
+    const on = !!dashboardRange;
+    document.getElementById("dateFilterBtn")?.classList.toggle("active", on);
+    document.getElementById("dateChipRow")?.classList.toggle("show", on);
+    const reset = document.getElementById("dateResetBtn");
+    if (reset) reset.disabled = !on;
+    if (on) {
+        const a = shortDate(dashboardRange.from), b = shortDate(dashboardRange.to);
+        setText("dateChipLabel", a === b ? a : `${a} – ${b}`);
+    }
+}
+
+function initDateFilter() {
+    document.getElementById("dateFilterBtn")?.addEventListener("click", () => {
+        document.getElementById("datePop")?.classList.contains("open") ? closeDateFilter() : openDateFilter();
+    });
+    document.getElementById("dateBackdrop")?.addEventListener("click", closeDateFilter);
+    document.getElementById("dateApplyBtn")?.addEventListener("click", applyDateFilter);
+    document.getElementById("dateResetBtn")?.addEventListener("click", resetDateFilter);
+    document.getElementById("dateChipReset")?.addEventListener("click", resetDateFilter);
+    document.querySelectorAll("#datePop [data-preset]").forEach(b =>
+        b.addEventListener("click", () => setDatePreset(b.dataset.preset)));
+    renderDateFilterState();
 }
 
 function getRideClientLabel(rideOrName) {
