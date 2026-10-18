@@ -52,62 +52,88 @@ if (!$force && $lat !== null && $lng !== null
     }
 }
 
-// Passage en 'completed'
-$stmt = $conn->prepare("UPDATE rides SET status = 'completed', completed_at = NOW() WHERE id = ? AND driver_id = ? AND status = 'started'");
-$stmt->bind_param("ii", $id, $driverId);
-$stmt->execute();
-$updated = $stmt->affected_rows > 0;
-$stmt->close();
-
-if ($updated) {
-    // Mise à jour des statistiques du chauffeur (distance + nb courses)
-    $rideStmt = $conn->prepare("SELECT distance_km FROM rides WHERE id = ?");
-    $rideStmt->bind_param("i", $id);
-    $rideStmt->execute();
-    $rideRow = $rideStmt->get_result()->fetch_assoc();
-    $rideStmt->close();
-
-    $distanceKm = $rideRow["distance_km"] ?? 0;
-
-    $statStmt = $conn->prepare("
-        UPDATE chauffeur
-        SET total_completed_distance_km = total_completed_distance_km + ?,
-            total_completed_rides = total_completed_rides + 1,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
+// B3 : tout ce qui concerne la fin de course se fait dans UNE transaction
+// (statut + statistiques + commission + solde). Si une étape échoue, rien
+// n'est modifié : plus de course "terminée" sans commission débitée, ni de
+// solde modifié sans ligne dans l'historique.
+$completed = false;
+$conn->begin_transaction();
+try {
+    // FOR UPDATE : verrouille la course. Un double clic / double appel attend
+    // ici, puis ne trouve plus le statut 'started' => la commission ne peut
+    // pas être débitée deux fois.
+    $lockStmt = $conn->prepare("
+        SELECT price_fcfa, distance_km, user_id
+        FROM rides
+        WHERE id = ? AND driver_id = ? AND status = 'started'
+        FOR UPDATE
     ");
-    $statStmt->bind_param("di", $distanceKm, $driverId);
-    $statStmt->execute();
-    $statStmt->close();
+    $lockStmt->bind_param("ii", $id, $driverId);
+    $lockStmt->execute();
+    $locked = $lockStmt->get_result()->fetch_assoc();
+    $lockStmt->close();
 
-    // --- Gestion de la commission 20% ---
-    $price = (int) ($ride['price_fcfa'] ?? 0);
-    $commission = (int) round($price * 0.20); // montant positif
+    if ($locked) {
+        $ride["user_id"] = $locked["user_id"];
+        $price      = (int) ($locked["price_fcfa"] ?? 0);
+        $distanceKm = $locked["distance_km"] ?? 0;
 
-    if ($commission > 0) {
-        // Insérer la transaction (débit)
-        $negAmount = -$commission;
-        $desc = "Commission 20% sur course #$id";
-        $txStmt = $conn->prepare("
-            INSERT INTO wallet_transactions
-                (chauffeur_id, type, amount_fcfa, ride_id, status, description)
-            VALUES (?, 'commission', ?, ?, 'completed', ?)
-        ");
-        $txStmt->bind_param("iiis", $driverId, $negAmount, $id, $desc);
-        $txStmt->execute();
-        $txStmt->close();
+        // 1) Passage en 'completed'
+        $stmt = $conn->prepare("UPDATE rides SET status = 'completed', completed_at = NOW() WHERE id = ? AND driver_id = ? AND status = 'started'");
+        $stmt->bind_param("ii", $id, $driverId);
+        if (!$stmt->execute()) { throw new Exception("update ride: " . $stmt->error); }
+        $stmt->close();
 
-        // Mettre à jour le solde du chauffeur
-        $balStmt = $conn->prepare("
+        // 2) Statistiques du chauffeur (distance + nb courses)
+        $statStmt = $conn->prepare("
             UPDATE chauffeur
-            SET wallet_balance_fcfa = wallet_balance_fcfa - ?
+            SET total_completed_distance_km = total_completed_distance_km + ?,
+                total_completed_rides = total_completed_rides + 1,
+                updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         ");
-        $balStmt->bind_param("ii", $commission, $driverId);
-        $balStmt->execute();
-        $balStmt->close();
+        $statStmt->bind_param("di", $distanceKm, $driverId);
+        if (!$statStmt->execute()) { throw new Exception("update stats: " . $statStmt->error); }
+        $statStmt->close();
+
+        // 3) Commission (taux unique : COMMISSION_RATE dans auth.php)
+        $commission = (int) round($price * COMMISSION_RATE); // montant positif
+        if ($commission > 0) {
+            $negAmount = -$commission;
+            $desc = "Commission " . round(COMMISSION_RATE * 100) . "% sur course #$id";
+            $txStmt = $conn->prepare("
+                INSERT INTO wallet_transactions
+                    (chauffeur_id, type, amount_fcfa, ride_id, status, description)
+                VALUES (?, 'commission', ?, ?, 'completed', ?)
+            ");
+            $txStmt->bind_param("iiis", $driverId, $negAmount, $id, $desc);
+            if (!$txStmt->execute()) { throw new Exception("insert tx: " . $txStmt->error); }
+            $txStmt->close();
+
+            $balStmt = $conn->prepare("
+                UPDATE chauffeur
+                SET wallet_balance_fcfa = wallet_balance_fcfa - ?
+                WHERE id = ?
+            ");
+            $balStmt->bind_param("ii", $commission, $driverId);
+            if (!$balStmt->execute()) { throw new Exception("update balance: " . $balStmt->error); }
+            $balStmt->close();
+        }
+
+        $completed = true;
     }
 
+    $conn->commit();
+} catch (Throwable $e) {
+    $conn->rollback();
+    error_log("[complete_ride] " . $e->getMessage());
+    $conn->close();
+    json_response(["status" => "error", "message" => "Erreur serveur, la course n'a pas été terminée. Réessayez."], 500);
+}
+
+if ($completed) {
+    // Notification APRÈS la transaction : un échec d'envoi push ne doit
+    // jamais annuler la fin de course.
     if (!empty($ride["user_id"])) {
         send_push_to_user(
             $conn,

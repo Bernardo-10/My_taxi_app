@@ -6,10 +6,10 @@
 
 const DRIVER_API_BASE = "/backend";
 
-// B7 — Taux de commission TaxiGo (20 %), défini UNE SEULE fois côté JS.
-// Utilisé par le tableau de bord (chauffeur-ui.js). Le serveur applique son
-// propre taux dans complete_ride.php : si vous changez l'un, changez l'autre.
-const COMMISSION_RATE = 0.20;
+// B7 — Taux de commission TaxiGo. La vraie valeur vient du serveur
+// (COMMISSION_RATE dans auth.php, envoyée par get_rides.php dans l'en-tête
+// X-Commission-Rate). 0.20 n'est qu'une valeur de départ avant la 1re réponse.
+let COMMISSION_RATE = 0.20;
 
 /**
  * B9 — fetch() pour les ACTIONS du chauffeur (accepter, refuser, annuler,
@@ -229,6 +229,12 @@ async function checkNewRides() {
         // Plafond de courses en cours atteint (B2) : même principe, lu par
         // renderPendingRides() pour expliquer pourquoi la liste est vide.
         window.__taxigo_activeBlocked = !!res.headers.get("X-Active-Blocked");
+
+        // Taux de commission fourni par le serveur (B7).
+        const hdrRate = parseFloat(res.headers.get("X-Commission-Rate"));
+        if (isFinite(hdrRate) && hdrRate >= 0 && hdrRate < 1) {
+            COMMISSION_RATE = hdrRate;
+        }
 
         // Changement d'état du chauffeur détecté par en-têtes (compte désactivé,
         // mise hors ligne par l'admin / GPS silencieux...) : on ne rappelle

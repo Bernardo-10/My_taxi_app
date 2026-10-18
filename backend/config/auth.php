@@ -220,6 +220,13 @@ function is_wallet_balance_blocked($balanceFcfa) {
  */
 define("MAX_STARTED_RIDES", 5);
 
+/**
+ * Taux de commission TaxiGo (B7) : 20 % du prix de chaque course terminée.
+ * UNE seule valeur : utilisée par complete_ride.php et envoyée au front
+ * chauffeur (en-tête X-Commission-Rate de get_rides.php) pour l'affichage.
+ */
+define("COMMISSION_RATE", 0.20);
+
 function count_started_rides(mysqli $conn, int $driverId): int {
     $stmt = $conn->prepare("SELECT COUNT(*) AS n FROM rides WHERE driver_id = ? AND status = 'started'");
     $stmt->bind_param("i", $driverId);

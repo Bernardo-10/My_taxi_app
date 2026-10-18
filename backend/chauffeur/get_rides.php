@@ -80,6 +80,9 @@ if ($activeBlocked) {
     header("X-Active-Blocked: 1");
 }
 
+// Taux de commission (B7) : le front l'utilise pour afficher les gains nets.
+header("X-Commission-Rate: " . COMMISSION_RATE);
+
 // En-têtes d'état du chauffeur : permettent au front de ne plus appeler
 // current_user.php à chaque cycle de polling. Si l'un change par rapport à
 // l'état local, le front fait UN appel à current_user.php pour le détail.
