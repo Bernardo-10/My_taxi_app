@@ -517,6 +517,15 @@ async function checkRideStatus(forceRefresh = false) {
             // On notifie l'UI que la course a commencé
             if (typeof onRideStarted === "function") onRideStarted(rideData);
         }
+        else if (rideData.status === "pending" && rideAccepted) {
+            // B4 : le chauffeur a annulé, la course est repartie en file
+            // ('pending', voir backend/chauffeur/cancel_ride.php). Le suivi
+            // continue (PAS de clearTimeout) : on revient à l'écran
+            // « recherche d'un chauffeur » en attendant qu'un autre accepte.
+            rideAccepted = false;
+            lastKnownDriverPos = { lat: null, lng: null };
+            if (typeof onRideRequeued === "function") onRideRequeued();
+        }
         else if (rideData.status === "completed") {
             clearTimeout(rideStatusCheckInterval); rideStatusCheckInterval = null;
             if (typeof onRideCompleted === "function") onRideCompleted();

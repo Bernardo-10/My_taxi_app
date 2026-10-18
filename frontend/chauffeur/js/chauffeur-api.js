@@ -6,6 +6,28 @@
 
 const DRIVER_API_BASE = "/backend";
 
+// B7 — Taux de commission TaxiGo (20 %), défini UNE SEULE fois côté JS.
+// Utilisé par le tableau de bord (chauffeur-ui.js). Le serveur applique son
+// propre taux dans complete_ride.php : si vous changez l'un, changez l'autre.
+const COMMISSION_RATE = 0.20;
+
+/**
+ * B9 — fetch() pour les ACTIONS du chauffeur (accepter, refuser, annuler,
+ * démarrer, arriver, terminer, signaler).
+ * Si la session a expiré (HTTP 401), on renvoie directement vers la page de
+ * connexion. La promesse ne se termine alors jamais : le code appelant
+ * n'affiche donc ni faux message "Erreur de connexion" ni réponse vide,
+ * pendant que le navigateur change de page.
+ */
+async function driverFetch(url, options) {
+    const res = await fetch(url, options);
+    if (res.status === 401) {
+        window.location.href = "/chauffeur/login";
+        return new Promise(() => {});
+    }
+    return res;
+}
+
 /* ═══════════════════════════════════════════════
    CACHE GPS GLOBAL
 ═══════════════════════════════════════════════ */
@@ -204,6 +226,19 @@ async function checkNewRides() {
         // le bon message à la place de "Aucune course en attente".
         window.__taxigo_balanceBlocked = !!res.headers.get("X-Balance-Blocked");
 
+        // Plafond de courses en cours atteint (B2) : même principe, lu par
+        // renderPendingRides() pour expliquer pourquoi la liste est vide.
+        window.__taxigo_activeBlocked = !!res.headers.get("X-Active-Blocked");
+
+        // Changement d'état du chauffeur détecté par en-têtes (compte désactivé,
+        // mise hors ligne par l'admin / GPS silencieux...) : on ne rappelle
+        // current_user.php QUE dans ce cas, pas à chaque cycle de polling.
+        const hdrStatus = res.headers.get("X-Driver-Status");
+        const hdrOnline = res.headers.get("X-Driver-Online");
+        if ((hdrStatus && hdrStatus !== "active") || (hdrOnline === "0" && isOnline)) {
+            refreshDriverStatus();
+        }
+
         const rides = await res.json();
         const freshRides = Array.isArray(rides) ? rides : [];
 
@@ -261,35 +296,18 @@ async function updateDriverPosition() {
 }
 
 async function updateDriverPositionInDB(lat, lng) {
-    const activeRides = (allRides || []).filter(
-        r => r.status === "accepted" || r.status === "arrived" || r.status === "started"
-    );
-
-    const requests = [];
-
-    for (const ride of activeRides) {
-        requests.push(
-            fetch(`${DRIVER_API_BASE}/chauffeur/update_ride_driver_position.php?ride_id=${ride.id}&lat=${lat}&lng=${lng}`)
-        );
-    }
-
-    requests.push(
-        fetch(`${DRIVER_API_BASE}/chauffeur/update_ride_driver_position.php?lat=${lat}&lng=${lng}`)
-    );
-
-    const results = await Promise.allSettled(requests.map(req => req.then(res => res.json())));
-
-    results.forEach((result, index) => {
-        if (result.status === "rejected") {
-            console.error("Position update error:", result.reason);
-            return;
-        }
-
-        const payload = result.value;
+    // UNE seule requête par envoi (avant : 1 + nombre de courses actives).
+    // Le serveur met à jour lui-même TOUTES les courses actives du chauffeur
+    // (accepted / arrived / started), plus besoin de lui envoyer ride_id.
+    try {
+        const res = await fetch(`${DRIVER_API_BASE}/chauffeur/update_ride_driver_position.php?lat=${lat}&lng=${lng}`);
+        const payload = await res.json();
         if (!payload || payload.status !== "success") {
             console.warn("Position update failed:", payload?.message || "unknown error");
         }
-    });
+    } catch (err) {
+        console.error("Position update error:", err);
+    }
 }
 
 /* ═══════════════════════════════════════════════
@@ -312,11 +330,12 @@ async function acceptRide(id, btn) {
         const { lat: driverLat, lng: driverLng } = await getDriverPosition();
 
         // Changer uniquement le label — pas de nouvelle closure
-        if (btn && !btn.disabled === false) {
+        // B8 : le bouton est en cours de chargement (désactivé par setButtonLoading)
+        if (btn && btn.disabled) {
             btn.innerHTML = `<div class="btn-spinner"></div>Acceptation…`;
         }
 
-        const response = await fetch(`${DRIVER_API_BASE}/chauffeur/accept_ride.php`, {
+        const response = await driverFetch(`${DRIVER_API_BASE}/chauffeur/accept_ride.php`, {
             method : "POST",
             headers: { "Content-Type": "application/json" },
             body   : JSON.stringify({ id, driver_lat: driverLat, driver_lng: driverLng })
@@ -346,12 +365,22 @@ async function acceptRide(id, btn) {
 async function refuseRide(id, btn) {
     const restore = setButtonLoading(btn, "…");
     try {
-        await fetch(`${DRIVER_API_BASE}/chauffeur/refuse_ride.php`, {
+        const res = await driverFetch(`${DRIVER_API_BASE}/chauffeur/refuse_ride.php`, {
             method : "POST",
             headers: { "Content-Type": "application/json" },
             body   : JSON.stringify({ id })
         });
-        showToast("Course refusée", "info");
+        const result = await res.json().catch(() => ({}));
+
+        if (res.ok && (result.status === "ok" || result.status === "success")) {
+            showToast("Course refusée", "info");
+        } else if (res.status === 409) {
+            // B5 : un autre chauffeur l'a prise (ou le client l'a annulée) entre-temps.
+            showToast("Cette course n'est plus disponible.", "info");
+        } else {
+            showToast(result.message || "Impossible de refuser la course", "error");
+        }
+        // Dans tous les cas on recharge la liste : la carte disparaît si la course est partie.
         await checkNewRides();
     } catch {
         showToast("Erreur lors du refus", "error");
@@ -363,7 +392,7 @@ async function refuseRide(id, btn) {
 async function cancelRide(id, btn) {
     const ok = await confirmAction({
         title: "Annuler cette course ?",
-        message: "Le client sera prévenu de l'annulation.",
+        message: "La course sera remise à disposition des autres chauffeurs.",
         confirmLabel: "Annuler la course",
         cancelLabel: "Retour",
         danger: true
@@ -372,7 +401,7 @@ async function cancelRide(id, btn) {
 
     const restore = setButtonLoading(btn, "Annulation…");
     try {
-        const res    = await fetch(`${DRIVER_API_BASE}/chauffeur/cancel_ride.php`, {
+        const res    = await driverFetch(`${DRIVER_API_BASE}/chauffeur/cancel_ride.php`, {
             method : "POST",
             headers: { "Content-Type": "application/json" },
             body   : JSON.stringify({ id })
@@ -395,7 +424,7 @@ async function cancelRide(id, btn) {
 async function startRide(id, btn) {
     const restore = setButtonLoading(btn, "Démarrage…");
     try {
-        const res    = await fetch(`${DRIVER_API_BASE}/chauffeur/start_ride.php`, {
+        const res    = await driverFetch(`${DRIVER_API_BASE}/chauffeur/start_ride.php`, {
             method : "POST",
             headers: { "Content-Type": "application/json" },
             body   : JSON.stringify({ id })
@@ -427,7 +456,7 @@ async function arriveRide(id, btn) {
             return;
         }
 
-        const res    = await fetch(`${DRIVER_API_BASE}/chauffeur/arrive_ride.php`, {
+        const res    = await driverFetch(`${DRIVER_API_BASE}/chauffeur/arrive_ride.php`, {
             method : "POST",
             headers: { "Content-Type": "application/json" },
             body   : JSON.stringify({ id, lat, lng })      // ← lat/lng ajoutés au payload
@@ -503,7 +532,7 @@ async function performCompleteRide(id, force) {
         // Échec silencieux — voir commentaire ci-dessus.
     }
 
-    const res    = await fetch(`${DRIVER_API_BASE}/chauffeur/complete_ride.php`, {
+    const res    = await driverFetch(`${DRIVER_API_BASE}/chauffeur/complete_ride.php`, {
         method : "POST",
         headers: { "Content-Type": "application/json" },
         body   : JSON.stringify({ id, lat, lng, force })
@@ -529,7 +558,7 @@ function reportProblem(id) {
 async function submitReportAPI(id, problem, btn) {
     const restore = setButtonLoading(btn, "Envoi…");
     try {
-        const res    = await fetch(`${DRIVER_API_BASE}/chauffeur/report_problem.php`, {
+        const res    = await driverFetch(`${DRIVER_API_BASE}/chauffeur/report_problem.php`, {
             method : "POST",
             headers: { "Content-Type": "application/json" },
             body   : JSON.stringify({ id, problem: problem.trim() })

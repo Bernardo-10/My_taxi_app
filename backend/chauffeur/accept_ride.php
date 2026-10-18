@@ -50,6 +50,16 @@ if (is_wallet_balance_blocked($driver["wallet_balance_fcfa"] ?? 0)) {
     ], 402);
 }
 
+// Plafond de courses en cours (B2) : source de vérité côté serveur,
+// get_rides.php ne fait que masquer les courses pending côté interface.
+if (count_started_rides($conn, $driverId) >= MAX_STARTED_RIDES) {
+    $conn->close();
+    json_response([
+        "status" => "error",
+        "message" => "Vous avez déjà " . MAX_STARTED_RIDES . " courses en cours. Terminez-en une pour en accepter une nouvelle."
+    ], 409);
+}
+
 $checkStmt = $conn->prepare("SELECT id, status FROM rides WHERE id = ?");
 $checkStmt->bind_param("i", $id);
 $checkStmt->execute();

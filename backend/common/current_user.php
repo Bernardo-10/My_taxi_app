@@ -58,13 +58,55 @@ if ($role === "client" && !empty($_SESSION["client_id"])) {
     // c'est ce que le frontend utilise pour afficher le bandeau "Complétez
     // votre profil" quand kyc_status === 'incomplete'.
     $stmt = $conn->prepare("
-        SELECT id, name, email, phone, plate, car_brand, car_color, status, is_online, kyc_status
+        SELECT id, name, email, phone, plate, car_brand, car_color, status, is_online, kyc_status,
+               update_position_driver, cni_expiration, carte_grise_expiration,
+               permit_expiration, capacity_expiration, license_expiration
         FROM chauffeur WHERE id = ? LIMIT 1
     ");
     $stmt->bind_param("i", $id);
     $stmt->execute();
     $user = $stmt->get_result()->fetch_assoc();
     $stmt->close();
+
+    // B1 : le front (chauffeur-ui.js, refreshDriverStatus) lit offline_reason
+    // et expired_documents, qui n'étaient renvoyés par aucun endpoint.
+    // Pas de colonne en base : la raison est déduite de l'état actuel.
+    //   kyc_expired    = au moins un document a une date d'expiration passée
+    //   stale_position = aucune position GPS reçue depuis 10 min (même seuil
+    //                    que sync_stale_drivers_offline() dans auth.php)
+    //   null           = autre cas (mise hors ligne par l'administrateur)
+    if ($user) {
+        $docLabels = [
+            "cni_expiration" => "CNI",
+            "carte_grise_expiration" => "Carte grise",
+            "permit_expiration" => "Permis de conduire",
+            "capacity_expiration" => "Carte de capacité",
+            "license_expiration" => "Licence professionnelle"
+        ];
+        $today = new DateTime("today");
+        $expiredDocs = [];
+        foreach ($docLabels as $col => $label) {
+            if (!empty($user[$col]) && new DateTime($user[$col]) < $today) {
+                $expiredDocs[] = $label;
+            }
+        }
+
+        $offlineReason = null;
+        if ((int) $user["is_online"] === 0) {
+            $lastPing = !empty($user["update_position_driver"]) ? strtotime($user["update_position_driver"]) : 0;
+            if ($expiredDocs) {
+                $offlineReason = "kyc_expired";
+            } elseif ($lastPing === 0 || $lastPing < time() - 600) {
+                $offlineReason = "stale_position";
+            }
+        }
+        $user["offline_reason"] = $offlineReason;
+        $user["expired_documents"] = $expiredDocs;
+
+        // Ces colonnes ne servent qu'au calcul ci-dessus : inutile de les exposer.
+        foreach (array_keys($docLabels) as $col) unset($user[$col]);
+        unset($user["update_position_driver"]);
+    }
 } else {
     $conn->close();
     json_response([

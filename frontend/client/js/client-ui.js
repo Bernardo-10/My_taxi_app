@@ -919,6 +919,49 @@ function onRideCancelled() {
   startNearbyDriversPolling(); // chantier 3 (v4)
 }
 
+// B4 : le chauffeur a annulé une course acceptée/arrivée ; elle est repartie en
+// 'pending'. Contrairement à onRideCancelled(), la course reste active : on
+// ne vide PAS currentRideId et on ne coupe PAS le suivi. On efface juste tout
+// ce qui concernait ce chauffeur et on revient à l'écran « recherche ».
+function onRideRequeued() {
+  // Garde : ne rien faire si on n'était pas en phase chauffeur (double appel...)
+  if (AppState.rideState !== "accepted" && AppState.rideState !== "arrived") return;
+
+  AppState.currentDriver = null;
+  if (etaUpdateInterval) { clearInterval(etaUpdateInterval); etaUpdateInterval = null; }
+  removeArrivedNotice();
+
+  // Retirer le chauffeur de la carte (marqueur taxi + tracé), try/catch par
+  // calque comme resetMapPanel() : un calque déjà détaché ne doit pas bloquer
+  // les suivants.
+  [
+    () => { if (driverRouteLayer)     { map.removeLayer(driverRouteLayer);     driverRouteLayer = null; } },
+    () => { if (driverPositionMarker) { map.removeLayer(driverPositionMarker); driverPositionMarker = null; } },
+    () => { if (routeLayer)           { map.removeLayer(routeLayer);           routeLayer = null; } },
+    // Le marqueur destination avait été retiré de la carte (onRideAccepted) ;
+    // il doit être visible pendant « pending », comme à la reprise après rafraîchissement.
+    () => { if (destinationMarker)    { destinationMarker.addTo(map); } },
+  ].forEach(fn => { try { fn(); } catch (e) { console.warn("onRideRequeued:", e); } });
+  lastDriverLat = null;
+  lastDriverLng = null;
+
+  const liveDiv = document.getElementById("driverLiveInfo");
+  if (liveDiv) liveDiv.style.display = "none";
+
+  AppState.rideState = "searching";
+  setRideState("searching");
+  syncAppMode();
+
+  showToast("Votre chauffeur a annulé. Nous recherchons un autre chauffeur…");
+  if (typeof window.notifyFeedback === "function") {
+    window.notifyFeedback({
+      sound: "cancelled",
+      vibrate: [100, 60, 100],
+      notify: { title: "Chauffeur indisponible", body: "Votre chauffeur a annulé. Recherche d'un autre chauffeur…", tag: "taxigo-ride" }
+    });
+  }
+}
+
 // Course signalée par le chauffeur (statut 'reported', voir checkRideStatus dans
 // client-api.js). Même nettoyage que onRideCompleted/onRideCancelled, puis un
 // message qui reste affiché jusqu'à ce que le client le ferme (il doit pouvoir

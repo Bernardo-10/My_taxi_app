@@ -217,6 +217,7 @@ let shownCancellations  = loadShownAlerts(CANCELLATIONS_STORAGE_KEY);
 // Statut en ligne
 let isOnline            = false;
 let isDisabled           = false;
+let statusPollTick       = 0;   // compteur du filet de sécurité current_user.php (schedulePoll)
 
 /* ═══════════════════════════════════════════════
    INIT
@@ -256,6 +257,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     schedulePoll();
     schedulePositionUpdate();
+    initAdaptivePolling();
 
     window.addEventListener("beforeunload", cleanup);
 });
@@ -272,6 +274,31 @@ function cleanup() {
    BUG #7 FIX : isCheckingRides géré ici via try/finally,
                 pas dans checkNewRides().
 ═══════════════════════════════════════════════ */
+/**
+ * Délai avant le prochain cycle de polling (adaptatif, pour économiser le
+ * serveur gratuit et la batterie) :
+ *   - onglet / appli en arrière-plan ............ 30 s
+ *   - en ligne, aucune course en cours .......... 8 s
+ *   - au moins une course acceptée/arrivée/démarrée ... 5 s
+ * Au retour au premier plan, un cycle est relancé immédiatement
+ * (voir initAdaptivePolling).
+ */
+function nextPollDelay() {
+    if (document.hidden) return 30000;
+    const hasActiveRide = allRides.some(r =>
+        r.status === "accepted" || r.status === "arrived" || r.status === "started");
+    return hasActiveRide ? 5000 : 8000;
+}
+
+/** Relance un cycle tout de suite quand le chauffeur revient sur l'appli. */
+function initAdaptivePolling() {
+    document.addEventListener("visibilitychange", () => {
+        if (document.hidden || !isOnline) return;
+        if (pollTimeout) clearTimeout(pollTimeout);
+        schedulePoll();
+    });
+}
+
 async function schedulePoll() {
     // BUG #1 FIX : ne pas fetcher quand hors ligne
     if (!isOnline) {
@@ -281,13 +308,23 @@ async function schedulePoll() {
 
     // BUG #7 FIX : si un fetch est déjà en cours, on attend le prochain cycle
     if (isCheckingRides) {
-        pollTimeout = setTimeout(schedulePoll, 5000);
+        pollTimeout = setTimeout(schedulePoll, nextPollDelay());
         return;
     }
 
     isCheckingRides = true;
     try {
-        await refreshDriverStatus();
+        // Avant : current_user.php + get_rides.php à CHAQUE cycle (2 requêtes).
+        // Maintenant : get_rides.php seul ; il renvoie des en-têtes d'état
+        // (X-Driver-Status / X-Driver-Online) qui déclenchent refreshDriverStatus()
+        // uniquement si quelque chose a changé. Filet de sécurité : un appel
+        // complet toutes les 12 itérations (~1 min). Un compte désactivé ne
+        // peut pas lire get_rides : on continue à interroger current_user.php
+        // pour détecter sa réactivation.
+        statusPollTick = (statusPollTick + 1) % 12;
+        if (isDisabled || statusPollTick === 0) {
+            await refreshDriverStatus();
+        }
         if (!isDisabled) {
             await checkNewRides();
         }
@@ -297,7 +334,7 @@ async function schedulePoll() {
     } finally {
         // BUG #7 FIX : always reset, même si checkNewRides() throw
         isCheckingRides = false;
-        pollTimeout = setTimeout(schedulePoll, 5000);
+        pollTimeout = setTimeout(schedulePoll, nextPollDelay());
     }
 }
 
@@ -1235,8 +1272,12 @@ function closeRenewalModal() {
   document.getElementById("documentRenewalForm")?.reset();
 }
 
+let renewalSubmitting = false; // B6 : empêche un double envoi (double clic, touche Entrée)
+
 async function submitDocumentRenewalForm(event) {
   event.preventDefault();
+  if (renewalSubmitting) return;
+  renewalSubmitting = true;
   const form = document.getElementById("documentRenewalForm");
   const submitBtn = document.getElementById("renewalSubmitBtn");
   const restore = typeof setButtonLoading === "function" ? setButtonLoading(submitBtn, "Envoi…") : (() => {});
@@ -1263,6 +1304,7 @@ async function submitDocumentRenewalForm(event) {
   } catch (e) {
     showToast("Erreur réseau — vérifiez votre connexion et réessayez.", "error");
   } finally {
+    renewalSubmitting = false;
     restore();
   }
 }
@@ -1545,6 +1587,16 @@ function renderPendingRides() {
         // Blocage par solde (< 500 FCFA) : distinct du cas "pas de course
         // dispo pour l'instant". Le flag est positionné par checkNewRides()
         // (chauffeur-api.js) à partir de l'en-tête X-Balance-Blocked.
+        // Plafond de courses en cours (B2) : X-Active-Blocked posé par get_rides.php.
+        if (isOnline && window.__taxigo_activeBlocked) {
+            container.appendChild(emptyState(
+                "🚕",
+                "Nombre maximum de courses atteint",
+                "Terminez une course en cours pour recevoir de nouvelles demandes"
+            ));
+            return;
+        }
+
         if (isOnline && window.__taxigo_balanceBlocked) {
             container.appendChild(emptyState(
                 "💳",
@@ -2272,7 +2324,7 @@ function updateDashboard() {
     const active    = sourceRides.filter(r => r.status === "accepted" || r.status === "arrived" || r.status === "started");
     const total     = completed.reduce((s, r) => {
         const price      = parseInt(r.price_fcfa || 0);
-        const commission = Math.round(price * 0.20);
+        const commission = Math.round(price * COMMISSION_RATE);
         return s + (price - commission);
     }, 0);
     const avg       = completed.length ? Math.round(total / completed.length) : 0;

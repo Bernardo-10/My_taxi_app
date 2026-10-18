@@ -16,14 +16,17 @@ expire_stale_pending_rides($conn);
 // en boucle toutes les 5s tant que le chauffeur est en ligne : c'est ici
 // que la vérification doit se répéter pour de vrai.
 $kycCheckStmt = $conn->prepare("
-    SELECT is_online, cni_expiration, carte_grise_expiration, permit_expiration,
-           capacity_expiration, license_expiration, wallet_balance_fcfa
+    SELECT is_online, status, cni_expiration, carte_grise_expiration, permit_expiration,
+           capacity_expiration, license_expiration, wallet_balance_fcfa,
+           (SELECT COUNT(*) FROM rides WHERE driver_id = ? AND status = 'started') AS started_count
     FROM chauffeur WHERE id = ? LIMIT 1
 ");
-$kycCheckStmt->bind_param("i", $driverId);
+$kycCheckStmt->bind_param("ii", $driverId, $driverId);
 $kycCheckStmt->execute();
 $driverRow = $kycCheckStmt->get_result()->fetch_assoc();
 $kycCheckStmt->close();
+
+$forcedOffline = false;
 
 if ($driverRow && (int) $driverRow["is_online"] === 1) {
     $docLabels = [
@@ -46,6 +49,7 @@ if ($driverRow && (int) $driverRow["is_online"] === 1) {
         $offStmt->bind_param("i", $driverId);
         $offStmt->execute();
         $offStmt->close();
+        $forcedOffline = true; // pour l'en-tête X-Driver-Online ci-dessous
 
         // Signalé via en-têtes plutôt que dans le corps JSON : get_rides.php
         // renvoie un tableau brut de courses (pas un objet), consommé tel
@@ -69,8 +73,25 @@ if ($balanceBlocked) {
     header("X-Balance-Blocked: 1");
 }
 
-$pendingClause = $balanceBlocked
-    ? "(1 = 0)" // solde insuffisant : aucune nouvelle course pending envoyée
+// Plafond de courses en cours (B2) : à MAX_STARTED_RIDES courses 'started',
+// plus aucune course pending n'est envoyée (même principe que le solde).
+$activeBlocked = $driverRow && (int) ($driverRow["started_count"] ?? 0) >= MAX_STARTED_RIDES;
+if ($activeBlocked) {
+    header("X-Active-Blocked: 1");
+}
+
+// En-têtes d'état du chauffeur : permettent au front de ne plus appeler
+// current_user.php à chaque cycle de polling. Si l'un change par rapport à
+// l'état local, le front fait UN appel à current_user.php pour le détail.
+if ($driverRow) {
+    header("X-Driver-Status: " . $driverRow["status"]);
+    header("X-Driver-Online: " . ((int) $driverRow["is_online"] === 1 && !$forcedOffline ? "1" : "0"));
+}
+
+$noPending = $balanceBlocked || $activeBlocked;
+
+$pendingClause = $noPending
+    ? "(1 = 0)" // solde insuffisant OU plafond atteint : aucune nouvelle course pending envoyée
     : "(rides.status = 'pending' AND rides.id NOT IN (
               SELECT ride_id FROM ride_refusals WHERE driver_id = ?
           ))";
@@ -93,7 +114,7 @@ $stmt = $conn->prepare("
     ORDER BY rides.created_at DESC
 ");
 
-if ($balanceBlocked) {
+if ($noPending) {
     $stmt->bind_param("ii", $driverId, $driverId);
 } else {
     $stmt->bind_param("iii", $driverId, $driverId, $driverId);

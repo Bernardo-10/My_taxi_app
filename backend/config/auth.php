@@ -212,6 +212,23 @@ function is_wallet_balance_blocked($balanceFcfa) {
     return (float) $balanceFcfa < WALLET_MIN_BALANCE_FCFA;
 }
 
+/**
+ * Plafond de courses EN COURS (statut 'started') par chauffeur (B2).
+ * Tant qu'il en a MAX_STARTED_RIDES, il ne reçoit plus de courses 'pending'
+ * (get_rides.php) et accept_ride.php refuse toute nouvelle acceptation.
+ * Seules les courses 'started' comptent pour l'instant (pas 'accepted'/'arrived').
+ */
+define("MAX_STARTED_RIDES", 5);
+
+function count_started_rides(mysqli $conn, int $driverId): int {
+    $stmt = $conn->prepare("SELECT COUNT(*) AS n FROM rides WHERE driver_id = ? AND status = 'started'");
+    $stmt->bind_param("i", $driverId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return (int) ($row["n"] ?? 0);
+}
+
 function json_response($payload, $statusCode = 200) {
     http_response_code($statusCode);
     header("Content-Type: application/json; charset=utf-8");
