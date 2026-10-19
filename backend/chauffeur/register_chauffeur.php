@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . "/../config/auth.php";
+require_once __DIR__ . "/../common/normalize.php";   // Lot 11 : téléphone et plaque normalisés
 
 // ── Inscription allégée (voir rapport friction-inscription-chauffeur.md) ──
 // Avant : ce fichier exigeait les 5 documents KYC (10 champs texte + 9
@@ -34,12 +35,39 @@ if ($name === "" || $phone === "" || $email === "" || $password === "" || $plate
     json_response(["status" => "error", "message" => "Nom, telephone, email, plaque et mot de passe requis"], 400);
 }
 
+// ── Lot 11 : longueurs maximales (les colonnes de la base sont plus courtes que
+// ce que le formulaire laissait passer) ──
+if (mb_strlen($name) > 100 || mb_strlen($email) > 120 || mb_strlen($carBrand) > 50 || mb_strlen($carColor) > 30) {
+    json_response(["status" => "error", "message" => "Un des champs est trop long (nom 100, email 120, marque 50, couleur 30 caracteres maximum)"], 400);
+}
+
 if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
     json_response(["status" => "error", "message" => "Email invalide"], 400);
 }
 
-if (strlen($password) < 6) {
-    json_response(["status" => "error", "message" => "Le mot de passe doit contenir au moins 6 caracteres"], 400);
+// ── Lot 11 : téléphone sous forme canonique (+237XXXXXXXXX) ──
+$phoneCanon = normalize_phone($phone);
+if ($phoneCanon === null) {
+    json_response(["status" => "error", "message" => "Numero de telephone invalide (exemple : +237 6XX XXX XXX)"], 400);
+}
+$phone = $phoneCanon;
+
+// ── Lot 11 : plaque en majuscules, espaces simples ; comparée sans espaces ni tirets ──
+$plate = plate_for_storage($plate);
+$plateKey = plate_key($plate);
+if (strlen($plateKey) < 3 || strlen($plate) > 20) {
+    json_response(["status" => "error", "message" => "Plaque invalide (exemple : LT 1234 AB)"], 400);
+}
+
+// ── Lot 11 : mot de passe 8 caracteres minimum, 72 octets maximum ──
+// 72 octets = limite de bcrypt (password_hash par défaut) : au-delà, la fin du mot de
+// passe serait ignorée en silence. strlen() compte des octets, c'est voulu ici.
+// Aucune règle de composition (majuscule, chiffre...) : voir rapport, choix 11-C.
+if (strlen($password) < 8) {
+    json_response(["status" => "error", "message" => "Le mot de passe doit contenir au moins 8 caracteres"], 400);
+}
+if (strlen($password) > 72) {
+    json_response(["status" => "error", "message" => "Le mot de passe est trop long (72 caracteres maximum)"], 400);
 }
 
 if ($password !== $passwordConfirm) {
@@ -47,10 +75,21 @@ if ($password !== $passwordConfirm) {
 }
 
 // ── Compte déjà existant ? ────────────────────────────────────────
+// Le téléphone et la plaque sont comparés sous toutes leurs écritures possibles :
+// un compte créé avant le lot 11 (téléphone "677123456", plaque "LT-123") est
+// retrouvé même si la migration SQL n'a pas encore été passée.
 $conn = db_connect();
 
-$checkStmt = $conn->prepare("SELECT id FROM chauffeur WHERE email = ? OR phone = ? OR plate = ? LIMIT 1");
-$checkStmt->bind_param("sss", $email, $phone, $plate);
+$phoneVariants = phone_digit_variants($phone);
+$placeholders  = implode(",", array_fill(0, count($phoneVariants), "?"));
+$checkStmt = $conn->prepare(
+    "SELECT id FROM chauffeur
+     WHERE email = ? OR phone = ? OR " . sql_phone_digits("phone") . " IN ($placeholders)
+        OR " . sql_plate_key("plate") . " = ?
+     LIMIT 1"
+);
+$checkParams = array_merge([$email, $phone], $phoneVariants, [$plateKey]);
+$checkStmt->bind_param(str_repeat("s", count($checkParams)), ...$checkParams);
 $checkStmt->execute();
 $exists = $checkStmt->get_result()->num_rows > 0;
 $checkStmt->close();
@@ -79,8 +118,14 @@ $stmt->bind_param(
 );
 
 if (!$stmt->execute()) {
+    // 1062 = clé unique violée : deux inscriptions simultanées avec les mêmes
+    // données (la vérification ci-dessus ne peut pas voir une ligne pas encore écrite).
+    $duplicate = ($stmt->errno === 1062);
     $stmt->close();
     $conn->close();
+    if ($duplicate) {
+        json_response(["status" => "error", "message" => "Un chauffeur existe deja avec cet email, ce telephone ou cette plaque"], 409);
+    }
     json_response(["status" => "error", "message" => "Inscription impossible"], 500);
 }
 

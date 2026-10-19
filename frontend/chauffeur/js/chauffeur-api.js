@@ -197,6 +197,9 @@ async function initUserHeader(loginPage) {
                 // Effacer l'ID courant pour éviter que le cache "anon" ou
                 // l'ID précédent soit réutilisé après logout.
                 try { window.currentDriverId = null; } catch (e) {}
+                // Lot 11 : le brouillon du profil (complete-profile.html) ne doit pas rester sur
+                // un téléphone après déconnexion (même clé que dans cette page).
+                try { localStorage.removeItem("taxigo_profile_draft_v1"); } catch (e) {}
                 window.location.href = loginPage;
             }
         });

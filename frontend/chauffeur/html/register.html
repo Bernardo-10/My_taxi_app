@@ -229,6 +229,13 @@ input:focus {
 .hint.error { color: var(--red); }
 .hint.ok { color: var(--green); }
 
+/* Lot 11 : indicateur de force du mot de passe (information, ne bloque rien) */
+.strength { margin-top: 8px; display: none; align-items: center; gap: 10px; }
+.strength.on { display: flex; }
+.strength-bar { flex: 1; height: 5px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.strength-bar span { display: block; height: 100%; width: 0; border-radius: 99px; transition: width .2s, background .2s; }
+.strength-text { font-size: 11.5px; font-weight: 600; min-width: 64px; text-align: right; }
+
 .doc-note {
   font-size: 11.5px;
   color: var(--ink-3);
@@ -301,27 +308,29 @@ input:focus {
       <div class="section-label">Vos coordonnées</div>
 
       <label for="name">Nom complet</label>
-      <input id="name" name="name" autocomplete="name" placeholder="Jean Mballa" required>
+      <input id="name" name="name" autocomplete="name" placeholder="Jean Mballa" maxlength="100" required>
 
       <label for="phone">Téléphone</label>
-      <input id="phone" name="phone" type="tel" autocomplete="tel" placeholder="+237 6XX XXX XXX" required>
+      <input id="phone" name="phone" type="tel" autocomplete="tel" placeholder="+237 6XX XXX XXX" maxlength="30" required>
+      <div class="hint">Avec ou sans +237, les espaces n'ont pas d'importance.</div>
 
       <label for="email">Adresse email</label>
-      <input id="email" name="email" type="email" autocomplete="email" placeholder="vous@exemple.com" required>
+      <input id="email" name="email" type="email" autocomplete="email" placeholder="vous@exemple.com" maxlength="120" required>
 
       <div class="section-label">Votre véhicule</div>
 
       <label for="plate">Plaque d'immatriculation</label>
-      <input id="plate" name="plate" placeholder="LT 1234 AB" required>
+      <input id="plate" name="plate" placeholder="LT 1234 AB" maxlength="20" autocapitalize="characters" required>
+      <div class="hint">Exemple : LT 1234 AB. Espaces et tirets sont acceptés.</div>
 
       <div class="row-2">
         <div>
           <label for="car_brand">Marque</label>
-          <input id="car_brand" name="car_brand" placeholder="Toyota">
+          <input id="car_brand" name="car_brand" placeholder="Toyota" maxlength="50">
         </div>
         <div>
           <label for="car_color">Couleur</label>
-          <input id="car_color" name="car_color" placeholder="Grise">
+          <input id="car_color" name="car_color" placeholder="Grise" maxlength="30">
         </div>
       </div>
 
@@ -329,15 +338,21 @@ input:focus {
 
       <label for="password">Mot de passe</label>
       <div class="field-wrap">
-        <input id="password" name="password" type="password" autocomplete="new-password" minlength="6" placeholder="6 caractères minimum" required>
+        <input id="password" name="password" type="password" autocomplete="new-password" minlength="8" placeholder="8 caractères minimum" required>
         <button type="button" class="toggle-pass" id="togglePass" aria-label="Afficher le mot de passe">
           <svg id="eyeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
         </button>
       </div>
 
+      <div class="strength" id="strength" aria-live="polite">
+        <div class="strength-bar"><span id="strengthFill"></span></div>
+        <span class="strength-text" id="strengthText"></span>
+      </div>
+      <div class="hint">8 caractères minimum, sans autre règle : une phrase facile à retenir est un bon choix.</div>
+
       <label for="password_confirm">Confirmer le mot de passe</label>
       <div class="field-wrap">
-        <input id="password_confirm" name="password_confirm" type="password" autocomplete="new-password" minlength="6" placeholder="Retapez le mot de passe" required>
+        <input id="password_confirm" name="password_confirm" type="password" autocomplete="new-password" minlength="8" placeholder="Retapez le mot de passe" required>
         <button type="button" class="toggle-pass" id="togglePassConfirm" aria-label="Afficher le mot de passe">
           <svg id="eyeIconConfirm" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
         </button>
@@ -379,6 +394,35 @@ input:focus {
   wireToggle("togglePass", "password", "eyeIcon");
   wireToggle("togglePassConfirm", "password_confirm", "eyeIconConfirm");
 
+  // ── Lot 11 : indicateur de force (purement informatif, ne bloque jamais l'envoi) ──
+  // Faible / Moyen / Bon selon la longueur et la variété des caractères ; les mots de
+  // passe les plus courants ("123456...", "azerty...") restent "Faible" même s'ils sont longs.
+  function passwordStrength(p) {
+    if (p.length < 8) return { level: 1, label: "Trop court", color: "var(--red)" };
+    let score = 1;
+    if (p.length >= 12) score++;
+    const kinds = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter((r) => r.test(p)).length;
+    if (kinds >= 3) score++;
+    if (/^(.)\1+$/.test(p) || /^(0123|1234|abcd|azerty|qwerty|password|motdepasse)/i.test(p)) score = 1;
+    if (score <= 1) return { level: 1, label: "Faible", color: "var(--red)" };
+    if (score === 2) return { level: 2, label: "Moyen", color: "var(--accent)" };
+    return { level: 3, label: "Bon", color: "var(--green)" };
+  }
+  function updateStrength() {
+    const p = document.getElementById("password").value;
+    const box = document.getElementById("strength");
+    box.classList.toggle("on", p.length > 0);
+    if (!p) return;
+    const r = passwordStrength(p);
+    const fill = document.getElementById("strengthFill");
+    fill.style.width = (r.level * 33.4) + "%";
+    fill.style.background = r.color;
+    const txt = document.getElementById("strengthText");
+    txt.textContent = r.label;
+    txt.style.color = r.color;
+  }
+  document.getElementById("password").addEventListener("input", updateStrength);
+
   const passwordHint = document.getElementById("passwordHint");
   function checkPasswordMatch() {
     const pass = document.getElementById("password").value;
@@ -409,6 +453,14 @@ input:focus {
         return false;
       }
     }
+    // Lot 11 : contrôle léger du téléphone (le serveur applique la règle complète)
+    const phone = document.getElementById("phone");
+    const phoneDigits = phone.value.replace(/\D/g, "");
+    if (phoneDigits.length < 8 || phoneDigits.length > 15) {
+      message.textContent = "Numéro de téléphone invalide (exemple : +237 6XX XXX XXX).";
+      phone.focus();
+      return false;
+    }
     const email = document.getElementById("email");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value.trim())) {
       message.textContent = "Adresse email invalide.";
@@ -417,8 +469,14 @@ input:focus {
     }
     const pass = document.getElementById("password");
     const confirm = document.getElementById("password_confirm");
-    if (pass.value.length < 6) {
-      message.textContent = "Le mot de passe doit contenir au moins 6 caractères.";
+    if (pass.value.length < 8) {
+      message.textContent = "Le mot de passe doit contenir au moins 8 caractères.";
+      pass.focus();
+      return false;
+    }
+    // 72 octets = limite de bcrypt côté serveur (un accent compte pour 2 octets)
+    if (new TextEncoder().encode(pass.value).length > 72) {
+      message.textContent = "Le mot de passe est trop long (72 caractères maximum).";
       pass.focus();
       return false;
     }
@@ -454,6 +512,8 @@ input:focus {
       }
 
       if (result.status === "success") {
+        // Lot 11 : nouveau compte -> on efface un éventuel brouillon de profil resté d'un autre chauffeur
+        try { localStorage.removeItem("taxigo_profile_draft_v1"); } catch (e) {}
         window.location.href = "/chauffeur";
         return;
       }

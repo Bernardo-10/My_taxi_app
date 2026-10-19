@@ -77,6 +77,12 @@ foreach ($requiredTextFields as $field => $label) {
         $conn->close();
         json_response(["status" => "error", "message" => "Champ requis manquant : $label"], 400);
     }
+    // Lot 11 : les colonnes de numéros font 50 caractères ; au-delà la base
+    // refusait (ou tronquait) l'enregistrement avec une erreur peu claire.
+    if (mb_strlen($value) > 50) {
+        $conn->close();
+        json_response(["status" => "error", "message" => "Champ trop long (50 caracteres maximum) : $label"], 400);
+    }
     $textValues[$field] = $value;
 }
 

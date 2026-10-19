@@ -414,6 +414,9 @@ label.req::after {
     </div>
   </div>
 
+  <!-- Lot 11 (11-D) : affiché seulement si un brouillon local a été retrouvé -->
+  <p class="doc-note" id="draftNotice" hidden style="margin: 0 0 14px;"></p>
+
   <div class="card">
     <form id="profileForm" novalidate>
       <div class="viewport">
@@ -435,7 +438,7 @@ label.req::after {
                 <span class="doc-title-text">Carte Nationale d'Identité<span class="req-mark">*</span></span>
               </div>
               <label for="cni_number" class="req">Numéro de CNI</label>
-              <input id="cni_number" name="cni_number" placeholder="Ex : 123456789" required>
+              <input id="cni_number" name="cni_number" placeholder="Ex : 123456789" maxlength="50" required>
               <label for="cni_expiration" class="req">Date d'expiration</label>
               <input id="cni_expiration" name="cni_expiration" type="date" required>
               <div class="photo-row">
@@ -475,7 +478,7 @@ label.req::after {
                 <span class="doc-title-text">Carte grise<span class="req-mark">*</span></span>
               </div>
               <label for="carte_grise_immat" class="req">Numéro d'immatriculation (carte grise)</label>
-              <input id="carte_grise_immat" name="carte_grise_immat" placeholder="Ex : CE 123 CM" required>
+              <input id="carte_grise_immat" name="carte_grise_immat" placeholder="Ex : CE 123 CM" maxlength="50" required>
 
               <label for="carte_grise_expiration" class="req">Date d'expiration</label>
               <input id="carte_grise_expiration" name="carte_grise_expiration" type="date" required>
@@ -505,7 +508,7 @@ label.req::after {
                 <span class="doc-title-text">Permis de conduire<span class="req-mark">*</span></span>
               </div>
               <label for="permit_number" class="req">Numéro de permis</label>
-              <input id="permit_number" name="permit_number" placeholder="Ex : 0012345/CN" required>
+              <input id="permit_number" name="permit_number" placeholder="Ex : 0012345/CN" maxlength="50" required>
               <label for="permit_expiration" class="req">Date d'expiration</label>
               <input id="permit_expiration" name="permit_expiration" type="date" required>
               <div class="photo-row">
@@ -545,7 +548,7 @@ label.req::after {
                 <span class="doc-title-text">Carte de capacité de transport<span class="req-mark">*</span></span>
               </div>
               <label for="capacity_number" class="req">Numéro du document</label>
-              <input id="capacity_number" name="capacity_number" placeholder="Ex : CAP-2024-0456" required>
+              <input id="capacity_number" name="capacity_number" placeholder="Ex : CAP-2024-0456" maxlength="50" required>
               <label for="capacity_expiration" class="req">Date d'expiration</label>
               <input id="capacity_expiration" name="capacity_expiration" type="date" required>
               <div class="photo-row">
@@ -585,7 +588,7 @@ label.req::after {
                 <span class="doc-title-text">Licence chauffeur professionnel<span class="req-mark">*</span></span>
               </div>
               <label for="license_number" class="req">Numéro de licence</label>
-              <input id="license_number" name="license_number" placeholder="Ex : LIC-2024-0789" required>
+              <input id="license_number" name="license_number" placeholder="Ex : LIC-2024-0789" maxlength="50" required>
               <label for="license_expiration" class="req">Date d'expiration</label>
               <input id="license_expiration" name="license_expiration" type="date" required>
               <div class="photo-row">
@@ -678,26 +681,50 @@ label.req::after {
     updateProgress();
     updateNav();
     message.textContent = "";
+    if (currentStep > maxStepReached) maxStepReached = currentStep;
+    saveDraft();
   }
 
-  function validateCurrentStep() {
-    const required = requiredByStep[currentStep] || [];
+  // Vérifie les champs d'UNE étape. show=false : vérification silencieuse (aucun message,
+  // aucun focus), utilisée pour contrôler les étapes précédentes avant l'envoi final.
+  function validateStep(step, show = true) {
+    const required = requiredByStep[step] || [];
     for (const fieldName of required) {
       const el = document.getElementById(fieldName);
       if (el.type === "file") {
         const btn = document.getElementById(fieldName.replace("file_", "btn_"));
         if (!el.files || el.files.length === 0) {
-          btn.classList.add("error");
-          message.textContent = "Merci d'ajouter toutes les photos demandées avant de continuer.";
-          btn.scrollIntoView({ behavior: "smooth", block: "center" });
+          if (show) {
+            btn.classList.add("error");
+            message.textContent = "Merci d'ajouter toutes les photos demandées avant de continuer.";
+            btn.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
           return false;
         }
         btn.classList.remove("error");
         continue;
       }
       if (!el.value.trim()) {
-        message.textContent = "Merci de renseigner ce champ avant de continuer.";
-        el.focus();
+        if (show) {
+          message.textContent = "Merci de renseigner ce champ avant de continuer.";
+          el.focus();
+        }
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function validateCurrentStep() { return validateStep(currentStep, true); }
+
+  // Lot 11 : avant l'envoi final, on contrôle AUSSI les étapes précédentes. Indispensable
+  // avec le brouillon : les dates reviennent toutes seules, mais pas les photos.
+  // Renvoie false (et ramène sur l'étape concernée) si quelque chose manque.
+  function validateAllSteps() {
+    for (let step = 0; step < TOTAL_STEPS; step++) {
+      if (!validateStep(step, false)) {
+        goToStep(step);
+        validateStep(step, true);
         return false;
       }
     }
@@ -707,6 +734,7 @@ label.req::after {
   btnNext.addEventListener("click", () => {
     if (!validateCurrentStep()) return;
     if (currentStep === TOTAL_STEPS - 1) {
+      if (!validateAllSteps()) return;
       document.getElementById("profileForm").requestSubmit();
       return;
     }
@@ -714,6 +742,57 @@ label.req::after {
   });
 
   btnBack.addEventListener("click", () => goToStep(currentStep - 1));
+
+  // ── Photos : compression avant envoi (Lot 11, 11-E) ─────────────────
+  // Une photo de téléphone pèse 3 à 8 Mo ; 9 photos en une seule requête échouent
+  // souvent en 3G/4G faible. On réduit chaque photo à 1600 px (côté le plus long) en
+  // JPEG qualité 0,8 : 8 Mo deviennent environ 200 à 500 Ko, sans perte gênante pour
+  // lire un document. Si quoi que ce soit échoue (format illisible...), on envoie la
+  // photo d'origine : la compression ne peut jamais bloquer l'inscription.
+  const IMG_MAX_SIDE = 1600;
+  const IMG_QUALITY  = 0.8;
+
+  function loadImageElement(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload  = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("decode")); };
+      img.src = url;   // le navigateur applique lui-même l'orientation EXIF (photo prise en portrait)
+    });
+  }
+
+  // Ne rejette jamais : renvoie le fichier compressé, ou l'original en cas de souci.
+  async function compressImage(file) {
+    try {
+      if (file.type && !file.type.startsWith("image/")) return file;
+      const img = await loadImageElement(file);
+      const w0 = img.naturalWidth, h0 = img.naturalHeight;
+      if (!w0 || !h0) return file;
+
+      const scale = Math.min(1, IMG_MAX_SIDE / Math.max(w0, h0));
+      const w = Math.max(1, Math.round(w0 * scale));
+      const h = Math.max(1, Math.round(h0 * scale));
+
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return file;
+      ctx.fillStyle = "#fff";            // un PNG transparent deviendrait noir en JPEG
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", IMG_QUALITY));
+      canvas.width = canvas.height = 0;  // libère la mémoire (iPhone)
+      if (!blob || blob.size >= file.size) return file;   // déjà plus léger : on garde l'original
+
+      const base = (file.name || "photo").replace(/\.[^.]+$/, "");
+      return new File([blob], base + ".jpg", { type: "image/jpeg" });
+    } catch (e) {
+      return file;
+    }
+  }
 
   // ── Photos : aperçu au choix du fichier (recto/verso + carte grise) ──
   const photoIds = [
@@ -724,28 +803,111 @@ label.req::after {
     "license_recto", "license_verso"
   ];
 
+  const compressedFiles = {};   // nom du champ -> photo compressée (prête à l'envoi)
+  const compressJobs    = {};   // nom du champ -> compression en cours
+  const previewUrls     = {};   // id -> adresse blob de l'aperçu (à libérer)
+
   photoIds.forEach((id) => {
     const btn = document.getElementById("btn_" + id);
     const input = document.getElementById("file_" + id);
     if (!btn || !input) return;
     input.addEventListener("change", () => {
+      const name = input.name;
+      delete compressedFiles[name];   // nouvelle photo : l'ancienne version compressée est périmée
+      delete compressJobs[name];
+
       const file = input.files && input.files[0];
       if (!file) return;
       btn.classList.remove("error");
-      const reader = new FileReader();
-      reader.onload = () => {
-        btn.classList.add("has-image");
-        btn.innerHTML = `
-          <img src="${reader.result}" alt="Aperçu du document">
-          <span class="badge-ok">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-          </span>
-        `;
-        btn.appendChild(input);
-      };
-      reader.readAsDataURL(file);
+
+      // Aperçu immédiat avec une adresse blob (plus léger qu'un data: de 8 Mo)
+      if (previewUrls[id]) URL.revokeObjectURL(previewUrls[id]);
+      previewUrls[id] = URL.createObjectURL(file);
+      btn.classList.add("has-image");
+      btn.innerHTML = `
+        <img src="${previewUrls[id]}" alt="Aperçu du document">
+        <span class="badge-ok">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </span>
+      `;
+      btn.appendChild(input);
+
+      // Compression en arrière-plan ; le résultat n'est gardé que si la photo n'a pas changé entre-temps.
+      const job = compressImage(file).then((out) => {
+        if (compressJobs[name] === job) compressedFiles[name] = out;
+      });
+      compressJobs[name] = job;
     });
   });
+
+  // ── Brouillon local (Lot 11, 11-D) ────────────────────────────────────
+  // Si le chauffeur ferme la page ou perd le réseau en cours de route, ses dates et
+  // l'étape atteinte sont gardées dans le navigateur (localStorage) et remises au
+  // retour. Les PHOTOS ne peuvent pas être gardées (ce sont des fichiers) : il faut les
+  // reprendre. Le brouillon est supprimé à l'envoi réussi et à la déconnexion
+  // (chauffeur-api.js) ; il expire de lui-même après 7 jours.
+  //
+  // SÉCURITÉ : par défaut on ne garde PAS les numéros de CNI, permis, etc., pour ne
+  // rien laisser de sensible sur un téléphone qui peut être partagé. Pour les garder
+  // aussi, mettre DRAFT_SAVE_NUMBERS à true.
+  const DRAFT_KEY          = "taxigo_profile_draft_v1";   // même clé que la déconnexion
+  const DRAFT_TTL_MS       = 7 * 24 * 60 * 60 * 1000;
+  const DRAFT_SAVE_NUMBERS = false;
+  const DRAFT_FIELDS = ["cni_expiration", "carte_grise_expiration", "permit_expiration", "capacity_expiration", "license_expiration"]
+    .concat(DRAFT_SAVE_NUMBERS ? ["cni_number", "carte_grise_immat", "permit_number", "capacity_number", "license_number"] : []);
+
+  let draftReady = false;     // vrai une fois le brouillon relu (évite d'écraser l'ancien au chargement)
+  let maxStepReached = 0;     // étape la plus avancée atteinte (pour le message de reprise)
+
+  function clearDraft() {
+    try { localStorage.removeItem(DRAFT_KEY); } catch (e) { /* stockage indisponible : sans gravité */ }
+  }
+
+  function saveDraft() {
+    if (!draftReady) return;
+    try {
+      const fields = {};
+      DRAFT_FIELDS.forEach((id) => {
+        const v = document.getElementById(id).value;
+        if (v) fields[id] = v;
+      });
+      if (Object.keys(fields).length === 0 && maxStepReached === 0) {
+        localStorage.removeItem(DRAFT_KEY);   // rien d'utile à garder
+        return;
+      }
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ savedAt: Date.now(), step: maxStepReached, fields }));
+    } catch (e) { /* stockage plein ou bloqué (navigation privée) : on continue sans brouillon */ }
+  }
+
+  // Remet les champs du brouillon dans le formulaire ; renvoie le nombre de champs remis.
+  function restoreDraft() {
+    let draft = null;
+    try { draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null"); } catch (e) { draft = null; }
+    if (!draft || typeof draft !== "object" || typeof draft.savedAt !== "number"
+        || Date.now() - draft.savedAt > DRAFT_TTL_MS || !draft.fields || typeof draft.fields !== "object") {
+      if (draft) clearDraft();   // brouillon périmé ou illisible
+      return 0;
+    }
+    let restored = 0;
+    DRAFT_FIELDS.forEach((id) => {
+      const v = draft.fields[id];
+      if (typeof v !== "string" || v.length === 0 || v.length > 50) return;
+      if (id.endsWith("_expiration") && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return;
+      document.getElementById(id).value = v;
+      restored++;
+    });
+    const step = Number.isInteger(draft.step) ? Math.max(0, Math.min(TOTAL_STEPS - 1, draft.step)) : 0;
+    maxStepReached = step;
+    return restored;
+  }
+
+  let draftTimer = null;
+  function scheduleDraftSave() {
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(saveDraft, 300);   // on attend la fin de la frappe
+  }
+  document.getElementById("profileForm").addEventListener("input", scheduleDraftSave);
+  document.getElementById("profileForm").addEventListener("change", scheduleDraftSave);
 
   // ── Soumission réelle ──────────────────────────────────
   function findStepForError(msg) {
@@ -769,10 +931,18 @@ label.req::after {
     message.textContent = "";
     btnNext.disabled = true;
     btnBack.style.pointerEvents = "none";
-    btnNext.innerHTML = "Envoi en cours…";
+    btnNext.innerHTML = "Préparation des photos…";
 
     try {
+      // Lot 11 : on attend la fin des compressions encore en cours (quelques secondes au plus),
+      // puis on remplace chaque photo d'origine par sa version compressée.
+      await Promise.all(Object.values(compressJobs));
+      btnNext.innerHTML = "Envoi en cours…";
+
       const formData = new FormData(document.getElementById("profileForm"));
+      for (const [fieldName, file] of Object.entries(compressedFiles)) {
+        formData.set(fieldName, file, file.name);
+      }
       const response = await fetch("/backend/chauffeur/complete_chauffeur_profile.php", {
         method: "POST",
         body: formData
@@ -791,9 +961,13 @@ label.req::after {
       }
 
       if (result.status === "success") {
+        clearDraft();   // dossier envoyé : plus rien à reprendre
         window.location.href = "/chauffeur";
         return;
       }
+
+      // 409 = profil déjà complet : le brouillon n'a plus de raison d'exister
+      if (response.status === 409) clearDraft();
 
       const errMsg = result.message || "Envoi impossible.";
       const targetStep = findStepForError(errMsg);
@@ -813,7 +987,17 @@ label.req::after {
     }
   });
 
-  goToStep(0);
+  // ── Démarrage : on relit le brouillon AVANT d'afficher la première étape ──
+  const restoredCount = restoreDraft();
+  draftReady = true;
+  goToStep(0);   // les photos manquent toujours : on repart de l'étape 1, champs déjà remplis
+  if (restoredCount > 0) {
+    const notice = document.getElementById("draftNotice");
+    notice.textContent = `Brouillon retrouvé : vos dates ont été remises (vous en étiez à l'étape ${maxStepReached + 1} sur ${TOTAL_STEPS}). `
+      + "Les photos ne peuvent pas être conservées : reprenez-les à chaque étape."
+      + (DRAFT_SAVE_NUMBERS ? "" : " Par sécurité, les numéros de documents ne sont pas gardés sur ce téléphone.");
+    notice.hidden = false;
+  }
 </script>
 </body>
 </html>
