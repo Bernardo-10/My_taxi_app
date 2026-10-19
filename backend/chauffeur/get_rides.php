@@ -99,6 +99,9 @@ $pendingClause = $noPending
               SELECT ride_id FROM ride_refusals WHERE driver_id = ?
           ))";
 
+// Lot 7 : les courses TERMINÉES ne sont plus renvoyées ici (elles grossissaient
+// à chaque course et alourdissaient chaque poll). L'historique et les gains
+// passent par get_history.php (totaux calculés en SQL + pagination).
 $stmt = $conn->prepare("
     SELECT
         rides.id, rides.user_id, rides.pickup, rides.destination,
@@ -112,7 +115,7 @@ $stmt = $conn->prepare("
     FROM rides
     LEFT JOIN client ON client.id = rides.user_id
     WHERE $pendingClause
-       OR (rides.driver_id = ? AND rides.status IN ('accepted', 'arrived', 'started', 'completed'))
+       OR (rides.driver_id = ? AND rides.status IN ('accepted', 'arrived', 'started'))
        OR (rides.driver_id = ? AND rides.status = 'cancelled_client' AND rides.cancelled_at >= NOW() - INTERVAL 1 DAY)
     ORDER BY rides.created_at DESC
 ");

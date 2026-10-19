@@ -61,6 +61,18 @@
     <i class="ti ti-chevron-right" aria-hidden="true"></i>
   </a>
 
+  <!-- Lot 9 : bandeau "document bientôt expiré" (7 jours ou moins), fermable pour 24 h.
+       Géré par updateDocumentsBanner() dans chauffeur-ui.js. -->
+  <div class="doc-banner hidden" id="docExpiryBanner" role="alert">
+    <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+    <div class="doc-banner-text">
+      <div class="doc-banner-title" id="docBannerTitle"></div>
+      <div class="doc-banner-sub" id="docBannerSub"></div>
+    </div>
+    <button type="button" class="doc-banner-btn" id="docBannerRenew">Renouveler</button>
+    <button type="button" class="doc-banner-close" id="docBannerClose" aria-label="Fermer pendant 24 heures">&times;</button>
+  </div>
+
   <!-- FAB rafraîchir (visible sur onglet carte) -->
   <button class="map-fab" id="refreshFab" aria-label="Rafraîchir">
     <i class="ti ti-refresh" aria-hidden="true"></i>
@@ -160,13 +172,19 @@
           <div class="stat-value" id="statsAverage">0 FCFA</div>
         </div>
       </div>
-      <div class="section-title">Historique</div>
+      <div class="section-row">
+        <div class="section-title">Historique</div>
+        <button type="button" class="btn-export" id="historyExportBtn" aria-label="Exporter la période en CSV">
+          <i class="ti ti-download" aria-hidden="true"></i> CSV
+        </button>
+      </div>
       <div id="completedRides" role="list">
         <div class="empty-state">
           <div class="empty-icon">📋</div>
           <div class="empty-title">Aucune course terminée</div>
         </div>
       </div>
+      <button type="button" class="btn-more" id="historyMoreBtn" hidden>Voir plus</button>
     </div>
       <!-- Mini-modale de choix de période (popover, pas de translation hors écran) -->
     <div class="date-backdrop" id="dateBackdrop"></div>

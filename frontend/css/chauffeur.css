@@ -1399,3 +1399,67 @@ html, body {
 /* Compteur de caractères du signalement */
 .modal-counter { font-size: 12px; color: var(--c-text-3); text-align: right; margin-top: 4px; }
 .modal-counter.is-near { color: var(--c-red); font-weight: 600; }
+
+
+/* ═══════════════════════════════════════════════
+   LOT 7 — historique et gains
+═══════════════════════════════════════════════ */
+.section-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.section-row .section-title { margin-bottom: 0; }
+
+.btn-export {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 44px; padding: 0 14px;
+  background: var(--c-surface2); border: .5px solid var(--c-border);
+  border-radius: var(--radius-sm); color: var(--c-text-2);
+  font-family: var(--font); font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.btn-export:disabled { opacity: .5; cursor: not-allowed; }
+
+.btn-more {
+  display: block; width: 100%; min-height: 44px; margin: 12px 0 8px;
+  background: var(--c-surface2); border: .5px solid var(--c-border);
+  border-radius: var(--radius-sm); color: var(--c-text);
+  font-family: var(--font); font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.btn-more[hidden] { display: none; }
+.btn-more:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Ligne "date · Commission · Net" sur une carte de course terminée */
+.ride-gains { margin-top: 8px; font-size: 12px; color: var(--c-text-3); }
+.ride-gains strong { color: var(--c-green); font-weight: 700; }
+
+
+/* ═══════════════════════════════════════════════
+   LOT 9 — bandeau d'expiration des documents
+═══════════════════════════════════════════════ */
+.doc-banner {
+  position: absolute;
+  top: calc(var(--safe-t) + 58px);
+  left: 12px; right: 12px;
+  z-index: 55;
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 8px 10px 14px;
+  border-radius: var(--radius);
+  background: var(--c-red-bg);
+  border: 1px solid rgba(239, 68, 68, .35);
+  color: var(--c-text);
+  box-shadow: 0 6px 18px -6px rgba(17,24,39,.14);
+}
+.doc-banner.hidden { display: none; }
+.doc-banner > .ti-alert-triangle { font-size: 22px; color: var(--c-red); flex-shrink: 0; }
+.doc-banner-text { flex: 1; min-width: 0; }
+.doc-banner-title { font-size: 14px; font-weight: 700; }
+.doc-banner-sub   { font-size: 12px; color: var(--c-text-2); }
+.doc-banner-btn {
+  min-height: 44px; padding: 0 12px; flex-shrink: 0;
+  border: none; border-radius: var(--radius-sm);
+  background: var(--c-red); color: #fff;
+  font-family: var(--font); font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.doc-banner-close {
+  min-width: 44px; min-height: 44px; flex-shrink: 0;
+  border: none; background: none; cursor: pointer;
+  font-size: 24px; line-height: 1; color: var(--c-text-2);
+}
+.conn-banner-on .doc-banner { top: calc(var(--safe-t) + 86px); }

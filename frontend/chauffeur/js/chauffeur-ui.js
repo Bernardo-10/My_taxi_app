@@ -87,44 +87,12 @@
 /* ═══════════════════════════════════════════════
    ÉTAT GLOBAL
 ═══════════════════════════════════════════════ */
-function getDashboardCacheKey() {
-  // Sépare le cache par chauffeur pour éviter les fuites entre comptes
-  const id = (window.currentDriverId !== undefined && window.currentDriverId !== null)
-    ? String(window.currentDriverId)
-    : "anon";
-  return `taxigo_driver_dashboard_history_${id}`;
-}
-
-function loadDashboardCache() {
-  try {
-    const raw = localStorage.getItem(getDashboardCacheKey());
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (e) {
-    return [];
-  }
-}
-
-function persistDashboardCache(rides) {
-  try {
-    localStorage.setItem(getDashboardCacheKey(), JSON.stringify(Array.isArray(rides) ? rides : []));
-  } catch (e) {
-    // stockage local indisponible : l'état live reste en mémoire, le cache
-    // n'est alors qu'un meilleur-effort pour la reprise hors ligne.
-  }
-}
-
-function hydrateDashboardFromCache() {
-  if (Array.isArray(dashboardHistory) && dashboardHistory.length > 0) return;
-  const cached = loadDashboardCache();
-  if (cached.length > 0) dashboardHistory = cached;
-}
+// Lot 7 : l'ancien cache local de l'historique (jamais alimenté) est supprimé.
+// L'historique vient maintenant de get_history.php (voir historyState, chauffeur-api.js).
 
 let map;
 let driverMarker        = null;
 let allRides            = [];
-let dashboardHistory    = loadDashboardCache();
 
 // Itinéraire unique (voir section "MAP — ITINÉRAIRE UNIQUE")
 const ROUTE_DEVIATION_M     = 70;      // écart max au tracé avant de parler de déviation
@@ -592,8 +560,8 @@ function switchTab(tab) {
         fabEl.classList.add("hidden");
         panelCourses.classList.add("hidden");
         panelDashboard.classList.remove("hidden");
-        hydrateDashboardFromCache();
         updateDashboard();
+        loadHistory(true);          // Lot 7 : totaux + 1re page, calculés par le serveur
     }
 }
 
@@ -742,11 +710,10 @@ function initStatusToggle() {
 function onGoOffline() {
     syncWakeLock();     // Lot 5 : hors ligne → on libère l'écran (veille automatique de nouveau permise)
 
-    // Hors ligne : on garde l’historique du dashboard, mais on nettoie
-    // complètement le flux live pour ne plus afficher des rides pending/actives
-    // qui peuvent provenir d’un ancien session ou d’une fermeture de l’app
-    // avant la fin d’une course.
-    hydrateDashboardFromCache();
+    // Hors ligne : l'historique du dashboard (historyState) est conservé, mais on
+    // nettoie complètement le flux live pour ne plus afficher des rides
+    // pending/actives qui peuvent provenir d'une ancienne session ou d'une
+    // fermeture de l'app avant la fin d'une course.
 
     // Mieux que de simplement masquer certaines vues : on supprime aussi les
     // données live en mémoire pour éviter qu’un cache stale réapparaisse au
@@ -991,10 +958,16 @@ const DOCUMENT_GROUPS = {
   license:      { label: "Licence professionnelle", numberLabel: "Numéro de licence",       hasVerso: true  }
 };
 
-// Seuils d'alerte proactive (en jours avant expiration) — cf. rapport KYC,
-// §3.2 : rien au-delà de 15j, alerte discrète 15-3j, alerte insistante <3j.
-const DOC_ALERT_WARN_DAYS  = 15;
-const DOC_ALERT_URGENT_DAYS = 3;
+// Seuils d'alerte proactive (en jours avant expiration) — lot 9 :
+//   <= 30 j : alerte discrète (point rouge sur "Mes documents", avertissement orange)
+//   <= 7 j  : alerte insistante (bandeau sur l'écran principal, avertissement rouge)
+const DOC_ALERT_WARN_DAYS   = 30;
+const DOC_ALERT_URGENT_DAYS = 7;
+
+// Rappel de get_my_documents.php : au plus une fois toutes les 30 minutes
+// (hors ouverture du tiroir "Mes documents", qui recharge toujours).
+const DOC_RECHECK_MS = 30 * 60 * 1000;
+let lastDocsCheckAt = 0;
 
 function openDocuments() {
   const panel = document.getElementById("documentsPanel");
@@ -1025,6 +998,7 @@ async function loadMyDocuments() {
       return;
     }
     renderDocumentsList(data.documents, container);
+    lastDocsCheckAt = Date.now();
     updateDocumentsAlertDot(data.documents);
     if (banner) banner.innerHTML = "";
   } catch (e) {
@@ -1038,16 +1012,75 @@ async function loadMyDocuments() {
 // rapport KYC §3.2.
 function updateDocumentsAlertDot(documents) {
   const dot = document.getElementById("documentsAlertDot");
-  if (!dot) return;
-  const needsAttention = Object.values(documents).some(doc => {
-    const missingData = !doc.number || !doc.expiration || !doc.photo_recto || (doc.photo_verso === undefined && true);
-    return (
-      (typeof doc.days_until_expiration === "number" && doc.days_until_expiration <= DOC_ALERT_WARN_DAYS) ||
-      (doc.pending && doc.pending.status === "rejected") ||
-      (missingData && (!doc.pending || doc.pending.status !== "approved"))
-    );
-  });
-  dot.hidden = !needsAttention;
+  if (dot) {
+    const needsAttention = Object.entries(documents).some(([key, doc]) => {
+      // Même règle que renderDocumentCard() : le verso n'est exigé que pour
+      // les documents qui en ont un (pas la carte grise).
+      const hasVerso    = !!DOCUMENT_GROUPS[key]?.hasVerso;
+      const missingData = !doc.number || !doc.expiration || !doc.photo_recto || (hasVerso && !doc.photo_verso);
+      return (
+        (typeof doc.days_until_expiration === "number" && doc.days_until_expiration <= DOC_ALERT_WARN_DAYS) ||
+        (doc.pending && doc.pending.status === "rejected") ||
+        (missingData && (!doc.pending || doc.pending.status !== "approved"))
+      );
+    });
+    dot.hidden = !needsAttention;
+  }
+  updateDocumentsBanner(documents);
+}
+
+/* ── Bandeau d'expiration sur l'écran principal (lot 9) ─────────────
+   Affiché quand un document expire dans 7 jours ou moins (ou est expiré),
+   sauf si un renouvellement est déjà en attente de vérification.
+   Le chauffeur peut le fermer : il revient après 24 h. */
+const DOC_BANNER_SNOOZE_MS = 24 * 60 * 60 * 1000;
+
+function docBannerKey() {
+  return `taxigo_doc_banner_until_${window.currentDriverId ?? "anon"}`;
+}
+function isDocBannerSnoozed() {
+  try { return Date.now() < Number(localStorage.getItem(docBannerKey()) || 0); }
+  catch (e) { return false; }                 // stockage indisponible : on affiche
+}
+function snoozeDocBanner() {
+  try { localStorage.setItem(docBannerKey(), String(Date.now() + DOC_BANNER_SNOOZE_MS)); }
+  catch (e) { /* tant pis : le bandeau reviendra au prochain contrôle */ }
+  document.getElementById("docExpiryBanner")?.classList.add("hidden");
+}
+
+function updateDocumentsBanner(documents) {
+  const banner = document.getElementById("docExpiryBanner");
+  if (!banner) return;
+
+  // Documents urgents : expirent bientôt, avec leurs données complètes et sans
+  // renouvellement déjà envoyé.
+  const urgent = Object.entries(documents)
+    .filter(([key, doc]) =>
+      typeof doc.days_until_expiration === "number" &&
+      doc.days_until_expiration <= DOC_ALERT_URGENT_DAYS &&
+      !(doc.pending && doc.pending.status === "pending"))
+    .map(([key, doc]) => ({ label: DOCUMENT_GROUPS[key]?.label || key, days: doc.days_until_expiration }))
+    .sort((a, b) => a.days - b.days);
+
+  if (urgent.length === 0 || isDocBannerSnoozed()) {
+    banner.classList.add("hidden");
+    return;
+  }
+
+  const first = urgent[0];
+  let title;
+  if (urgent.length > 1) {
+    title = `${urgent.length} documents à renouveler`;
+  } else if (first.days <= 0) {
+    title = `${first.label} expiré`;
+  } else {
+    title = `${first.label} expire ${first.days === 1 ? "demain" : `dans ${first.days} jours`}`;
+  }
+  setText("docBannerTitle", title);
+  setText("docBannerSub", urgent.some(d => d.days <= 0)
+    ? "Renouvelez-le pour pouvoir passer en ligne."
+    : "Renouvelez-le pour continuer à recevoir des courses.");
+  banner.classList.remove("hidden");
 }
 
 function renderDocumentsList(documents, container) {
@@ -1332,7 +1365,11 @@ function initDocuments() {
 
   // Vérification silencieuse au chargement (badge discret uniquement,
   // pas d'alerte plein écran) — cf. rapport KYC §3.3, point 1.
-  loadDocumentsAlertOnly();
+  loadDocumentsAlertOnly(true);
+
+  // Boutons du bandeau d'expiration (lot 9)
+  document.getElementById("docBannerRenew")?.addEventListener("click", openDocuments);
+  document.getElementById("docBannerClose")?.addEventListener("click", snoozeDocBanner);
 
   // Re-vérification au retour au premier plan — cf. rapport KYC §3.3,
   // point 2. Une date d'expiration ne change qu'une fois par jour, donc
@@ -1347,13 +1384,20 @@ function initDocuments() {
 
 // Charge uniquement de quoi renseigner le badge (pas d'ouverture du
 // tiroir) — appelé au chargement de page et au retour au premier plan.
-async function loadDocumentsAlertOnly() {
+// Lot 9 : au plus une fois toutes les 30 min (sauf `force`, au chargement de page).
+async function loadDocumentsAlertOnly(force = false) {
+  if (!force && Date.now() - lastDocsCheckAt < DOC_RECHECK_MS) return;
+  const previous = lastDocsCheckAt;
+  lastDocsCheckAt = Date.now();               // évite deux requêtes simultanées
   try {
     const data = await fetchMyDocuments();
     if (data.status === "success" && data.documents) {
       updateDocumentsAlertDot(data.documents);
+    } else {
+      lastDocsCheckAt = previous;
     }
   } catch (e) {
+    lastDocsCheckAt = previous;               // échec : on pourra réessayer au prochain retour
     // silencieux — le badge reste dans son dernier état connu
   }
 }
@@ -1884,6 +1928,23 @@ function createRideCard(ride) {
     card.appendChild(header);
     card.appendChild(route);
     card.appendChild(meta);
+
+    // Lot 7 : course terminée → date, commission RÉELLEMENT débitée et net
+    // (valeurs calculées par get_history.php).
+    if (status === "completed" && ride.commission_fcfa !== undefined) {
+        const gains = document.createElement("div");
+        gains.className = "ride-gains";
+        const d = getRideDate(ride);
+        const when = d
+            ? d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) + " " +
+              d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) + " · "
+            : "";
+        const net = document.createElement("strong");
+        net.textContent = `Net ${Number(ride.net_fcfa).toLocaleString()} FCFA`;
+        gains.append(`${when}Commission −${Number(ride.commission_fcfa).toLocaleString()} · `, net);
+        card.appendChild(gains);
+    }
+
     if (actions.children.length > 0) card.appendChild(actions);
 
     return card;
@@ -2339,35 +2400,47 @@ function createSafePopup(title, body) {
    DASHBOARD
 ═══════════════════════════════════════════════ */
 function updateDashboard() {
-    const sourceRides = Array.isArray(dashboardHistory) && dashboardHistory.length > 0 ? dashboardHistory : allRides;
-    // Le filtre de période ne touche que les courses terminées ; "En cours" reste intact.
-    const completed = sourceRides.filter(r => r.status === "completed" && inDashboardRange(r));
-    const active    = sourceRides.filter(r => r.status === "accepted" || r.status === "arrived" || r.status === "started");
-    const total     = completed.reduce((s, r) => {
-        const price      = parseInt(r.price_fcfa || 0);
-        const commission = Math.round(price * COMMISSION_RATE);
-        return s + (price - commission);
-    }, 0);
-    const avg       = completed.length ? Math.round(total / completed.length) : 0;
-    const dist      = completed.reduce((s, r) => s + parseFloat(r.distance_km || 0), 0);
+    // "En cours" vient toujours du flux live ; tout le reste (courses terminées,
+    // gains, distance) vient de get_history.php via historyState (lot 7).
+    const active = allRides.filter(r => r.status === "accepted" || r.status === "arrived" || r.status === "started");
+    setText("statsActive", active.length);
 
-    setText("statsCompleted", completed.length);
-    setText("statsActive",    active.length);
-    setText("statsTotal",     total.toLocaleString() + " FCFA");
-    setText("statsAverage",   avg.toLocaleString() + " FCFA");
-    setText("statsDistance",  dist.toFixed(1) + " km");
+    const t = historyState.totals;
+    if (t) {
+        const net = t.net_fcfa || 0;
+        setText("statsCompleted", t.count);
+        setText("statsTotal",     net.toLocaleString() + " FCFA");
+        setText("statsAverage",   (t.count ? Math.round(net / t.count) : 0).toLocaleString() + " FCFA");
+        setText("statsDistance",  Number(t.distance_km || 0).toFixed(1) + " km");
+    } else {
+        const dash = historyState.loading ? "…" : "0";
+        setText("statsCompleted", dash);
+        setText("statsTotal",     dash + " FCFA");
+        setText("statsAverage",   dash + " FCFA");
+        setText("statsDistance",  dash + " km");
+    }
 
     const historyEl = document.getElementById("completedRides");
     if (!historyEl) return;
     historyEl.innerHTML = "";
 
-    if (completed.length === 0) {
-        historyEl.appendChild(emptyState("📋",
+    if (historyState.rides.length === 0) {
+        if (historyState.loading)      historyEl.appendChild(emptyState("⏳", "Chargement…", ""));
+        else if (historyState.error)   historyEl.appendChild(emptyState("⚠️", "Historique indisponible", "Vérifiez votre connexion."));
+        else historyEl.appendChild(emptyState("📋",
             dashboardRange ? "Aucune course sur cette période" : "Aucune course terminée", ""));
-        return;
+    } else {
+        historyState.rides.forEach(ride => historyEl.appendChild(createRideCard(ride)));
     }
 
-    completed.slice().reverse().forEach(ride => historyEl.appendChild(createRideCard(ride)));
+    // Bouton "Voir plus" (20 courses par page) / "Réessayer" en cas d'erreur
+    const moreBtn = document.getElementById("historyMoreBtn");
+    if (moreBtn) {
+        moreBtn.hidden   = !(historyState.hasMore || historyState.error);
+        moreBtn.disabled = historyState.loading;
+        moreBtn.textContent = historyState.loading ? "Chargement…"
+            : historyState.error ? "Réessayer" : "Voir plus";
+    }
 }
 
 /* ═══════════════════════════════════════════════
@@ -2385,12 +2458,6 @@ function getRideDate(ride) {
     if (!raw) return null;
     const d = new Date(String(raw).replace(" ", "T"));   // "2026-10-07 21:54:00" → compatible Safari
     return isNaN(d) ? null : d;
-}
-
-function inDashboardRange(ride) {
-    if (!dashboardRange) return true;
-    const d = getRideDate(ride);
-    return !!d && d >= dashboardRange.from && d <= dashboardRange.to;
 }
 
 const pad2 = n => String(n).padStart(2, "0");
@@ -2432,7 +2499,7 @@ function applyDateFilter() {
     if (from > to) [from, to] = [parseInputDate(toInputDate(to), false), parseInputDate(toInputDate(from), true)];
     dashboardRange = { from, to };
     renderDateFilterState();
-    updateDashboard();
+    loadHistory(true, true);       // Lot 7 : la période est appliquée par le serveur
     closeDateFilter();
 }
 
@@ -2442,7 +2509,7 @@ function resetDateFilter() {
     if (f) f.value = "";
     if (t) t.value = "";
     renderDateFilterState();
-    updateDashboard();
+    loadHistory(true, true);
     closeDateFilter();
 }
 
@@ -2480,6 +2547,12 @@ function initDateFilter() {
     document.querySelectorAll("#datePop [data-preset]").forEach(b =>
         b.addEventListener("click", () => setDatePreset(b.dataset.preset)));
     renderDateFilterState();
+
+    // Lot 7 : pagination et export CSV
+    document.getElementById("historyMoreBtn")?.addEventListener("click", () => {
+        loadHistory(historyState.page === 0);      // 1re page à refaire si elle a échoué
+    });
+    document.getElementById("historyExportBtn")?.addEventListener("click", exportHistoryCsv);
 }
 
 function getRideClientLabel(rideOrName) {

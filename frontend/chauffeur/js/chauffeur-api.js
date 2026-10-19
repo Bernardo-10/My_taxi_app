@@ -363,6 +363,126 @@ async function updateDriverPositionInDB(lat, lng) {
 }
 
 /* ═══════════════════════════════════════════════
+   LOT 7 — HISTORIQUE ET GAINS (get_history.php)
+   Le serveur calcule les totaux (exacts sur toute la période) et renvoie
+   les courses terminées par pages de 20.
+═══════════════════════════════════════════════ */
+const historyState = {
+    rides  : [],       // courses terminées déjà chargées (pages cumulées)
+    totals : null,     // { count, net_fcfa, distance_km, ... } de la période
+    page   : 0,        // dernière page chargée
+    hasMore: false,    // reste-t-il une page ?
+    loading: false,
+    error  : false,
+};
+let historySeq = 0;    // numéro de requête : une réponse périmée est ignorée
+
+/** Paramètres de période (dashboardRange est défini dans chauffeur-ui.js). */
+function historyParams(extra) {
+    const q = new URLSearchParams(extra || {});
+    if (dashboardRange) {
+        q.set("from", toInputDate(dashboardRange.from));
+        q.set("to",   toInputDate(dashboardRange.to));
+    }
+    return q;
+}
+
+/**
+ * Charge l'historique.
+ *   reset = true  : repart de la 1re page (ouverture de l'onglet, changement de période)
+ *   reset = false : ajoute la page suivante ("Voir plus")
+ *   clear = true  : vide d'abord l'affichage (changement de période)
+ */
+async function loadHistory(reset = true, clear = false) {
+    if (!reset && (historyState.loading || !historyState.hasMore)) return;
+    if (reset && clear) { historyState.rides = []; historyState.totals = null; historyState.hasMore = false; }
+
+    const seq  = ++historySeq;
+    const page = reset ? 1 : historyState.page + 1;
+    historyState.loading = true;
+    historyState.error   = false;
+    updateDashboard();
+
+    try {
+        const res = await fetch(`${DRIVER_API_BASE}/chauffeur/get_history.php?${historyParams({ page })}`, { cache: "no-store" });
+        if (res.status === 401) { window.location.href = "/chauffeur/login"; return; }
+        const data = await res.json();
+        if (seq !== historySeq) return;                 // une requête plus récente a pris le relais
+        if (data.status !== "success") throw new Error(data.message || "Erreur historique");
+
+        if (reset) {
+            historyState.rides = data.rides;
+        } else {
+            const known = new Set(historyState.rides.map(r => String(r.id)));
+            historyState.rides = historyState.rides.concat(data.rides.filter(r => !known.has(String(r.id))));
+        }
+        historyState.totals  = data.totals;
+        historyState.page    = data.page;
+        historyState.hasMore = data.has_more;
+    } catch (err) {
+        if (seq === historySeq) {
+            historyState.error = true;
+            showToast(networkErrorMessage(err, "Historique indisponible"), "error");
+        }
+    } finally {
+        if (seq === historySeq) {
+            historyState.loading = false;
+            updateDashboard();
+        }
+    }
+}
+
+/** Une cellule CSV : entre guillemets, avec protection contre l'injection de formule Excel. */
+function csvText(value) {
+    let s = String(value ?? "");
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;        // adresse saisie par un client : jamais interprétée comme formule
+    return '"' + s.replace(/"/g, '""') + '"';
+}
+
+/** Export CSV de la période affichée, fabriqué dans le navigateur (aucun code serveur de plus). */
+async function exportHistoryCsv() {
+    const btn = document.getElementById("historyExportBtn");
+    const restore = setButtonLoading(btn, "Export…");
+    try {
+        const res = await fetch(`${DRIVER_API_BASE}/chauffeur/get_history.php?${historyParams({ all: 1 })}`, { cache: "no-store" });
+        if (res.status === 401) { window.location.href = "/chauffeur/login"; return; }
+        const data = await res.json();
+        if (data.status !== "success") throw new Error(data.message || "Export impossible");
+        if (!data.rides.length) { showToast("Aucune course à exporter sur cette période", "info"); return; }
+
+        const lines = [["Date", "Départ", "Arrivée", "Distance (km)", "Prix (FCFA)", "Commission (FCFA)", "Net (FCFA)"].map(csvText).join(";")];
+        data.rides.forEach(r => {
+            lines.push([
+                csvText(String(r.completed_at || "").slice(0, 16)),
+                csvText(r.pickup),
+                csvText(r.destination),
+                Number(r.distance_km || 0).toFixed(1),
+                r.price_fcfa, r.commission_fcfa, r.net_fcfa,
+            ].join(";"));
+        });
+
+        // BOM UTF-8 + séparateur ";" : s'ouvre correctement dans Excel en français
+        const blob = new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement("a");
+        a.href = url;
+        a.download = dashboardRange
+            ? `taxigo_courses_${toInputDate(dashboardRange.from)}_${toInputDate(dashboardRange.to)}.csv`
+            : "taxigo_courses_toutes.csv";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+        showToast(data.truncated ? "Export limité aux 5000 courses les plus récentes" : "Export prêt", data.truncated ? "warning" : "success");
+    } catch (err) {
+        showToast(networkErrorMessage(err, "Export impossible"), "error");
+    } finally {
+        restore();
+    }
+}
+
+/* ═══════════════════════════════════════════════
    ACTIONS CHAUFFEUR
 ═══════════════════════════════════════════════ */
 
