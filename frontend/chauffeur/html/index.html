@@ -16,6 +16,8 @@
   <link rel="apple-touch-icon" href="/chauffeur/icons/chauffeur-180.png" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css" />
+  <link rel="preload" href="/frontend/fonts/dm-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="/frontend/css/fonts.css" />
   <link rel="stylesheet" href="/frontend/css/chauffeur.css" />
 </head>
 <body>
@@ -23,6 +25,9 @@
 <div class="toast-stack" id="toastStack" aria-live="polite" aria-atomic="false"></div>
 
 <div class="app" id="app">
+
+  <!-- Lot 5 : bandeau d'état "Hors connexion" / GPS (géré par chauffeur-comfort.js) -->
+  <div class="conn-banner" id="connBanner" role="status" aria-live="polite" hidden></div>
 
   <!-- Map Leaflet (toujours monté) -->
   <div id="map" aria-label="Carte des courses disponibles"></div>
@@ -355,6 +360,22 @@
     </div>
   </div>
 
+  <!-- Lot 5 : formulaire de signalement d'un problème (la logique est dans chauffeur-ui.js) -->
+  <div class="modal-overlay" id="reportModal" role="dialog" aria-label="Signaler un problème" aria-hidden="true" inert>
+    <div class="modal-sheet" role="document">
+      <div class="modal-handle"></div>
+      <div class="modal-title">Signaler un problème</div>
+      <div class="modal-subtitle" id="reportModalSub"></div>
+      <textarea class="modal-textarea" id="reportTextarea" maxlength="1000"
+                placeholder="Décrivez le problème rencontré…" aria-describedby="reportCounter"></textarea>
+      <div class="modal-counter" id="reportCounter" aria-live="polite">0 / 1000</div>
+      <div class="modal-actions">
+        <button class="modal-cancel" type="button" id="reportCancelBtn">Annuler</button>
+        <button class="modal-submit" type="button" id="reportSubmitBtn">Envoyer</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Bottom Navigation -->
   <nav class="bottom-nav" role="navigation" aria-label="Navigation principale">
     <button class="nav-btn active" data-tab="map" id="navMap"
@@ -386,6 +407,7 @@
 <script src="/frontend/js/confirm-modal.js" defer></script>
 <script src="/frontend/js/notify-feedback.js" defer></script>
 <script src="/frontend/chauffeur/js/route-planner.js" defer></script>
+<script src="/frontend/chauffeur/js/chauffeur-comfort.js" defer></script>
 <script src="/frontend/chauffeur/js/chauffeur-api.js" defer></script>
 <script src="/frontend/chauffeur/js/chauffeur-ui.js" defer></script>
 <script>

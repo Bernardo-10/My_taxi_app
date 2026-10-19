@@ -5,8 +5,11 @@ error_reporting(E_ALL);
 ini_set("display_errors", 0);
 
 $driverId = require_driver_id();
-$lat = $_GET["lat"] ?? null;
-$lng = $_GET["lng"] ?? null;
+// Lot 5 : le front envoie maintenant la position en POST. Le GET reste accepté
+// pendant la transition (ancien JS encore en cache chez certains chauffeurs) :
+// à retirer plus tard, quand tous les chauffeurs ont rechargé l'application.
+$lat = $_POST["lat"] ?? $_GET["lat"] ?? null;
+$lng = $_POST["lng"] ?? $_GET["lng"] ?? null;
 
 if ($lat === null || $lng === null) {
     json_response(["status" => "error", "message" => "Coordonnees manquantes"], 400);

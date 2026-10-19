@@ -300,6 +300,9 @@ function initAdaptivePolling() {
 }
 
 async function schedulePoll() {
+    // Lot 5 : garde l'écran allumé tant qu'on est en ligne (chauffeur-comfort.js)
+    syncWakeLock();
+
     // BUG #1 FIX : ne pas fetcher quand hors ligne
     if (!isOnline) {
         pollTimeout = setTimeout(schedulePoll, 5000);
@@ -445,7 +448,7 @@ function initMap() {
 
     gpsWatchId = navigator.geolocation.watchPosition(
         onGpsPosition,
-        (err) => console.warn("GPS watch error:", err.message),
+        onGpsWatchError,           // Lot 5 : message si permission refusée (chauffeur-comfort.js)
         { enableHighAccuracy: true, maximumAge: 0 }
     );
 }
@@ -737,6 +740,8 @@ function initStatusToggle() {
  * qui ne vient jamais (poll bloqué par !isOnline).
  */
 function onGoOffline() {
+    syncWakeLock();     // Lot 5 : hors ligne → on libère l'écran (veille automatique de nouveau permise)
+
     // Hors ligne : on garde l’historique du dashboard, mais on nettoie
     // complètement le flux live pour ne plus afficher des rides pending/actives
     // qui peuvent provenir d’un ancien session ou d’une fermeture de l’app
@@ -1411,6 +1416,9 @@ function initReportModal() {
     if (cancelBtn) cancelBtn.addEventListener("click", closeReportModal);
     if (overlay)   overlay.addEventListener("click", e => { if (e.target === overlay) closeReportModal(); });
 
+    // Lot 5 : compteur "N / 1000" (la limite réelle est aussi dans le HTML : maxlength)
+    document.getElementById("reportTextarea")?.addEventListener("input", updateReportCounter);
+
     if (submitBtn) {
         submitBtn.addEventListener("click", async () => {
             const text = (document.getElementById("reportTextarea")?.value || "").trim();
@@ -1418,6 +1426,16 @@ function initReportModal() {
             await submitReportAPI(reportRideId, text, submitBtn);
         });
     }
+}
+
+/** Lot 5 : met à jour le compteur de caractères du signalement. */
+function updateReportCounter() {
+    const ta = document.getElementById("reportTextarea");
+    const counter = document.getElementById("reportCounter");
+    if (!ta || !counter) return;
+    const n = ta.value.length;
+    counter.textContent = `${n} / 1000`;
+    counter.classList.toggle("is-near", n >= 900);   // rouge à partir de 900
 }
 
 function openReportModal(rideId) {
@@ -1428,7 +1446,9 @@ function openReportModal(rideId) {
     const ride  = allRides.find(item => String(item.id) === String(rideId));
     if (sub)   sub.textContent = getRideClientLabel(ride);
     if (ta)    ta.value = "";
+    updateReportCounter();
     if (modal) {
+        modal.removeAttribute("inert");          // Lot 5 : le formulaire est maintenant dans index.html
         modal.classList.add("open");
         modal.setAttribute("aria-hidden", "false");
         setTimeout(() => ta?.focus(), 300);
@@ -1440,6 +1460,7 @@ function closeReportModal() {
     if (modal) {
         modal.classList.remove("open");
         modal.setAttribute("aria-hidden", "true");
+        modal.setAttribute("inert", "");
     }
     reportRideId = null;
 }

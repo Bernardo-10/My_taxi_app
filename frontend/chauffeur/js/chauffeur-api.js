@@ -25,6 +25,23 @@ async function driverFetch(url, options) {
         window.location.href = "/chauffeur/login";
         return new Promise(() => {});
     }
+
+    // Lot 5 — erreur serveur (5xx) : si le serveur a renvoyé un JSON avec un
+    // "message", on laisse l'appelant l'afficher comme avant. Sinon (page HTML
+    // d'erreur PHP, réponse vide...), on lève une erreur dédiée : le toast dit
+    // "serveur" au lieu du faux "Erreur de connexion".
+    if (res.status >= 500) {
+        let aMessage = false;
+        try {
+            const body = await res.clone().json();
+            aMessage = !!(body && body.message);
+        } catch (e) { /* corps non JSON */ }
+        if (!aMessage) {
+            const err = new Error("Le serveur a un problème. Réessayez dans un instant.");
+            err.isServerError = true;
+            throw err;
+        }
+    }
     return res;
 }
 
@@ -36,6 +53,7 @@ let lastKnownPos = null;  // { lat, lng, timestamp }
 /** Appelé par onGpsPosition() dans chauffeur-ui.js à chaque fix GPS. */
 function cacheGpsPosition(lat, lng) {
     lastKnownPos = { lat, lng, timestamp: Date.now() };
+    onGpsFixReceived();              // Lot 5 : efface l'avertissement GPS (chauffeur-comfort.js)
 }
 
 /**
@@ -293,9 +311,31 @@ function getDistanceFromLatLng(lat1, lng1, lat2, lng2) {
 ═══════════════════════════════════════════════ */
 
 async function updateDriverPosition() {
-    if (typeof isOnline !== "undefined" && !isOnline) return;
+    if (typeof isOnline !== "undefined" && !isOnline) {
+        setGpsStale(false);          // hors ligne : plus d'avertissement GPS
+        return;
+    }
     if (!driverMarker) return;
     if (!lastKnownPos) return;
+
+    // Lot 5 (5-B) — âge de la dernière position reçue du GPS.
+    //   < 30 s  : normal, on envoie.
+    //   30-60 s : on tente d'abord de rafraîchir le GPS (utile à l'arrêt, car
+    //             certains téléphones n'émettent rien quand on ne bouge pas).
+    //             Si ça échoue, on envoie quand même, avec un avertissement.
+    //   > 60 s  : on N'ENVOIE PLUS. Le serveur reçoit alors le silence et
+    //             applique sa règle des 10 min (chauffeur remis hors ligne).
+    let age = Date.now() - lastKnownPos.timestamp;
+    if (age > GPS_WARN_MS) {
+        await tryRefreshGps();
+        age = Date.now() - lastKnownPos.timestamp;
+    }
+
+    if (age > GPS_STALE_MS) {
+        setGpsStale(true, "GPS ancien : position non envoyée");
+        return;
+    }
+    setGpsStale(age > GPS_WARN_MS, "Signal GPS faible");
 
     const { lat, lng } = lastKnownPos;
     await updateDriverPositionInDB(lat, lng);
@@ -306,7 +346,13 @@ async function updateDriverPositionInDB(lat, lng) {
     // Le serveur met à jour lui-même TOUTES les courses actives du chauffeur
     // (accepted / arrived / started), plus besoin de lui envoyer ride_id.
     try {
-        const res = await fetch(`${DRIVER_API_BASE}/chauffeur/update_ride_driver_position.php?lat=${lat}&lng=${lng}`);
+        // Lot 5 : POST (avant : GET). Le PHP accepte les deux pendant la
+        // transition, voir update_ride_driver_position.php.
+        const res = await fetch(`${DRIVER_API_BASE}/chauffeur/update_ride_driver_position.php`, {
+            method : "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body   : new URLSearchParams({ lat: String(lat), lng: String(lng) })
+        });
         const payload = await res.json();
         if (!payload || payload.status !== "success") {
             console.warn("Position update failed:", payload?.message || "unknown error");
@@ -360,7 +406,7 @@ async function acceptRide(id, btn) {
         if (err?.code === 3 || err?.code === 2) {
             showToast("GPS indisponible. Activez la localisation.", "error");
         } else {
-            showToast("Erreur de connexion au serveur", "error");
+            showToast(networkErrorMessage(err, "Erreur de connexion au serveur"), "error");
         }
     } finally {
         // restore() appelé UNE SEULE fois — chemin succès ET erreur
@@ -388,8 +434,8 @@ async function refuseRide(id, btn) {
         }
         // Dans tous les cas on recharge la liste : la carte disparaît si la course est partie.
         await checkNewRides();
-    } catch {
-        showToast("Erreur lors du refus", "error");
+    } catch (err) {
+        showToast(networkErrorMessage(err, "Erreur lors du refus"), "error");
     } finally {
         restore();
     }
@@ -420,8 +466,8 @@ async function cancelRide(id, btn) {
         } else {
             showToast(result.message || "Impossible d'annuler", "error");
         }
-    } catch {
-        showToast("Erreur de connexion", "error");
+    } catch (err) {
+        showToast(networkErrorMessage(err), "error");
     } finally {
         restore();
     }
@@ -444,8 +490,8 @@ async function startRide(id, btn) {
         } else {
             showToast(result.message || "Impossible de démarrer", "error");
         }
-    } catch {
-        showToast("Erreur de connexion", "error");
+    } catch (err) {
+        showToast(networkErrorMessage(err), "error");
     } finally {
         restore();
     }
@@ -476,8 +522,8 @@ async function arriveRide(id, btn) {
         } else {
             showToast(result.message || "Impossible de confirmer l'arrivee", "error");
         }
-    } catch {
-        showToast("Erreur de connexion", "error");
+    } catch (err) {
+        showToast(networkErrorMessage(err), "error");
     } finally {
         restore();
     }
@@ -512,7 +558,7 @@ async function completeRide(id, btn) {
                 }
             }
         } else {
-            showToast(err?.message || "Erreur de connexion", "error");
+            showToast(networkErrorMessage(err), "error");
         }
     } finally {
         restore();
@@ -577,8 +623,8 @@ async function submitReportAPI(id, problem, btn) {
         } else {
             showToast(result.message || "Impossible de signaler", "error");
         }
-    } catch {
-        showToast("Erreur de connexion", "error");
+    } catch (err) {
+        showToast(networkErrorMessage(err), "error");
     } finally {
         restore();
     }

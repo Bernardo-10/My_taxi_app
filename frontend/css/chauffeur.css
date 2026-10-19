@@ -4,7 +4,7 @@
    Font   : DM Sans (Google Fonts)
    ═══════════════════════════════════════════════ */
 
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+/* Polices : voir /frontend/css/fonts.css (chargé par index.html) */
 
 /* ── Reset & tokens ─────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1367,3 +1367,35 @@ html, body {
   background: var(--c-amber); color: #fff;
   font-family: var(--font); font-size: 13px; font-weight: 700; cursor: pointer;
 }
+
+/* ═══════════════════════════════════════════════
+   LOT 5 — bandeau d'état, boutons 44 px
+═══════════════════════════════════════════════ */
+
+/* Bandeau en haut de l'écran : "Hors connexion" / problème GPS */
+.conn-banner {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  z-index: 70;
+  padding: calc(var(--safe-t) + 5px) 12px 5px;
+  font-size: 12px; font-weight: 600; text-align: center;
+  color: #fff;
+  background: var(--c-red);
+}
+.conn-banner[data-kind="gps"] { background: var(--c-amber-d); }
+.conn-banner[hidden] { display: none; }
+
+/* Quand le bandeau est visible, on décale le haut de l'écran (≈ 28 px) */
+.conn-banner-on .topbar     { top: 28px; }
+.conn-banner-on .kyc-banner { top: calc(var(--safe-t) + 86px); }
+.conn-banner-on .route-banner { top: calc(var(--safe-t) + 80px); }
+.conn-banner-on .leaflet-top { margin-top: 28px; }
+
+/* Zones tactiles de 44 px minimum (boutons d'action déjà à 44 px) */
+.status-toggle { min-height: 44px; padding-left: 14px; padding-right: 14px; }
+.nav-btn       { min-height: 44px; }
+.modal-cancel, .modal-submit { min-height: 44px; }
+
+/* Compteur de caractères du signalement */
+.modal-counter { font-size: 12px; color: var(--c-text-3); text-align: right; margin-top: 4px; }
+.modal-counter.is-near { color: var(--c-red); font-weight: 600; }

@@ -3,13 +3,15 @@
 // Même rôle et même logique de mise à jour que la version client
 // (voir les commentaires dans frontend/client/html/sw.js) : incrémenter
 // CACHE_NAME à chaque déploiement qui touche un fichier de APP_SHELL.
-const CACHE_NAME = "taxigo-chauffeur-shell-v9";
+const CACHE_NAME = "taxigo-chauffeur-shell-v8";
 
 const APP_SHELL = [
   "/chauffeur/",
   "/frontend/css/chauffeur.css",
+  "/frontend/css/fonts.css",
   "/frontend/js/confirm-modal.js",
   "/frontend/chauffeur/js/route-planner.js",
+  "/frontend/chauffeur/js/chauffeur-comfort.js",
   "/frontend/chauffeur/js/chauffeur-api.js",
   "/frontend/chauffeur/js/chauffeur-ui.js",
 ];
@@ -82,6 +84,10 @@ if (messaging) {
       icon: "/chauffeur/icons/chauffeur-192.png",
       badge: "/chauffeur/icons/chauffeur-192.png",
       data: payload.data || {},
+      // Lot 5 (5-D) : même tag que notifyFeedback() (notify-feedback.js). Si le
+      // polling ET le push FCM annoncent la même course, la 2e notification
+      // REMPLACE la 1re au lieu de s'empiler. Pas de renotify : pas de 2e sonnerie.
+      tag: "taxigo-ride",
     };
     self.registration.showNotification(title, options);
   });
