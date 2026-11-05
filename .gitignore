@@ -11,3 +11,4 @@ scripts
 tel
 *.txt
 backend/config/firebase-service-account.json
+*.md

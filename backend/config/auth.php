@@ -36,6 +36,11 @@ class DbSessionHandler implements SessionHandlerInterface {
     }
 
     public function write($id, $data): bool {
+        // S-A (S13) : une session VIDE (visiteur anonyme, robot...) n'est pas enregistrée.
+        // Avant, chaque visite créait une ligne dans `sessions` (table qui gonflait sans fin).
+        if ($data === "") {
+            return true;
+        }
         $time = time();
         $stmt = $this->conn->prepare("REPLACE INTO sessions (id, data, last_activity) VALUES (?, ?, ?)");
         $stmt->bind_param("ssi", $id, $data, $time);
@@ -167,7 +172,9 @@ if (!empty($_SESSION["last_activity"]) && (time() - (int) $_SESSION["last_activi
     $sessionExpired = true;
 }
 
-if (!$sessionExpired && session_status() === PHP_SESSION_ACTIVE) {
+// S-A (S13) : on ne "touche" la session que si quelqu'un est connecté. Écrire
+// last_activity pour un visiteur anonyme suffisait à créer une ligne en base.
+if (!$sessionExpired && session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION["role"])) {
     $_SESSION["last_activity"] = time();
     refresh_session_cookie();
 }
@@ -284,14 +291,59 @@ function require_client_id() {
     return (int) $_SESSION["client_id"];
 }
 
+/**
+ * S-A (S1) : un chauffeur désactivé (ou supprimé) ne doit plus rien pouvoir faire,
+ * même avec une session encore ouverte. Contrôle en base AU PLUS toutes les
+ * DRIVER_STATUS_RECHECK_SECONDS secondes par session (au lieu de chaque requête :
+ * le quota de requêtes d'InfinityFree est serré). De plus, la désactivation par
+ * l'admin supprime aussitôt la session du chauffeur (set_user_status.php).
+ */
+const DRIVER_STATUS_RECHECK_SECONDS = 30;
+
 function require_driver_id() {
     if (empty($_SESSION["driver_id"]) || ($_SESSION["role"] ?? "") !== "chauffeur") {
         json_response(["status" => "error", "message" => "Chauffeur non connecte"], 401);
     }
-    return (int) $_SESSION["driver_id"];
+    $driverId = (int) $_SESSION["driver_id"];
+
+    $lastCheck = (int) ($_SESSION["driver_checked_at"] ?? 0);
+    if (time() - $lastCheck >= DRIVER_STATUS_RECHECK_SECONDS) {
+        $conn = db_connect();
+        $stmt = $conn->prepare("SELECT status FROM chauffeur WHERE id = ? LIMIT 1");
+        $stmt->bind_param("i", $driverId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        $conn->close();
+
+        if (!$row || $row["status"] !== "active") {
+            expire_session();   // la session est détruite : le front renvoie vers la connexion
+            json_response(["status" => "error", "message" => "Compte desactive ou introuvable"], 401);
+        }
+        $_SESSION["driver_checked_at"] = time();
+    }
+    return $driverId;
+}
+
+/**
+ * Efface les sessions expirées. PHP le fait normalement tout seul (gc), mais
+ * beaucoup d'hébergeurs mutualisés désactivent ce nettoyage : on le déclenche
+ * donc nous-mêmes, à l'occasion de 1 connexion sur 20 (pas de cron sur InfinityFree).
+ */
+function purge_expired_sessions($conn) {
+    $expiry = time() - SESSION_LIFETIME;
+    $stmt = $conn->prepare("DELETE FROM sessions WHERE last_activity < ?");
+    $stmt->bind_param("i", $expiry);
+    $stmt->execute();
+    $stmt->close();
 }
 
 function store_session_token($conn, $table, $id) {
+    try {
+        if (random_int(1, 20) === 1) purge_expired_sessions($conn);
+    } catch (Throwable $e) {
+        error_log("[auth] purge des sessions impossible : " . $e->getMessage());   // sans gravité
+    }
     $token = session_id();
     $stmt = $conn->prepare("UPDATE `$table` SET session_token = ?, session_updated_at = NOW() WHERE id = ?");
     $stmt->bind_param("si", $token, $id);

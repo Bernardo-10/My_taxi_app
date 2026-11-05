@@ -32,7 +32,7 @@ try {
     $stmt = $conn->prepare("
         INSERT INTO push_subscriptions (user_type, user_id, fcm_token)
         VALUES ('chauffeur', ?, ?)
-        ON DUPLICATE KEY UPDATE user_id = VALUES(user_id), updated_at = CURRENT_TIMESTAMP
+        ON DUPLICATE KEY UPDATE user_type = VALUES(user_type), user_id = VALUES(user_id), updated_at = CURRENT_TIMESTAMP
     ");
     if (!$stmt) {
         throw new Exception('Erreur de préparation : ' . $conn->error);

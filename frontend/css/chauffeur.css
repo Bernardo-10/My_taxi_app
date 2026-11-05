@@ -1106,6 +1106,33 @@ html, body {
 #rechargeModal .modal-actions {
   margin-top: 1.2rem;
 }
+
+/* ── Lot 8 : recharge guidée ─────────────────── */
+.wallet-pending {
+  margin-top: 10px; padding: 10px 12px;
+  background: var(--c-amber-bg); color: var(--c-text);
+  border-radius: var(--radius-sm); font-size: 13px; line-height: 1.4;
+}
+.wallet-pending[hidden] { display: none; }
+
+.recharge-presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 8px; }
+.recharge-preset {
+  min-height: 44px; padding: 0 4px;
+  background: var(--c-surface2); color: var(--c-text);
+  border: .5px solid var(--c-border); border-radius: var(--radius-sm);
+  font-family: var(--font); font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.recharge-preset.active { background: var(--c-amber-bg); border-color: var(--c-amber); color: var(--c-amber-d); }
+
+.recharge-hint { margin-top: 4px; font-size: 12px; color: var(--c-text-3); }
+
+.recharge-steps {
+  margin: 12px 0 0; padding: 10px 12px 10px 30px;
+  background: var(--c-surface2); border-radius: var(--radius-sm);
+  font-size: 13px; line-height: 1.5; color: var(--c-text);
+}
+.recharge-steps li + li { margin-top: 4px; }
+
 /* ═══════════════════════════════════════════════
    MES DOCUMENTS (KYC — renouvellement)
 ═══════════════════════════════════════════════ */

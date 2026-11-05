@@ -32,6 +32,33 @@ if ($type === "chauffeur" && $status === "disabled") {
 $stmt->execute();
 $ok = $stmt->affected_rows > 0;
 $stmt->close();
+
+// S-A (S1) : un compte désactivé perd AUSSITÔT sa session (et son jeton de secours).
+// Sans cela, la session déjà ouverte continuait de fonctionner jusqu'à son expiration.
+// Seule la session mémorisée à la dernière connexion est connue ; les autres sessions
+// éventuelles du chauffeur sont coupées par le contrôle de statut de require_driver_id()
+// (au plus 30 s). La table du compte est choisie par la liste blanche ci-dessus.
+if ($status === "disabled") {
+    try {
+        $tokStmt = $conn->prepare("SELECT session_token FROM `$table` WHERE id = ?");
+        $tokStmt->bind_param("i", $id);
+        $tokStmt->execute();
+        $tokRow = $tokStmt->get_result()->fetch_assoc();
+        $tokStmt->close();
+        if ($tokRow && !empty($tokRow["session_token"])) {
+            $delStmt = $conn->prepare("DELETE FROM sessions WHERE id = ?");
+            $delStmt->bind_param("s", $tokRow["session_token"]);
+            $delStmt->execute();
+            $delStmt->close();
+        }
+        $clrStmt = $conn->prepare("UPDATE `$table` SET session_token = NULL WHERE id = ?");
+        $clrStmt->bind_param("i", $id);
+        $clrStmt->execute();
+        $clrStmt->close();
+    } catch (Throwable $e) {
+        error_log("[set_user_status] coupure de session impossible : " . $e->getMessage());
+    }
+}
 $conn->close();
 
 json_response([

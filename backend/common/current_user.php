@@ -1,18 +1,19 @@
 <?php
 require_once __DIR__ . "/../config/auth.php";
-error_log("=== CURRENT_USER SESSION === ID: " . session_id());
-error_log("=== CURRENT_USER SESSION === role: " . ($_SESSION['role'] ?? 'vide'));
-error_log("=== CURRENT_USER SESSION === client_id: " . ($_SESSION['client_id'] ?? 'vide'));
-error_log("=== CURRENT_USER COOKIE === " . ($_COOKIE[session_name()] ?? 'absent'));
+// S-A : les error_log qui écrivaient l'identifiant de session et le cookie ont été retirés
+// (un identifiant de session lisible dans un journal permet de prendre la session).
 
-// Fallback : si session vide, tenter via session_token en BD
+// Fallback : si session vide, tenter via session_token en BD.
+// S-A (S4) : ce jeton n'est valable que 30 jours après la dernière connexion
+// (session_updated_at), et il est vidé à la déconnexion / à la désactivation du compte.
 if (empty($_SESSION["role"])) {
     $cookieToken = $_COOKIE[session_name()] ?? "";
     if ($cookieToken) {
         $conn = db_connect();
 
         // Chercher dans table client
-        $stmt = $conn->prepare("SELECT id FROM client WHERE session_token = ? AND status = 'active' LIMIT 1");
+        $stmt = $conn->prepare("SELECT id FROM client WHERE session_token = ? AND status = 'active'
+                                AND session_updated_at > DATE_SUB(NOW(), INTERVAL 30 DAY) LIMIT 1");
         $stmt->bind_param("s", $cookieToken);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
@@ -23,7 +24,8 @@ if (empty($_SESSION["role"])) {
             $_SESSION["client_id"] = (int) $row["id"];
         } else {
             // Chercher dans table chauffeur
-            $stmt = $conn->prepare("SELECT id FROM chauffeur WHERE session_token = ? AND status = 'active' LIMIT 1");
+            $stmt = $conn->prepare("SELECT id FROM chauffeur WHERE session_token = ? AND status = 'active'
+                                    AND session_updated_at > DATE_SUB(NOW(), INTERVAL 30 DAY) LIMIT 1");
             $stmt->bind_param("s", $cookieToken);
             $stmt->execute();
             $row = $stmt->get_result()->fetch_assoc();
@@ -32,6 +34,7 @@ if (empty($_SESSION["role"])) {
             if ($row) {
                 $_SESSION["role"] = "chauffeur";
                 $_SESSION["driver_id"] = (int) $row["id"];
+                $_SESSION["driver_checked_at"] = time();   // le statut "active" vient d'être vérifié ci-dessus
             }
         }
         $conn->close();

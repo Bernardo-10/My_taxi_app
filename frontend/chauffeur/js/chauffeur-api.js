@@ -190,22 +190,50 @@ async function initUserHeader(loginPage) {
 
             const restore = setButtonLoading(logoutBtn, "Déconnexion…");
             try {
-                await fetch(`${DRIVER_API_BASE}/common/logout.php`, { method: "POST" });
+                // S-A : le serveur met le chauffeur hors ligne, vide le jeton de secours et supprime
+                // le jeton de notification de cet appareil. Il REFUSE (409) s'il y a une course en cours.
+                const res = await fetch(`${DRIVER_API_BASE}/common/logout.php`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ push_token: window.taxigoPushToken || "" })
+                });
+                if (res.status === 409) {
+                    let msg = "Terminez ou annulez vos courses en cours avant de vous déconnecter";
+                    try { msg = (await res.json()).message || msg; } catch (e) { /* message par défaut */ }
+                    if (typeof showToast === "function") showToast(msg, "error");
+                    restore();
+                    return;                       // on reste connecté
+                }
             } catch (e) {
                 console.warn("Logout request failed:", e);
-            } finally {
-                // Effacer l'ID courant pour éviter que le cache "anon" ou
-                // l'ID précédent soit réutilisé après logout.
-                try { window.currentDriverId = null; } catch (e) {}
-                // Lot 11 : le brouillon du profil (complete-profile.html) ne doit pas rester sur
-                // un téléphone après déconnexion (même clé que dans cette page).
-                try { localStorage.removeItem("taxigo_profile_draft_v1"); } catch (e) {}
-                window.location.href = loginPage;
             }
+            // Déconnecté (ou réseau coupé : la session serveur expirera d'elle-même) :
+            // on efface ce qui reste de lui sur ce téléphone (adresses, alertes, brouillon...).
+            clearDriverLocalData();
+            try { window.currentDriverId = null; } catch (e) {}
+            window.location.href = loginPage;
         });
     }
 
     return authenticated;
+}
+
+/**
+ * S-A (S15) : efface les données du chauffeur gardées dans le navigateur (historique de
+ * courses, alertes déjà montrées, brouillon de profil, bandeaux...). Sur un téléphone partagé
+ * ou perdu, elles révéleraient des adresses de clients. Liste de préfixes explicite : on ne
+ * touche pas aux autres réglages du navigateur.
+ */
+function clearDriverLocalData() {
+    const prefixes = ["taxigo_courses_", "taxigo_recents", "taxigo_shown_cancellations",
+        "taxigo_balanceBlocked", "taxigo_activeBlocked", "taxigo_doc_banner_until_",
+        "taxigo_profile_draft_v1"];
+    try {
+        for (let i = localStorage.length - 1; i >= 0; i--) {     // à l'envers : on supprime en parcourant
+            const key = localStorage.key(i);
+            if (key && prefixes.some((p) => key.startsWith(p))) localStorage.removeItem(key);
+        }
+    } catch (e) { /* stockage indisponible : sans gravité */ }
 }
 
 /* ═══════════════════════════════════════════════

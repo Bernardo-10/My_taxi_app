@@ -17,6 +17,13 @@ Options -Indexes
 # Page d'accueil du site
 DirectoryIndex index.html
 
+# Journaux d'erreurs PHP : PHP en écrit un "error_log" dans chaque dossier où une erreur survient.
+# Ils peuvent contenir des chemins, des requêtes SQL, des noms d'utilisateurs : jamais publics.
+# (Les .sql / .log / .bak éventuellement déposés par erreur sont bloqués aussi.)
+<FilesMatch "(^error_log$|\.(log|sql|bak|old)$)">
+    Require all denied
+</FilesMatch>
+
 # ── Espace client ──────────────────────────────────────
 RewriteRule ^client/register/?$  frontend/client/html/register.html  [L,END]
 RewriteRule ^client/login/?$     frontend/client/html/login.html     [L,END]
@@ -28,6 +35,7 @@ RewriteRule ^client/(.+)$        frontend/client/html/$1             [L,END]
 # ── Espace chauffeur ────────────────────────────────────
 RewriteRule ^chauffeur/register/?$  frontend/chauffeur/html/register.html  [L,END]
 RewriteRule ^chauffeur/login/?$     frontend/chauffeur/html/login.html     [L,END]
+RewriteRule ^chauffeur/complete-profile/?$ frontend/chauffeur/html/complete-profile.html [L,END]
 RewriteRule ^chauffeur/?$           frontend/chauffeur/html/index.html     [L,END]
 # Idem espace chauffeur
 RewriteRule ^chauffeur/(.+)$        frontend/chauffeur/html/$1             [L,END]

@@ -814,22 +814,68 @@ function closeWallet() {
   }
 }
 
-async function loadWalletData() {
+// ── Lot 8 : état du portefeuille ─────────────────────────────────────
+// Règles et instructions de recharge envoyées par get_wallet.php (config/payment.php).
+// Valeurs de secours : si le serveur ne répond pas, le formulaire reste utilisable
+// (le serveur refera de toute façon tous les contrôles).
+const RECHARGE_FALLBACK = {
+  presets: [2000, 5000, 10000, 20000], min: 1000, max: 100000, max_pending: 3, ref_min: 6, ref_max: 40,
+  operators: [
+    { name: "Orange Money", number: "", holder: "" },
+    { name: "MTN Mobile Money", number: "", holder: "" },
+    { name: "Express Union", number: "", holder: "" }
+  ]
+};
+let rechargeConfig = null;          // dernière config reçue du serveur
+let walletPendingCount = 0;         // demandes en attente (pour prévenir avant d'en envoyer une 4e)
+let walletPage = 1;                 // page d'historique déjà chargée
+let walletLoading = false;          // évite deux chargements en même temps
+
+const TX_STATUS_LABELS = { completed: 'Validée', pending: 'En attente', rejected: 'Refusée' };
+
+function formatFcfa(n) {
+  return Number(n || 0).toLocaleString('fr-FR') + ' FCFA';
+}
+
+// Charge la page 1 (page = 1) ou ajoute la page suivante à la liste (page > 1).
+async function loadWalletData(page = 1) {
   const balanceEl = document.getElementById('walletBalance');
   const container = document.getElementById('walletTransactions');
-  if (!balanceEl || !container) return;
+  if (!balanceEl || !container || walletLoading) return;
+  walletLoading = true;
+  const moreBtn = document.getElementById('walletMoreBtn');
+  if (moreBtn) moreBtn.disabled = true;
 
   try {
-    const data = await fetchWallet();
+    const data = await fetchWallet(page);
     if (data.status === 'success') {
-      balanceEl.textContent = data.balance.toLocaleString('fr-FR') + ' FCFA';
-      renderTransactions(data.transactions, container);
+      balanceEl.textContent = formatFcfa(data.balance);
+      if (data.recharge) rechargeConfig = data.recharge;
+      walletPendingCount = data.pending_recharges?.count || 0;
+      renderWalletPending(data.pending_recharges);
+      renderTransactions(data.transactions, container, page > 1);   // page > 1 : on ajoute à la suite
+      walletPage = page;
+      if (moreBtn) moreBtn.hidden = !(data.pagination && data.pagination.page < data.pagination.total_pages);
     } else {
       showToast('Erreur chargement du portefeuille', 'error');
     }
   } catch (e) {
-    showToast('Erreur réseau', 'error');
+    showToast(networkErrorMessage(e, 'Erreur réseau'), 'error');
+  } finally {
+    walletLoading = false;
+    if (moreBtn) moreBtn.disabled = false;
   }
+}
+
+// Bandeau "N demandes en attente" sous le bouton Recharger.
+function renderWalletPending(pending) {
+  const el = document.getElementById('walletPending');
+  if (!el) return;
+  const n = pending?.count || 0;
+  if (n < 1) { el.hidden = true; el.textContent = ''; return; }
+  el.textContent = (n === 1 ? '1 demande de recharge en attente' : n + ' demandes de recharge en attente')
+    + ' (' + formatFcfa(pending.amount_fcfa) + ') : votre solde sera crédité dès la vérification du paiement.';
+  el.hidden = false;
 }
 
 function formatDate(dt) {
@@ -840,34 +886,42 @@ function formatDate(dt) {
   });
 }
 
-function renderTransactions(transactions, container) {
+function renderTransactions(transactions, container, append = false) {
   if (!container) return;
-  if (!transactions || transactions.length === 0) {
+  if (!append && (!transactions || transactions.length === 0)) {
     container.innerHTML = '<div class="empty-state"><div class="empty-icon">💳</div><div class="empty-title">Aucune transaction</div></div>';
     return;
   }
 
-  container.innerHTML = transactions.map(tx => {
-    const sign = tx.amount_fcfa >= 0 ? '+' : '';
+  const html = (transactions || []).map(tx => {
+    const sign = tx.amount_fcfa >= 0 ? '+' : '−';
     const typeLabel = tx.type === 'commission' ? 'Commission' :
                       tx.type === 'recharge' ? 'Recharge' : 'Ajustement';
     const statusClass = tx.status === 'completed' ? 'completed' :
                         tx.status === 'pending' ? 'pending' : 'rejected';
-    const dateFormatted = formatDate(tx.created_at);
+    const statusLabel = TX_STATUS_LABELS[tx.status] || tx.status;
+    // Recharge : on rappelle l'opérateur et la référence (utile pour retrouver le paiement)
+    const detail = tx.type === 'recharge' && tx.operator
+      ? escapeHtml(tx.operator) + (tx.reference ? ' · réf. ' + escapeHtml(tx.reference) : '')
+      : '';
     return `
       <div class="transaction-item">
         <div class="tx-info">
           <span class="tx-type">${typeLabel}</span>
-          <span class="tx-date">${dateFormatted}</span>
+          <span class="tx-date">${formatDate(tx.created_at)}</span>
         </div>
         <div class="tx-amount ${tx.amount_fcfa >= 0 ? 'positive' : 'negative'}">
-          ${sign}${Math.abs(tx.amount_fcfa)} FCFA
+          ${sign}${Math.abs(tx.amount_fcfa).toLocaleString('fr-FR')} FCFA
         </div>
-        <span class="tx-status ${statusClass}">${tx.status}</span>
-        ${tx.description ? `<div class="tx-desc">${tx.description}</div>` : ''}
+        <span class="tx-status ${statusClass}">${statusLabel}</span>
+        ${detail ? `<div class="tx-desc">${detail}</div>` : ''}
+        ${tx.description ? `<div class="tx-desc">${escapeHtml(tx.description)}</div>` : ''}
       </div>
     `;
   }).join('');
+
+  if (append) container.insertAdjacentHTML('beforeend', html);
+  else container.innerHTML = html;
 }
 
 // ── Modale de recharge ────────────────────────
@@ -884,14 +938,110 @@ function restoreFocusBeforeModalClose(modal, returnFocus) {
   }
 }
 
-function openRechargeModal() {
+// Remplit le formulaire d'après la config (boutons de montant, opérateurs, limites).
+function setupRechargeForm(cfg) {
+  const amountInput = document.getElementById('rechargeAmount');
+  const presetsEl   = document.getElementById('rechargePresets');
+  const hintEl      = document.getElementById('rechargeAmountHint');
+  const opSelect    = document.getElementById('rechargeOperator');
+  const refInput    = document.getElementById('rechargeReference');
+
+  if (amountInput) { amountInput.min = cfg.min; amountInput.max = cfg.max; }
+  if (hintEl) hintEl.textContent = 'Entre ' + formatFcfa(cfg.min) + ' et ' + formatFcfa(cfg.max) + ' par demande.';
+  if (refInput) { refInput.minLength = cfg.ref_min; refInput.maxLength = cfg.ref_max; }
+
+  // Boutons de montant rapide (textContent : jamais de HTML venu du serveur)
+  if (presetsEl) {
+    presetsEl.textContent = '';
+    cfg.presets.forEach(v => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'recharge-preset';
+      b.textContent = v.toLocaleString('fr-FR');
+      b.addEventListener('click', () => {
+        amountInput.value = v;
+        updatePresetHighlight();
+        amountInput.focus({ preventScroll: true });
+      });
+      presetsEl.appendChild(b);
+    });
+  }
+
+  // Liste des opérateurs : on garde le choix déjà fait s'il existe encore
+  if (opSelect) {
+    const previous = opSelect.value;
+    opSelect.textContent = '';
+    const first = document.createElement('option');
+    first.value = ''; first.textContent = '-- Sélectionner --';
+    opSelect.appendChild(first);
+    cfg.operators.forEach(op => {
+      const o = document.createElement('option');
+      o.value = op.name; o.textContent = op.name;
+      opSelect.appendChild(o);
+    });
+    if (cfg.operators.some(op => op.name === previous)) opSelect.value = previous;
+  }
+  renderRechargeSteps();
+  updatePresetHighlight();
+}
+
+// Met en évidence le bouton de montant correspondant à la valeur saisie.
+function updatePresetHighlight() {
+  const val = parseInt(document.getElementById('rechargeAmount')?.value || '0', 10);
+  document.querySelectorAll('#rechargePresets .recharge-preset').forEach(b => {
+    const v = parseInt(b.textContent.replace(/\D/g, ''), 10);
+    b.classList.toggle('active', v === val);
+  });
+}
+
+// Étapes de paiement : numéro réel si l'admin l'a renseigné (payment.php), sinon étapes générales.
+function renderRechargeSteps() {
+  const list = document.getElementById('rechargeSteps');
+  if (!list) return;
+  const cfg = rechargeConfig || RECHARGE_FALLBACK;
+  const opName = document.getElementById('rechargeOperator')?.value || '';
+  const op = cfg.operators.find(o => o.name === opName);
+  const amount = parseInt(document.getElementById('rechargeAmount')?.value || '0', 10);
+  const amountText = amount > 0 ? formatFcfa(amount) : 'le montant choisi';
+
+  const steps = [];
+  if (!op) {
+    steps.push('Choisissez le montant et l\'opérateur : les étapes à suivre s\'affichent ici.');
+  } else {
+    if (op.number) {
+      steps.push('Envoyez ' + amountText + ' par ' + op.name + ' au ' + op.number
+        + (op.holder ? ' (nom affiché : ' + op.holder + ')' : '') + '.');
+    } else {
+      steps.push('Envoyez ' + amountText + ' par ' + op.name + ' au numéro de paiement TaxiGo communiqué par l\'équipe.');
+    }
+    steps.push('Après le paiement, ' + op.name + ' vous envoie un SMS contenant un identifiant de transaction.');
+    steps.push('Recopiez cet identifiant dans « Référence de transaction », puis envoyez la demande.');
+    steps.push('Votre solde est crédité dès que l\'équipe a vérifié le paiement. Vous recevez une notification.');
+  }
+  list.textContent = '';
+  steps.forEach(t => { const li = document.createElement('li'); li.textContent = t; list.appendChild(li); });
+}
+
+async function openRechargeModal() {
   const modal = document.getElementById('rechargeModal');
-  if (modal) {
-    rechargeModalReturnFocus = document.activeElement;
-    modal.removeAttribute('inert');
-    modal.classList.add('open');
-    modal.setAttribute('aria-hidden', 'false');
-    document.getElementById('rechargeAmount')?.focus({ preventScroll: true });
+  if (!modal) return;
+  setupRechargeForm(rechargeConfig || RECHARGE_FALLBACK);
+  rechargeModalReturnFocus = document.activeElement;
+  modal.removeAttribute('inert');
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden', 'false');
+  document.getElementById('rechargeAmount')?.focus({ preventScroll: true });
+
+  // Pas encore de config du serveur (portefeuille jamais ouvert) : on la récupère en arrière-plan.
+  if (!rechargeConfig) {
+    try {
+      const data = await fetchWallet(1);
+      if (data.status === 'success' && data.recharge) {
+        rechargeConfig = data.recharge;
+        walletPendingCount = data.pending_recharges?.count || 0;
+        setupRechargeForm(rechargeConfig);
+      }
+    } catch (e) { /* valeurs de secours déjà affichées */ }
   }
 }
 
@@ -906,38 +1056,55 @@ function closeRechargeModal() {
   rechargeModalReturnFocus = null;
 }
 
+// Garde anti-double envoi : un double-clic ne doit pas créer deux demandes.
+let rechargeSubmitting = false;
+
 async function submitRechargeRequest(event) {
   event.preventDefault();
-  const amount = parseInt(document.getElementById('rechargeAmount')?.value || '0');
-  const operator = document.getElementById('rechargeOperator')?.value || '';
-  const reference = document.getElementById('rechargeReference')?.value.trim() || '';
+  if (rechargeSubmitting) return;
+  const cfg = rechargeConfig || RECHARGE_FALLBACK;
 
-  if (amount <= 0) {
-    showToast('Montant invalide (doit être > 0)', 'error');
+  const amountRaw = document.getElementById('rechargeAmount')?.value || '';
+  const amount = /^\d+$/.test(amountRaw) ? parseInt(amountRaw, 10) : 0;
+  const operator = document.getElementById('rechargeOperator')?.value || '';
+  // Même forme que le serveur : majuscules, sans espaces
+  const reference = (document.getElementById('rechargeReference')?.value || '').replace(/\s+/g, '').toUpperCase();
+
+  // Contrôles pour le confort (le serveur refait tout) : message précis, pas d'aller-retour inutile
+  if (amount < cfg.min || amount > cfg.max) {
+    showToast('Montant : entre ' + formatFcfa(cfg.min) + ' et ' + formatFcfa(cfg.max), 'error');
     return;
   }
   if (!operator) {
     showToast('Sélectionnez un opérateur', 'error');
     return;
   }
+  if (reference.length < cfg.ref_min || reference.length > cfg.ref_max || !/^[A-Z0-9][A-Z0-9._-]*$/.test(reference)) {
+    showToast('Référence invalide : ' + cfg.ref_min + ' à ' + cfg.ref_max + ' caractères (lettres, chiffres, point, tiret)', 'error');
+    return;
+  }
+  if (walletPendingCount >= cfg.max_pending) {
+    showToast('Vous avez déjà ' + walletPendingCount + ' demandes en attente. Attendez leur validation.', 'error');
+    return;
+  }
 
+  rechargeSubmitting = true;
   const submitBtn = event.target.querySelector('.modal-submit');
   const restore = setButtonLoading ? setButtonLoading(submitBtn, 'Envoi…') : (() => {});
   try {
     const res = await requestRecharge({ amount, operator, reference });
     if (res.status === 'success') {
       showToast('Demande envoyée, en attente de validation', 'success');
+      document.getElementById('rechargeForm')?.reset();   // le formulaire repart vide à la prochaine ouverture
       closeRechargeModal();
-      // Rafraîchir le portefeuille si ouvert
-      if (document.getElementById('walletPanel')?.classList.contains('open')) {
-        loadWalletData();
-      }
+      loadWalletData();    // rafraîchit solde, bandeau "en attente" et liste (le panneau peut être fermé)
     } else {
       showToast(res.message || 'Erreur lors de la demande', 'error');
     }
   } catch (e) {
-    showToast('Erreur réseau', 'error');
+    showToast(networkErrorMessage(e, 'Erreur réseau'), 'error');
   } finally {
+    rechargeSubmitting = false;
     restore();
   }
 }
@@ -1413,6 +1580,10 @@ function initWallet() {
   if (openBtn) openBtn.addEventListener('click', openWallet);
   if (closeBtn) closeBtn.addEventListener('click', closeWallet);
   if (rechargeOpenBtn) rechargeOpenBtn.addEventListener('click', openRechargeModal);
+  // Lot 8 : "Voir plus" de l'historique, étapes qui suivent l'opérateur / le montant choisis
+  document.getElementById('walletMoreBtn')?.addEventListener('click', () => loadWalletData(walletPage + 1));
+  document.getElementById('rechargeOperator')?.addEventListener('change', renderRechargeSteps);
+  document.getElementById('rechargeAmount')?.addEventListener('input', () => { updatePresetHighlight(); renderRechargeSteps(); });
   if (rechargeCancelBtn) rechargeCancelBtn.addEventListener('click', closeRechargeModal);
   if (modalOverlay) modalOverlay.addEventListener('click', e => {
     if (e.target === modalOverlay) closeRechargeModal();

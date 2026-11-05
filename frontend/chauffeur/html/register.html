@@ -305,6 +305,11 @@ input:focus {
     <div class="intro-sub">Quelques informations suffisent pour commencer. Vous compléterez vos documents (CNI, carte grise, permis, capacité, licence) une fois connecté, avant de pouvoir accepter des courses.</div>
 
     <form id="registerForm" novalidate>
+      <!-- S-A : champ piège (honeypot). Invisible pour une personne ; un robot qui remplit tout se trahit. -->
+      <div aria-hidden="true" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;">
+        <label for="website">Ne pas remplir</label>
+        <input id="website" name="website" type="text" tabindex="-1" autocomplete="off">
+      </div>
       <div class="section-label">Vos coordonnées</div>
 
       <label for="name">Nom complet</label>

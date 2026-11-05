@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . "/../config/auth.php";
 require_once __DIR__ . "/../common/normalize.php";   // Lot 11 : téléphone et plaque normalisés
+require_once __DIR__ . "/../common/rate_limit.php";  // S-A : limiteur d'inscriptions
 
 // ── Inscription allégée (voir rapport friction-inscription-chauffeur.md) ──
 // Avant : ce fichier exigeait les 5 documents KYC (10 champs texte + 9
@@ -30,6 +31,10 @@ $passwordConfirm = $_POST["password_confirm"] ?? "";
 $plate = trim($_POST["plate"] ?? "");
 $carBrand = trim($_POST["car_brand"] ?? "");
 $carColor = trim($_POST["car_color"] ?? "");
+
+// ── S-A (S8) : champ piège (honeypot). Le formulaire contient un champ "website" invisible
+// qu'un humain ne remplit jamais ; un robot qui remplit tous les champs se trahit. ──
+$honeypot = trim($_POST["website"] ?? "");
 
 if ($name === "" || $phone === "" || $email === "" || $password === "" || $plate === "") {
     json_response(["status" => "error", "message" => "Nom, telephone, email, plaque et mot de passe requis"], 400);
@@ -80,6 +85,20 @@ if ($password !== $passwordConfirm) {
 // retrouvé même si la migration SQL n'a pas encore été passée.
 $conn = db_connect();
 
+// ── S-A (S8) : limiteur d'inscriptions (5 / heure / adresse IP) + champ piège ──
+$rlIp = rl_ip();
+$rlIdent = rl_ident("register");
+if ($honeypot !== "") {
+    rl_record($conn, "register", $rlIp, $rlIdent);
+    $conn->close();
+    json_response(["status" => "error", "message" => "Inscription impossible"], 400);
+}
+$wait = rl_wait_seconds($conn, "register", $rlIp, null, RL_REGISTER_MAX_IP, RL_REGISTER_WINDOW);
+if ($wait > 0) {
+    $conn->close();
+    rl_block_response($wait, "inscriptions depuis ce reseau");
+}
+
 $phoneVariants = phone_digit_variants($phone);
 $placeholders  = implode(",", array_fill(0, count($phoneVariants), "?"));
 $checkStmt = $conn->prepare(
@@ -95,6 +114,7 @@ $exists = $checkStmt->get_result()->num_rows > 0;
 $checkStmt->close();
 
 if ($exists) {
+    rl_record($conn, "register", $rlIp, $rlIdent);   // compte aussi : évite de sonder les comptes existants
     $conn->close();
     json_response(["status" => "error", "message" => "Un chauffeur existe deja avec cet email, ce telephone ou cette plaque"], 409);
 }
@@ -131,6 +151,7 @@ if (!$stmt->execute()) {
 
 $driverId = $conn->insert_id;
 $stmt->close();
+rl_record($conn, "register", $rlIp, $rlIdent);   // inscription réussie : compte dans le plafond horaire
 
 // ── Session ────────────────────────────────────────────────────
 session_regenerate_id(true);
@@ -138,6 +159,7 @@ refresh_session_cookie();
 $_SESSION["role"] = "chauffeur";
 $_SESSION["driver_id"] = (int) $driverId;
 $_SESSION["driver_name"] = $name;
+$_SESSION["driver_checked_at"] = time();   // compte créé à l'instant : statut déjà connu
 unset($_SESSION["client_id"], $_SESSION["client_name"]);
 
 $sessionToken = store_session_token($conn, "chauffeur", (int) $driverId);

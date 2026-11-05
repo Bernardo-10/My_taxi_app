@@ -13,7 +13,9 @@ $status      = isset($_GET["status"]) ? trim($_GET["status"]) : "";
 $limit = isset($_GET["limit"]) ? (int) $_GET["limit"] : 50;
 $page  = isset($_GET["page"])  ? (int) $_GET["page"]  : 1;
 if ($limit < 1) $limit = 50;
+if ($limit > 100) $limit = 100;   // Lot 8 : plafond (avant, ?limit=999999 renvoyait tout)
 if ($page < 1)  $page  = 1;
+if ($page > 10000) $page = 10000;
 $offset = ($page - 1) * $limit;
 
 $where  = [];

@@ -336,6 +336,8 @@
       <button class="recharge-btn" id="rechargeOpenBtn">
         <i class="ti ti-plus" aria-hidden="true"></i> Recharger via mobile money
       </button>
+      <!-- Lot 8 : rappel des demandes de recharge en attente (rempli par chauffeur-ui.js) -->
+      <div class="wallet-pending" id="walletPending" role="status" hidden></div>
       <!-- Historique -->
       <div class="wallet-history">
         <h3>Historique récent</h3>
@@ -345,7 +347,7 @@
             <div class="empty-title">Aucune transaction</div>
           </div>
         </div>
-        <div class="pagination" id="walletPagination"></div>
+        <button type="button" class="btn-more" id="walletMoreBtn" hidden>Voir plus</button>
       </div>
     </div>
   </aside>
@@ -355,9 +357,13 @@
     <div class="modal-sheet" role="document">
       <div class="modal-handle"></div>
       <div class="modal-title">Demande de recharge</div>
-      <form id="rechargeForm" onsubmit="submitRechargeRequest(event)">
+      <form id="rechargeForm" onsubmit="submitRechargeRequest(event)" novalidate>
+        <!-- Lot 8 : montants rapides (boutons remplis par chauffeur-ui.js d'après le serveur) -->
         <label for="rechargeAmount">Montant (FCFA)</label>
-        <input type="number" id="rechargeAmount" required min="1" placeholder="Ex: 5000" />
+        <div class="recharge-presets" id="rechargePresets"></div>
+        <input type="number" id="rechargeAmount" required min="1000" max="100000" step="1"
+               inputmode="numeric" placeholder="Ex: 5000" />
+        <div class="recharge-hint" id="rechargeAmountHint"></div>
 
         <label for="rechargeOperator">Opérateur</label>
         <select id="rechargeOperator" required>
@@ -367,8 +373,14 @@
           <option value="Express Union">Express Union</option>
         </select>
 
+        <!-- Étapes de paiement : s'adaptent à l'opérateur choisi -->
+        <ol class="recharge-steps" id="rechargeSteps"></ol>
+
         <label for="rechargeReference">Référence de transaction</label>
-        <input type="text" id="rechargeReference" placeholder="Numéro de transaction (optionnel)" />
+        <input type="text" id="rechargeReference" required minlength="6" maxlength="40"
+               autocomplete="off" autocapitalize="characters" spellcheck="false"
+               placeholder="Identifiant reçu par SMS (ex : MP240101.1234.A12345)" />
+        <div class="recharge-hint">Obligatoire : c'est la preuve que l'équipe vérifie avant de créditer votre solde.</div>
 
         <div class="modal-actions">
           <button class="modal-cancel" type="button" id="rechargeCancelBtn">Annuler</button>

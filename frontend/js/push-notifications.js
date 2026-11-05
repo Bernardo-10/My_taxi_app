@@ -55,6 +55,10 @@ async function initPushNotifications(userType) {
       return;
     }
 
+    // S-A : mémorisé pour que la déconnexion puisse supprimer le jeton de CET appareil
+    // (voir logout.php) : sinon le téléphone continue de recevoir des notifications.
+    window.taxigoPushToken = token;
+
     const apiBase = userType === "chauffeur" ? "/backend/chauffeur"
                   : userType === "admin"     ? "/backend/admin"
                   : "/backend/client";

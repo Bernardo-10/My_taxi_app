@@ -29,7 +29,12 @@ async function checkAdminAuth() {
 
 async function logoutAdmin() {
     try {
-        await fetch(`${COMMON_API}/logout.php`, { method: "POST" });
+        // S-A : le jeton de notification de cet appareil est supprimé côté serveur
+        await fetch(`${COMMON_API}/logout.php`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ push_token: window.taxigoPushToken || "" })
+        });
     } finally {
         window.location.href = "/admin/login";
     }
